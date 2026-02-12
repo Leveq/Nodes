@@ -1,0 +1,224 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Nodes Animation System
+   Premium, polished animations for the leveq.dev inspired theme
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Fade Animations ── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Slide Animations ── */
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* ── Modal Animations ── */
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalOut {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ── Skeleton Loading ── */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Presence Pulse ── */
+
+@keyframes presencePulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+  50% { box-shadow: 0 0 0 4px transparent; }
+}
+
+/* ── Typing Dots ── */
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+/* ── Toast Slide In ── */
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+}
+
+/* ── Badge Pop ── */
+
+@keyframes badgePop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ── Utility Classes ── */
+
+.animate-fadeIn { animation: fadeIn var(--transition-smooth) both; }
+.animate-fadeInUp { animation: fadeInUp var(--transition-smooth) both; }
+.animate-fadeInDown { animation: fadeInDown var(--transition-smooth) both; }
+.animate-fadeInScale { animation: fadeInScale var(--transition-spring) both; }
+.animate-slideInRight { animation: slideInRight var(--transition-smooth) both; }
+.animate-slideInLeft { animation: slideInLeft var(--transition-smooth) both; }
+.animate-slideOutRight { animation: slideOutRight var(--transition-fast) both; }
+.animate-fadeOut { animation: fadeOut var(--transition-fast) both; }
+.animate-modalIn { animation: modalIn 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-modalOut { animation: modalOut 200ms ease both; }
+.animate-overlayIn { animation: overlayIn var(--transition-smooth) both; }
+.animate-overlayOut { animation: overlayOut var(--transition-fast) both; }
+.animate-toastIn { animation: toastIn 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-toastOut { animation: toastOut 200ms ease both; }
+.animate-badgePop { animation: badgePop 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-shimmer { 
+  background-size: 400% 100%;
+  animation: shimmer 1.8s ease-in-out infinite; 
+}
+
+/* ── Staggered Children ── */
+
+.stagger-children > * {
+  animation: fadeInUp var(--transition-smooth) both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+
+/* ── Context Menu Animation ── */
+
+.context-menu-animate {
+  animation: fadeInScale 150ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: top left;
+}
+
+/* ── Reduced Motion ── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

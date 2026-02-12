@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+*.lock
+!pnpm-lock.yaml
+.DS_Store
+*.local
+.env
+.env.*

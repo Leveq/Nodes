@@ -1,0 +1,90 @@
+import { useEffect, useRef } from "react";
+import type { Unsubscribe, TransportMessage } from "@nodes/transport";
+import { useTransport } from "../providers/TransportProvider";
+import { useNodeStore } from "../stores/node-store";
+import { useMessageStore } from "../stores/message-store";
+import { useIdentityStore } from "../stores/identity-store";
+
+/**
+ * Hook that subscribes to all channels in the active Node for unread tracking.
+ * When a new message arrives in any channel (not the active one), it increments
+ * the unread count for that channel.
+ */
+export function useNodeSubscriptions() {
+  const transport = useTransport();
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const activeChannelId = useNodeStore((s) => s.activeChannelId);
+  const publicKey = useIdentityStore((s) => s.publicKey);
+
+  // Store all channel subscriptions for cleanup
+  const subscriptionsRef = useRef<Unsubscribe[]>([]);
+  // Track messages we've seen to distinguish history from real-time
+  const seenMessagesRef = useRef<Set<string>>(new Set());
+  // Track initial load state per channel
+  const initialLoadDoneRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Cleanup previous subscriptions
+    subscriptionsRef.current.forEach((unsub) => unsub());
+    subscriptionsRef.current = [];
+    seenMessagesRef.current.clear();
+    initialLoadDoneRef.current.clear();
+
+    if (!transport || !activeNodeId) return;
+
+    // Get channels from store (avoid subscription to channels object)
+    const nodeChannels = useNodeStore.getState().channels[activeNodeId] || [];
+
+    // Mark existing messages as seen before subscribing
+    const existingMessages = useMessageStore.getState().messages;
+    for (const channel of nodeChannels) {
+      const channelMessages = existingMessages[channel.id] || [];
+      for (const msg of channelMessages) {
+        seenMessagesRef.current.add(msg.id);
+      }
+    }
+
+    // Subscribe to each channel (except the active one - ChannelView handles that)
+    for (const channel of nodeChannels) {
+      // Skip the active channel - it's handled by ChannelView
+      if (channel.id === activeChannelId) continue;
+
+      const channelId = channel.id;
+
+      const unsub = transport.message.subscribe(channelId, (message: TransportMessage) => {
+        // Skip if we've already processed this message
+        if (seenMessagesRef.current.has(message.id)) return;
+        seenMessagesRef.current.add(message.id);
+
+        const { addMessage, incrementUnread, messages } = useMessageStore.getState();
+        
+        // Double-check it's not already in the store
+        const channelMessages = messages[channelId] || [];
+        if (channelMessages.some((m) => m.id === message.id)) return;
+        
+        // Add message to store
+        addMessage(channelId, message);
+
+        // Only increment unread for real-time messages (after initial load)
+        // and only if the message is from someone else
+        if (initialLoadDoneRef.current.has(channelId) && message.authorKey !== publicKey) {
+          incrementUnread(channelId);
+        }
+      });
+
+      subscriptionsRef.current.push(unsub);
+      
+      // Mark initial load as done after a short delay
+      // (Gun fires history messages immediately on subscribe)
+      setTimeout(() => {
+        initialLoadDoneRef.current.add(channelId);
+      }, 2000);
+    }
+
+    // Cleanup on unmount or when Node changes
+    return () => {
+      subscriptionsRef.current.forEach((unsub) => unsub());
+      subscriptionsRef.current = [];
+    };
+  }, [transport, activeNodeId, activeChannelId, publicKey]);
+}

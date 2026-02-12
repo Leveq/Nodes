@@ -1,0 +1,19 @@
+{
+  "name": "@nodes/transport-gun",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@nodes/core": "workspace:*",
+    "@nodes/crypto": "workspace:*",
+    "@nodes/transport": "workspace:*",
+    "gun": "^0.2020.1241"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist"
+  }
+}
