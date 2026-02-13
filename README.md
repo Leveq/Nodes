@@ -25,7 +25,7 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 
 ## Screenshots
 
-(coming soon)
+[Nodes](./.github/docs/Screenshots/nodesscreenshot01.png)
 
 <!-- Add your screenshots here -->
 <!-- ![Nodes Chat](./docs/screenshots/chat.png) -->
