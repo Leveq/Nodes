@@ -70,7 +70,7 @@ export function AppShell() {
     onCloseModal: handleCloseModal,
   });
 
-  // Function to open another user's profile
+  // Function to open a user's profile popup
   const openUserProfile = useCallback((userId: string) => {
     setProfileUserId(userId);
     setShowProfile(true);

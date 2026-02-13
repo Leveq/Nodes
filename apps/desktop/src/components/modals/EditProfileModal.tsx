@@ -8,6 +8,7 @@ import type { UserStatus } from "@nodes/core";
 
 interface EditProfileModalProps {
   onClose: () => void;
+  onSave?: () => void;
 }
 
 const STATUS_OPTIONS: { value: UserStatus; label: string }[] = [
@@ -21,7 +22,7 @@ const STATUS_OPTIONS: { value: UserStatus; label: string }[] = [
  * Modal for editing the user's own profile.
  * Allows editing display name, bio, status, and avatar.
  */
-export function EditProfileModal({ onClose }: EditProfileModalProps) {
+export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
   const profile = useIdentityStore((s) => s.profile);
   const updateProfile = useIdentityStore((s) => s.updateProfile);
   const addToast = useToastStore((s) => s.addToast);
@@ -55,6 +56,7 @@ export function EditProfileModal({ onClose }: EditProfileModalProps) {
       }
 
       addToast("success", "Profile updated");
+      onSave?.();
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update profile";

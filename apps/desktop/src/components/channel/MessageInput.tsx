@@ -100,13 +100,12 @@ export function MessageInput({ channelId, channelName }: MessageInputProps) {
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-
-      // Focus textarea
-      textareaRef.current?.focus();
     } catch {
       addToast("error", "Failed to send message. Please try again.");
     } finally {
       setIsSending(false);
+      // Focus textarea after React re-render completes
+      requestAnimationFrame(() => textareaRef.current?.focus());
     }
   };
 
@@ -121,7 +120,7 @@ export function MessageInput({ channelId, channelName }: MessageInputProps) {
 
   return (
     <div className="px-4 py-3 border-t border-surface-border bg-depth-primary">
-      <div className="message-input-container flex items-end gap-3 p-2">
+      <div className="message-input-container flex items-center gap-3 p-2">
         <textarea
           ref={textareaRef}
           value={content}

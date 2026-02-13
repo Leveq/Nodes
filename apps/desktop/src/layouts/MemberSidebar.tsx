@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNodeStore } from "../stores/node-store";
 import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
@@ -10,6 +10,9 @@ import type { NodeMember } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
 
 const profileManager = new ProfileManager();
+
+// TTL for cached names (5 minutes)
+const NAME_CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * MemberSidebar displays the member list for the active Node.
@@ -25,12 +28,16 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   const isMembersLoading = activeNodeId ? members[activeNodeId] === undefined : false;
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
   const resolvedNamesRef = useRef<Record<string, string>>({});
+  const lastRefreshRef = useRef<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // DM functionality
   const startConversation = useDMStore((s) => s.startConversation);
   const setActiveConversation = useDMStore((s) => s.setActiveConversation);
   const keypair = useIdentityStore((s) => s.keypair);
   const myPublicKey = useIdentityStore((s) => s.publicKey);
+  const myProfile = useIdentityStore((s) => s.profile);
+  const profileVersion = useIdentityStore((s) => s.profileVersion);
   const setViewMode = useNavigationStore((s) => s.setViewMode);
 
   // Social functionality
@@ -62,6 +69,28 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   // Helper to check if someone is a friend
   const isFriend = (publicKey: string) => friends.some((f) => f.publicKey === publicKey);
 
+  // Force refresh all names (clears cache and re-fetches)
+  const refreshNames = useCallback(async () => {
+    if (isRefreshing || nodeMembers.length === 0) return;
+    
+    setIsRefreshing(true);
+    const names: Record<string, string> = {};
+    
+    for (const member of nodeMembers) {
+      try {
+        const profile = await profileManager.getPublicProfile(member.publicKey);
+        names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
+      } catch {
+        names[member.publicKey] = member.publicKey.slice(0, 8);
+      }
+    }
+    
+    resolvedNamesRef.current = names;
+    setResolvedNames(names);
+    lastRefreshRef.current = Date.now();
+    setIsRefreshing(false);
+  }, [nodeMembers, isRefreshing]);
+
   // Resolve display names for members
   useEffect(() => {
     async function resolveNames() {
@@ -87,6 +116,29 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
     }
     resolveNames();
   }, [nodeMembers]);
+
+  // Update cached name when own profile changes
+  useEffect(() => {
+    if (myPublicKey && myProfile?.data.displayName) {
+      const newName = myProfile.data.displayName;
+      if (resolvedNamesRef.current[myPublicKey] !== newName) {
+        resolvedNamesRef.current = { ...resolvedNamesRef.current, [myPublicKey]: newName };
+        setResolvedNames(resolvedNamesRef.current);
+      }
+    }
+  }, [myPublicKey, myProfile?.data.displayName, profileVersion]);
+
+  // TTL auto-refresh (every 5 minutes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const timeSinceLastRefresh = Date.now() - lastRefreshRef.current;
+      if (timeSinceLastRefresh >= NAME_CACHE_TTL && nodeMembers.length > 0) {
+        refreshNames();
+      }
+    }, 60 * 1000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, [refreshNames, nodeMembers.length]);
 
   if (!activeNodeId) {
     return null;
@@ -114,10 +166,26 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
 
   return (
     <div className="w-60 bg-depth-secondary border-l border-surface-border flex flex-col shrink-0">
-      <div className="p-4 border-b border-surface-border">
+      <div className="p-4 border-b border-surface-border flex items-center justify-between">
         <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide">
           Members{!isMembersLoading && ` — ${nodeMembers.length}`}
         </h3>
+        <button
+          onClick={refreshNames}
+          disabled={isRefreshing}
+          className="p-1 text-nodes-text-muted hover:text-nodes-text transition-colors disabled:opacity-50"
+          title="Refresh member names"
+        >
+          <svg 
+            className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor" 
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -304,7 +372,10 @@ function MemberItem({
       : "bg-gray-500";
 
   const handleClick = () => {
-    if (!isMe && buttonRef.current) {
+    if (isMe) {
+      // For own profile, just open profile view
+      onViewProfile?.();
+    } else if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       // Position menu to the left of the button
       setMenuPosition({
@@ -340,9 +411,7 @@ function MemberItem({
       <button
         ref={buttonRef}
         onClick={handleClick}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-nodes-bg/50 transition-colors ${
-          isMe ? "cursor-default" : "cursor-pointer"
-        }`}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-nodes-bg/50 transition-colors cursor-pointer"
       >
         {/* Avatar placeholder with status dot */}
         <div className="relative">

@@ -20,6 +20,7 @@ interface IdentityState {
   publicKey: string | null;
   keypair: KeyPair | null;
   profile: ProfileWithVisibility | null;
+  profileVersion: number; // Increments on profile update to signal cache invalidation
   error: string | null;
 
   // Actions
@@ -63,6 +64,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
   publicKey: null,
   keypair: null,
   profile: null,
+  profileVersion: 0,
   error: null,
 
   createIdentity: async (displayName, passphrase, accountVisibility) => {
@@ -194,7 +196,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
   },
 
   updateProfile: async (updates) => {
-    const { profile } = get();
+    const { profile, profileVersion } = get();
     const keypair = keyManager.getKeypair();
     if (!profile) throw new Error("No profile loaded");
 
@@ -204,7 +206,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
     };
 
     await profileManager.saveProfile(newProfile, keypair);
-    set({ profile: newProfile });
+    set({ profile: newProfile, profileVersion: profileVersion + 1 });
   },
 
   updateFieldVisibility: async (field, visibility) => {

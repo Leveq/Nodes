@@ -55,6 +55,9 @@ export function DMMessageInput({
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
+
+      // Focus textarea after React re-render
+      setTimeout(() => textareaRef.current?.focus(), 0);
     } catch (err) {
       // Error already shown via toast in store
     } finally {
@@ -72,7 +75,7 @@ export function DMMessageInput({
 
   return (
     <div className="px-4 py-3 border-t border-nodes-border shrink-0">
-      <div className="relative bg-nodes-bg rounded-lg border border-nodes-border focus-within:border-nodes-primary transition-colors">
+      <div className="message-input-container relative flex items-center bg-nodes-bg rounded-lg border border-nodes-border transition-all duration-300 focus-within:scale-[1.005]">
         <textarea
           ref={textareaRef}
           value={content}
@@ -81,7 +84,7 @@ export function DMMessageInput({
           placeholder={`Message ${recipientName}`}
           disabled={isSending}
           rows={1}
-          className="w-full bg-transparent px-4 py-3 pr-12 text-nodes-text placeholder-nodes-text-muted resize-none focus:outline-none disabled:opacity-50"
+          className="flex-1 bg-transparent px-4 py-3 pr-12 text-nodes-text placeholder-nodes-text-muted resize-none focus:outline-none disabled:opacity-50"
           style={{ maxHeight: "200px" }}
         />
 
