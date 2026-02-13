@@ -3,9 +3,39 @@ dist/
 target/
 *.lock
 !pnpm-lock.yaml
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Environment
 *.local
 .env
 .env.*
 
+# Local GunJS data
+data/
+
+# IDE / Editor
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tauri generated
+apps/desktop/src-tauri/gen/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Private docs
 Milestones/
