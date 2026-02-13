@@ -22,6 +22,9 @@ export function useNodeSubscriptions() {
   const seenMessagesRef = useRef<Set<string>>(new Set());
   // Track initial load state per channel
   const initialLoadDoneRef = useRef<Set<string>>(new Set());
+  // Batching: pending messages to process
+  const pendingMessagesRef = useRef<Map<string, TransportMessage[]>>(new Map());
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Cleanup previous subscriptions
@@ -29,6 +32,11 @@ export function useNodeSubscriptions() {
     subscriptionsRef.current = [];
     seenMessagesRef.current.clear();
     initialLoadDoneRef.current.clear();
+    pendingMessagesRef.current.clear();
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
 
     if (!transport || !activeNodeId) return;
 
@@ -44,6 +52,30 @@ export function useNodeSubscriptions() {
       }
     }
 
+    // Flush pending messages in batches
+    const flushPending = () => {
+      rafIdRef.current = null;
+      const { addMessage, incrementUnread, messages } = useMessageStore.getState();
+      
+      for (const [channelId, pendingMsgs] of pendingMessagesRef.current) {
+        const channelMessages = messages[channelId] || [];
+        
+        for (const message of pendingMsgs) {
+          // Double-check it's not already in the store
+          if (channelMessages.some((m) => m.id === message.id)) continue;
+          
+          addMessage(channelId, message);
+
+          // Only increment unread for real-time messages (after initial load)
+          // and only if the message is from someone else
+          if (initialLoadDoneRef.current.has(channelId) && message.authorKey !== publicKey) {
+            incrementUnread(channelId);
+          }
+        }
+      }
+      pendingMessagesRef.current.clear();
+    };
+
     // Subscribe to each channel (except the active one - ChannelView handles that)
     for (const channel of nodeChannels) {
       // Skip the active channel - it's handled by ChannelView
@@ -56,19 +88,15 @@ export function useNodeSubscriptions() {
         if (seenMessagesRef.current.has(message.id)) return;
         seenMessagesRef.current.add(message.id);
 
-        const { addMessage, incrementUnread, messages } = useMessageStore.getState();
-        
-        // Double-check it's not already in the store
-        const channelMessages = messages[channelId] || [];
-        if (channelMessages.some((m) => m.id === message.id)) return;
-        
-        // Add message to store
-        addMessage(channelId, message);
+        // Queue message for batched processing
+        if (!pendingMessagesRef.current.has(channelId)) {
+          pendingMessagesRef.current.set(channelId, []);
+        }
+        pendingMessagesRef.current.get(channelId)!.push(message);
 
-        // Only increment unread for real-time messages (after initial load)
-        // and only if the message is from someone else
-        if (initialLoadDoneRef.current.has(channelId) && message.authorKey !== publicKey) {
-          incrementUnread(channelId);
+        // Schedule flush if not already scheduled
+        if (rafIdRef.current === null) {
+          rafIdRef.current = requestAnimationFrame(flushPending);
         }
       });
 
@@ -83,6 +111,10 @@ export function useNodeSubscriptions() {
 
     // Cleanup on unmount or when Node changes
     return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
       subscriptionsRef.current.forEach((unsub) => unsub());
       subscriptionsRef.current = [];
     };

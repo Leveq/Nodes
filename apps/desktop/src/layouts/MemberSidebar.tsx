@@ -5,7 +5,7 @@ import { useSocialStore } from "../stores/social-store";
 import { useIdentityStore } from "../stores/identity-store";
 import { useNavigationStore } from "../stores/navigation-store";
 import { ProfileManager } from "@nodes/transport-gun";
-import { MemberListSkeleton } from "../components/ui";
+import { MemberListSkeleton, NameSkeleton } from "../components/ui";
 import type { NodeMember } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
 
@@ -92,10 +92,25 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
     return null;
   }
 
+  // Helper to check if member is online (online, idle, dnd count as online)
+  const isOnline = (member: NodeMember) => 
+    member.status === "online" || member.status === "idle" || member.status === "dnd";
+
   // Group members by role
   const owners = nodeMembers.filter((m) => m.role === "owner");
   const admins = nodeMembers.filter((m) => m.role === "admin");
   const regularMembers = nodeMembers.filter((m) => m.role === "member");
+
+  // Further split by online/offline
+  const onlineOwners = owners.filter(isOnline);
+  const offlineOwners = owners.filter((m) => !isOnline(m));
+  const onlineAdmins = admins.filter(isOnline);
+  const offlineAdmins = admins.filter((m) => !isOnline(m));
+  const onlineMembers = regularMembers.filter(isOnline);
+  const offlineMembers = regularMembers.filter((m) => !isOnline(m));
+
+  // Combine all offline members
+  const allOffline = [...offlineOwners, ...offlineAdmins, ...offlineMembers];
 
   return (
     <div className="w-60 bg-depth-secondary border-l border-surface-border flex flex-col shrink-0">
@@ -110,11 +125,11 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
           <MemberListSkeleton />
         ) : (
           <>
-            {/* Owners */}
-            {owners.length > 0 && (
+            {/* Online Owners */}
+            {onlineOwners.length > 0 && (
               <MemberGroup
                 title="Owner"
-                members={owners}
+                members={onlineOwners}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
                 onSendMessage={handleSendMessage}
@@ -127,11 +142,11 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
               />
             )}
 
-            {/* Admins */}
-            {admins.length > 0 && (
+            {/* Online Admins */}
+            {onlineAdmins.length > 0 && (
               <MemberGroup
                 title="Admins"
-                members={admins}
+                members={onlineAdmins}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
                 onSendMessage={handleSendMessage}
@@ -144,11 +159,28 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
               />
             )}
 
-            {/* Regular members */}
-            {regularMembers.length > 0 && (
+            {/* Online Members */}
+            {onlineMembers.length > 0 && (
               <MemberGroup
-                title="Members"
-                members={regularMembers}
+                title="Online"
+                members={onlineMembers}
+                resolvedNames={resolvedNames}
+                myPublicKey={myPublicKey}
+                onSendMessage={handleSendMessage}
+                onAddFriend={handleAddFriend}
+                onRemoveFriend={removeFriend}
+                onBlockUser={blockUser}
+                isFriend={isFriend}
+                hasPendingRequest={hasPendingRequest}
+                onUserClick={onUserClick}
+              />
+            )}
+
+            {/* Offline Section */}
+            {allOffline.length > 0 && (
+              <MemberGroup
+                title="Offline"
+                members={allOffline}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
                 onSendMessage={handleSendMessage}
@@ -209,8 +241,10 @@ function MemberGroup({
         <MemberItem
           key={member.publicKey}
           publicKey={member.publicKey}
-          displayName={resolvedNames[member.publicKey] || member.publicKey.slice(0, 8)}
+          displayName={resolvedNames[member.publicKey]}
+          isNameLoading={!resolvedNames[member.publicKey]}
           status={member.status}
+          role={member.role}
           isMe={member.publicKey === myPublicKey}
           isFriend={isFriend(member.publicKey)}
           hasPending={hasPendingRequest(member.publicKey)}
@@ -227,8 +261,10 @@ function MemberGroup({
 
 interface MemberItemProps {
   publicKey: string;
-  displayName: string;
+  displayName?: string;
+  isNameLoading: boolean;
   status?: string;
+  role?: "owner" | "admin" | "member";
   isMe: boolean;
   isFriend: boolean;
   hasPending: boolean;
@@ -241,7 +277,9 @@ interface MemberItemProps {
 
 function MemberItem({ 
   displayName, 
+  isNameLoading,
   status, 
+  role,
   isMe, 
   isFriend,
   hasPending,
@@ -309,7 +347,11 @@ function MemberItem({
         {/* Avatar placeholder with status dot */}
         <div className="relative">
           <div className="w-8 h-8 rounded-full bg-nodes-accent/20 flex items-center justify-center text-nodes-text text-sm font-medium">
-            {displayName.charAt(0).toUpperCase()}
+            {isNameLoading ? (
+              <div className="w-3 h-3 animate-pulse rounded bg-nodes-border/50" />
+            ) : (
+              displayName?.charAt(0).toUpperCase() || "?"
+            )}
           </div>
           <div
             className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-nodes-surface ${statusColor}`}
@@ -318,12 +360,19 @@ function MemberItem({
 
         {/* Name with friend indicator */}
         <span className="text-nodes-text text-sm truncate flex items-center gap-1">
-          {displayName}
-          {isMe && <span className="text-nodes-text-muted ml-1">(you)</span>}
-          {!isMe && isFriend && (
-            <svg className="w-3 h-3 text-nodes-accent" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
+          {isNameLoading ? (
+            <NameSkeleton width="w-20" />
+          ) : (
+            <>
+              {role === "owner" && <span title="Node Owner">👑</span>}
+              {displayName}
+              {isMe && <span className="text-nodes-text-muted ml-1">(you)</span>}
+              {!isMe && isFriend && (
+                <svg className="w-3 h-3 text-nodes-accent" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              )}
+            </>
           )}
         </span>
       </button>

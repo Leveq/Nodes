@@ -127,24 +127,35 @@ export class GunConnectionMonitor implements IConnectionMonitor {
     try {
       gun = GunInstanceManager.get();
     } catch {
-      // Gun not initialized — stay disconnected, will retry on next ping
-      this.updateState({
-        connected: false,
-        status: "disconnected",
-        peerCount: 0,
-      });
+      // Gun not initialized yet — keep status as "connecting", will retry on next ping
+      if (this.state.status !== "connecting") {
+        this.updateState({
+          connected: false,
+          status: "connecting",
+          peerCount: 0,
+        });
+      }
       return;
     }
 
     const timestamp = Date.now();
     let resolved = false;
+    
+    // If this is the first check (status is "connecting"), stay in that state
+    // rather than jumping to "disconnected" on timeout
+    const isInitialCheck = this.state.status === "connecting";
 
     // Listen for our own write
     const timeout = setTimeout(() => {
       if (resolved) return;
       resolved = true;
 
-      // Timeout — likely disconnected
+      // Timeout — likely disconnected (but show "connecting" for initial attempt)
+      if (isInitialCheck && this.state.reconnectAttempts === 0) {
+        // Stay in "connecting" state for first attempt, just retry
+        return;
+      }
+      
       this.updateState({
         connected: false,
         status: "disconnected",

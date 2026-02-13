@@ -1,26 +1,45 @@
 import { useIdentityStore } from "../stores/identity-store";
 import { ConnectionStatus, Badge } from "../components/ui";
 import { CopyablePublicKey } from "../components/ui/CopyablePublicKey";
+import { getStatusColor } from "../utils/status";
+import type { UserStatus } from "@nodes/core";
 
 interface StatusBarProps {
   onOpenSettings?: () => void;
+  onOpenProfile?: () => void;
 }
 
 /**
  * StatusBar displays connection state and current user info
  * at the bottom of the app shell.
  */
-export function StatusBar({ onOpenSettings }: StatusBarProps) {
+export function StatusBar({ onOpenSettings, onOpenProfile }: StatusBarProps) {
   const publicKey = useIdentityStore((s) => s.publicKey);
   const profile = useIdentityStore((s) => s.profile);
 
   if (!publicKey) return null;
 
+  const status = (profile?.data.status as UserStatus) || "online";
+  const initial = profile?.data.displayName?.[0]?.toUpperCase() || "?";
+
   return (
     <div className="h-8 bg-nodes-surface border-t border-nodes-border flex items-center justify-between px-4 text-xs shrink-0">
       <ConnectionStatus />
       <div className="flex items-center gap-3">
-        <span className="text-nodes-text">{profile?.data.displayName}</span>
+        {/* Clickable profile avatar and name */}
+        <button
+          onClick={onOpenProfile}
+          className="flex items-center gap-2 hover:bg-nodes-bg/50 rounded px-1.5 py-0.5 -ml-1.5 transition-colors"
+          title="Edit Profile"
+        >
+          <div className="relative">
+            <div className="w-5 h-5 rounded-full bg-nodes-primary/20 flex items-center justify-center">
+              <span className="text-nodes-primary font-medium text-[10px]">{initial}</span>
+            </div>
+            <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-nodes-surface ${getStatusColor(status)}`} />
+          </div>
+          <span className="text-nodes-text">{profile?.data.displayName}</span>
+        </button>
         <CopyablePublicKey publicKey={publicKey} />
         {profile?.data.visibility && (
           <Badge variant={profile.data.visibility} size="sm" />

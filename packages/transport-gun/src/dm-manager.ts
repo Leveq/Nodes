@@ -134,7 +134,8 @@ export class DMManager {
 
   /**
    * Subscribe to real-time DM messages in a conversation.
-   * Decrypts each message as it arrives.
+   * Decrypts each message as it arrives with throttling to prevent
+   * the "syncing 1K+ records" warning.
    */
   subscribe(
     conversationId: string,
@@ -144,6 +145,19 @@ export class DMManager {
   ): Unsubscribe {
     const gun = GunInstanceManager.get();
     const seenIds = new Set<string>();
+    
+    // Throttle: collect messages and flush periodically
+    let pendingMessages: TransportMessage[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingMessages;
+      pendingMessages = [];
+      for (const msg of toProcess) {
+        handler(msg);
+      }
+    };
 
     const ref = gun
       .get("dms")
@@ -175,14 +189,21 @@ export class DMManager {
             signature: data.signature,
           };
 
-          handler(message);
+          // Queue message and schedule flush
+          pendingMessages.push(message);
+          if (flushTimer === null) {
+            flushTimer = setTimeout(flush, 16); // ~60fps
+          }
         } catch (err) {
           console.error("Failed to decrypt DM:", err);
           // Skip messages we can't decrypt (shouldn't happen in normal flow)
         }
       });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 
   /**
@@ -298,12 +319,25 @@ export class DMManager {
     handler: (conversation: DMConversation) => void
   ): Unsubscribe {
     const user = GunInstanceManager.user();
+    
+    // Throttle: collect conversations and flush periodically
+    let pendingConversations: DMConversation[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingConversations;
+      pendingConversations = [];
+      for (const conv of toProcess) {
+        handler(conv);
+      }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ref = user.get("dms").map().on((data: any) => {
       if (!data || !data.conversationId) return;
 
-      handler({
+      const conversation: DMConversation = {
         id: data.conversationId,
         recipientKey: data.recipientKey || "",
         startedAt: data.startedAt || 0,
@@ -311,10 +345,19 @@ export class DMManager {
         lastMessagePreview: "",
         unreadCount: 0,
         lastReadAt: data.lastReadAt || 0,
-      });
+      };
+
+      // Queue and schedule flush
+      pendingConversations.push(conversation);
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flush, 16);
+      }
     });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 
   /**

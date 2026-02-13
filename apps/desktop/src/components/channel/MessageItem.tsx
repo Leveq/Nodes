@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { TransportMessage } from "@nodes/transport";
 import { useDisplayName } from "../../hooks/useDisplayName";
 import { formatMessageTime, formatFullTimestamp } from "../../utils/time";
+import { NameSkeleton } from "../ui";
 
 interface MessageItemProps {
   message: TransportMessage;
@@ -26,10 +27,10 @@ export const MessageItem = memo(function MessageItem({
   message,
   isCompact,
 }: MessageItemProps) {
-  const { displayName } = useDisplayName(message.authorKey);
+  const { displayName, isLoading } = useDisplayName(message.authorKey);
 
   // Get first letter for avatar placeholder
-  const avatarLetter = displayName.charAt(0).toUpperCase();
+  const avatarLetter = isLoading ? "" : displayName.charAt(0).toUpperCase();
 
   if (isCompact) {
     return (
@@ -61,14 +62,22 @@ export const MessageItem = memo(function MessageItem({
     <div className="flex items-start px-4 py-2 hover:bg-nodes-surface/50">
       {/* Avatar */}
       <div className="w-10 h-10 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0 mr-3 text-nodes-primary font-medium">
-        {avatarLetter}
+        {isLoading ? (
+          <div className="w-4 h-4 animate-pulse rounded bg-nodes-border/50" />
+        ) : (
+          avatarLetter
+        )}
       </div>
 
       {/* Content area */}
       <div className="flex-1 min-w-0">
         {/* Header: author name + timestamp */}
         <div className="flex items-baseline gap-2">
-          <span className="font-medium text-nodes-text">{displayName}</span>
+          {isLoading ? (
+            <NameSkeleton width="w-20" />
+          ) : (
+            <span className="font-medium text-nodes-text">{displayName}</span>
+          )}
           <span
             className="text-xs text-nodes-text-muted"
             title={formatFullTimestamp(message.timestamp)}

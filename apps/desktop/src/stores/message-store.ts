@@ -11,11 +11,15 @@ interface MessageState {
   // Unread tracking: channelId → count
   unreadCounts: Record<string, number>;
 
+  // Loading state: which channels are currently loading history
+  loadingChannels: Record<string, boolean>;
+
   // Currently active subscriptions
   activeSubscription: Unsubscribe | null;
   activeTypingSub: Unsubscribe | null;
 
   // Actions
+  setLoading: (channelId: string, loading: boolean) => void;
   setMessages: (channelId: string, messages: TransportMessage[]) => void;
   addMessage: (channelId: string, message: TransportMessage) => void;
   setSubscription: (unsub: Unsubscribe | null) => void;
@@ -44,8 +48,15 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   messages: {},
   typingUsers: {},
   unreadCounts: {},
+  loadingChannels: {},
   activeSubscription: null,
   activeTypingSub: null,
+
+  setLoading: (channelId, loading) => {
+    set((state) => ({
+      loadingChannels: { ...state.loadingChannels, [channelId]: loading },
+    }));
+  },
 
   setMessages: (channelId, messages) => {
     set((state) => ({

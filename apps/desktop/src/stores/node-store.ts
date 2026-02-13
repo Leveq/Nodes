@@ -10,6 +10,7 @@ interface NodeState {
   activeChannelId: string | null;
   channels: Record<string, NodeChannel[]>; // nodeId → channels
   members: Record<string, NodeMember[]>; // nodeId → members
+  loadingChannels: Record<string, boolean>; // nodeId → loading state
   isLoading: boolean;
 
   // Actions
@@ -46,6 +47,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   activeChannelId: null,
   channels: {},
   members: {},
+  loadingChannels: {},
   isLoading: false,
 
   loadUserNodes: async () => {
@@ -165,10 +167,15 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   setActiveNode: (nodeId) => {
-    set({ activeNodeId: nodeId, activeChannelId: null });
+    // Check if we have cached channels for this node
+    const cachedChannels = nodeId ? get().channels[nodeId] : null;
+    const firstChannelId = cachedChannels?.[0]?.id ?? null;
+
+    // If we have cached channels, auto-select first immediately
+    set({ activeNodeId: nodeId, activeChannelId: firstChannelId });
 
     if (nodeId) {
-      // Load channels and members for the active Node
+      // Load channels and members for the active Node (will refresh cache)
       get().loadChannels(nodeId);
       get().loadMembers(nodeId);
     }
@@ -179,10 +186,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   loadChannels: async (nodeId) => {
+    // Mark as loading (only if not already cached)
+    const hasCached = (get().channels[nodeId]?.length ?? 0) > 0;
+    if (!hasCached) {
+      set((state) => ({
+        loadingChannels: { ...state.loadingChannels, [nodeId]: true },
+      }));
+    }
+
     try {
       const channels = await nodeManager.getChannels(nodeId);
       set((state) => ({
         channels: { ...state.channels, [nodeId]: channels },
+        loadingChannels: { ...state.loadingChannels, [nodeId]: false },
       }));
 
       // Auto-select first channel if none active
@@ -190,6 +206,9 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         set({ activeChannelId: channels[0].id });
       }
     } catch (err: unknown) {
+      set((state) => ({
+        loadingChannels: { ...state.loadingChannels, [nodeId]: false },
+      }));
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load channels: ${message}`);
     }

@@ -20,13 +20,14 @@ const EMPTY_MESSAGES: TransportMessage[] = [];
 interface DMViewProps {
   conversationId: string;
   recipientKey: string;
+  onUserClick?: (userId: string) => void;
 }
 
 /**
  * DMView is the main view for a direct message conversation.
  * Similar to ChannelView but uses end-to-end encrypted messaging.
  */
-export function DMView({ conversationId, recipientKey }: DMViewProps) {
+export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProps) {
   const messages = useDMStore((s) => s.messages[conversationId] ?? EMPTY_MESSAGES);
   const isLoading = useDMStore((s) => s.isLoading);
   const keypair = useIdentityStore((s) => s.keypair);
@@ -119,7 +120,11 @@ export function DMView({ conversationId, recipientKey }: DMViewProps) {
   if (messages.length === 0 && !isLoading) {
     return (
       <div className="flex flex-col h-full">
-        <DMHeader recipientName={recipientName} recipientKey={recipientKey} />
+        <DMHeader 
+          recipientName={recipientName} 
+          recipientKey={recipientKey} 
+          onUserClick={() => onUserClick?.(recipientKey)}
+        />
         <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
           <div className="w-20 h-20 rounded-full bg-nodes-surface flex items-center justify-center mb-4">
             <span className="text-3xl font-bold text-nodes-primary">
@@ -148,7 +153,11 @@ export function DMView({ conversationId, recipientKey }: DMViewProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <DMHeader recipientName={recipientName} recipientKey={recipientKey} />
+      <DMHeader 
+        recipientName={recipientName} 
+        recipientKey={recipientKey} 
+        onUserClick={() => onUserClick?.(recipientKey)}
+      />
       
       {/* Message list */}
       <div
@@ -221,18 +230,28 @@ export function DMView({ conversationId, recipientKey }: DMViewProps) {
 interface DMHeaderProps {
   recipientName: string;
   recipientKey: string;
+  onUserClick?: () => void;
 }
 
-function DMHeader({ recipientName, recipientKey }: DMHeaderProps) {
+function DMHeader({ recipientName, recipientKey: _recipientKey, onUserClick }: DMHeaderProps) {
   return (
     <div className="h-12 px-4 flex items-center gap-3 border-b border-nodes-border shrink-0">
-      <div className="w-8 h-8 rounded-full bg-nodes-primary/20 flex items-center justify-center">
+      <button
+        onClick={onUserClick}
+        className="w-8 h-8 rounded-full bg-nodes-primary/20 flex items-center justify-center hover:ring-2 hover:ring-nodes-primary/50 transition-all"
+        title="View Profile"
+      >
         <span className="text-nodes-primary font-medium">
           {recipientName[0]?.toUpperCase() || "?"}
         </span>
-      </div>
+      </button>
       <div>
-        <h2 className="font-semibold text-nodes-text">{recipientName}</h2>
+        <button 
+          onClick={onUserClick}
+          className="font-semibold text-nodes-text hover:underline"
+        >
+          {recipientName}
+        </button>
       </div>
       <div className="ml-auto flex items-center gap-1 text-nodes-text-muted text-xs">
         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">

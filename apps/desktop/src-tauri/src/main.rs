@@ -3,7 +3,7 @@
 mod commands;
 mod tray;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn main() {
     tauri::Builder::default()
@@ -11,18 +11,40 @@ fn main() {
             // Create the system tray
             tray::create_tray(app.handle())?;
 
-            // Set up window close handler to minimize to tray instead of quitting
-            let main_window = app.get_webview_window("main").unwrap();
-            main_window.on_window_event({
-                let window = main_window.clone();
-                move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Hide the window instead of closing it
-                        api.prevent_close();
-                        let _ = window.hide();
+            // Minimize to tray on close (production behavior)
+            // Set to false for debug mode (quit on close)
+            let minimize_to_tray = true;
+
+            if minimize_to_tray {
+                let main_window = app.get_webview_window("main").unwrap();
+                main_window.on_window_event({
+                    let window = main_window.clone();
+                    move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            // Hide the window instead of closing it
+                            api.prevent_close();
+                            let _ = window.hide();
+                        }
                     }
-                }
-            });
+                });
+            } else {
+                // Debug behavior: quit on close
+                let main_window = app.get_webview_window("main").unwrap();
+                let app_handle = app.handle().clone();
+                main_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        // Emit event for frontend cleanup
+                        let _ = app_handle.emit("app:before-quit", ());
+                        // Allow close to proceed after brief delay for cleanup
+                        api.prevent_close();
+                        let handle = app_handle.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            handle.exit(0);
+                        });
+                    }
+                });
+            }
 
             Ok(())
         })

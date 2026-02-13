@@ -78,10 +78,10 @@ export function NodeSidebar() {
       {/* Create Node button */}
       <button
         onClick={() => setShowCreateModal(true)}
-        className="w-12 h-12 rounded-full bg-nodes-surface hover:bg-nodes-accent hover:text-white transition-all duration-200 flex items-center justify-center text-nodes-accent text-2xl font-light group"
+        className="w-12 h-12 rounded-full bg-nodes-surface hover:bg-nodes-accent hover:text-white transition-all duration-200 flex items-center justify-center text-nodes-accent text-2xl font-light"
         title="Create a Node"
       >
-        <span className="group-hover:rotate-90 transition-transform duration-200">+</span>
+        +
       </button>
 
       {/* Join Node button */}

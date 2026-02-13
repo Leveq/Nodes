@@ -65,3 +65,12 @@ export function MemberListSkeleton() {
     </div>
   );
 }
+
+/**
+ * Inline text skeleton for names that are still loading.
+ */
+export function NameSkeleton({ width = "w-20" }: { width?: string }) {
+  return (
+    <span className={`inline-block ${width} h-4 animate-pulse rounded bg-nodes-border/50`} />
+  );
+}

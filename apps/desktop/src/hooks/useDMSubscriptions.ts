@@ -7,6 +7,14 @@ import type { KeyPair } from "@nodes/crypto";
 
 const dmManager = new DMManager();
 
+// Pending message type for batching
+interface PendingDMMessage {
+  conversationId: string;
+  recipientKey: string;
+  message: TransportMessage;
+  myPublicKey: string;
+}
+
 /**
  * Hook that subscribes to all DM conversations for unread tracking.
  * When a new message arrives in any conversation (not the active one),
@@ -28,13 +36,12 @@ export function useDMSubscriptions() {
   const pendingUnreadRef = useRef<Map<string, number>>(new Map());
   // Track lastReadAt per conversation for calculating initial unread
   const lastReadAtRef = useRef<Map<string, number>>(new Map());
+  // Batching: pending messages to process
+  const pendingMessagesRef = useRef<PendingDMMessage[]>([]);
+  const rafIdRef = useRef<number | null>(null);
 
-  // Handle message with current state (no stale closures)
-  const handleMessage = useCallback((conversationId: string, recipientKey: string, message: TransportMessage, myPublicKey: string) => {
-    // Skip if we've already processed this message
-    if (seenMessagesRef.current.has(message.id)) return;
-    seenMessagesRef.current.add(message.id);
-
+  // Process a single message (extracted for batching)
+  const processMessage = useCallback((conversationId: string, recipientKey: string, message: TransportMessage, myPublicKey: string) => {
     const currentState = useDMStore.getState();
     
     // Double-check it's not already in the store
@@ -83,6 +90,32 @@ export function useDMSubscriptions() {
       });
     }
   }, []);
+
+  // Flush pending messages in batch
+  const flushPending = useCallback(() => {
+    rafIdRef.current = null;
+    const pending = pendingMessagesRef.current;
+    pendingMessagesRef.current = [];
+    
+    for (const { conversationId, recipientKey, message, myPublicKey } of pending) {
+      processMessage(conversationId, recipientKey, message, myPublicKey);
+    }
+  }, [processMessage]);
+
+  // Handle message with batching
+  const handleMessage = useCallback((conversationId: string, recipientKey: string, message: TransportMessage, myPublicKey: string) => {
+    // Skip if we've already processed this message
+    if (seenMessagesRef.current.has(message.id)) return;
+    seenMessagesRef.current.add(message.id);
+
+    // Queue for batched processing
+    pendingMessagesRef.current.push({ conversationId, recipientKey, message, myPublicKey });
+
+    // Schedule flush if not already scheduled
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(flushPending);
+    }
+  }, [flushPending]);
 
   useEffect(() => {
     if (!keypair || !publicKey) return;
@@ -192,6 +225,13 @@ export function useDMSubscriptions() {
     const lastRead = lastReadAtRef.current;
     
     return () => {
+      // Cancel any pending batch flush
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      pendingMessagesRef.current = [];
+      
       subs.forEach((unsub) => unsub());
       subs.clear();
       seen.clear();

@@ -78,11 +78,25 @@ export class GunPresenceTransport implements IPresenceTransport {
 
   /**
    * Subscribe to presence changes for a list of users.
+   * Throttled to prevent rapid-fire callbacks.
    */
   subscribe(publicKeys: string[], handler: PresenceHandler): Unsubscribe {
     const gun = GunInstanceManager.get();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const refs: any[] = [];
+    
+    // Throttle: collect presence updates and flush periodically
+    let pendingPresence: PresenceInfo[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingPresence;
+      pendingPresence = [];
+      for (const presence of toProcess) {
+        handler(presence);
+      }
+    };
 
     for (const key of publicKeys) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,25 +112,44 @@ export class GunPresenceTransport implements IPresenceTransport {
           lastSeen: data.lastSeen || 0,
         };
 
-        handler(presence);
+        // Queue and schedule flush
+        pendingPresence.push(presence);
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flush, 16);
+        }
       });
 
       refs.push(ref);
     }
 
     return () => {
+      if (flushTimer) clearTimeout(flushTimer);
       refs.forEach((ref) => ref.off());
     };
   }
 
   /**
    * Subscribe to typing indicators in a channel.
+   * Throttled to prevent rapid-fire callbacks.
    */
   subscribeTyping(
     channelId: string,
     handler: (publicKey: string, isTyping: boolean) => void
   ): Unsubscribe {
     const gun = GunInstanceManager.get();
+    
+    // Throttle: collect typing updates and flush periodically
+    let pendingTyping: Array<{ publicKey: string; isTyping: boolean }> = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingTyping;
+      pendingTyping = [];
+      for (const { publicKey, isTyping } of toProcess) {
+        handler(publicKey, isTyping);
+      }
+    };
 
     const ref = gun
       .get("typing")
@@ -129,10 +162,15 @@ export class GunPresenceTransport implements IPresenceTransport {
         // Auto-expire typing after TYPING_TIMEOUT
         const isExpired = Date.now() - (data.timestamp || 0) > TYPING_TIMEOUT;
 
-        handler(key, data.isTyping && !isExpired);
+        // Queue and schedule flush
+        pendingTyping.push({ publicKey: key, isTyping: data.isTyping && !isExpired });
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flush, 16);
+        }
       });
 
     return () => {
+      if (flushTimer) clearTimeout(flushTimer);
       ref.off();
     };
   }

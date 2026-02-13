@@ -16,6 +16,9 @@ export function MainContent({ showMembers, onToggleMembers }: MainContentProps) 
   const activeChannelId = useNodeStore((s) => s.activeChannelId);
   const nodes = useNodeStore((s) => s.nodes);
   const channels = useNodeStore((s) => s.channels);
+  const loadingChannels = useNodeStore((s) => s.loadingChannels);
+  
+  const isLoadingChannels = activeNodeId ? loadingChannels[activeNodeId] ?? false : false;
   
   // Compute active node/channel instead of using methods that call get()
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
@@ -42,7 +45,7 @@ export function MainContent({ showMembers, onToggleMembers }: MainContentProps) 
     );
   }
 
-  // No channel selected
+  // No channel selected - show loading spinner if channels are loading
   if (!activeChannelId || !activeChannel) {
     return (
       <div className="flex-1 flex flex-col bg-nodes-bg">
@@ -52,7 +55,11 @@ export function MainContent({ showMembers, onToggleMembers }: MainContentProps) 
           onToggleMembers={onToggleMembers}
         />
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-nodes-text-muted">Select a channel to start chatting.</p>
+          {isLoadingChannels ? (
+            <div className="w-8 h-8 border-2 border-nodes-accent border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <p className="text-nodes-text-muted">Select a channel to start chatting.</p>
+          )}
         </div>
       </div>
     );

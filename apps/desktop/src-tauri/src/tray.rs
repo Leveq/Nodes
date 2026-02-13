@@ -16,9 +16,10 @@ pub fn create_tray<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
     
     let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
-    // Build the tray icon
-    let _tray = TrayIconBuilder::new()
+    // Build the tray icon with a unique ID to prevent duplicates
+    let _tray = TrayIconBuilder::with_id("nodes-main-tray")
         .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("Nodes")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {

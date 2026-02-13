@@ -461,20 +461,42 @@ export class NodeManager {
     handler: (member: NodeMember) => void
   ): () => void {
     const gun = GunInstanceManager.get();
+    
+    // Throttle: collect members and flush periodically
+    let pendingMembers: NodeMember[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingMembers;
+      pendingMembers = [];
+      for (const member of toProcess) {
+        handler(member);
+      }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ref = gun.get("nodes").get(nodeId).get("members").map().on((data: any) => {
       if (!data || !data.publicKey) return;
 
-      handler({
+      const member: NodeMember = {
         publicKey: data.publicKey,
         displayName: "",
         joinedAt: data.joinedAt || 0,
         role: data.role || "member",
-      });
+      };
+
+      // Queue and schedule flush
+      pendingMembers.push(member);
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flush, 16);
+      }
     });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 
   /**
@@ -485,12 +507,25 @@ export class NodeManager {
     handler: (channel: NodeChannel) => void
   ): () => void {
     const gun = GunInstanceManager.get();
+    
+    // Throttle: collect channels and flush periodically
+    let pendingChannels: NodeChannel[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingChannels;
+      pendingChannels = [];
+      for (const channel of toProcess) {
+        handler(channel);
+      }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ref = gun.get("nodes").get(nodeId).get("channels").map().on((data: any) => {
       if (!data || !data.id) return;
 
-      handler({
+      const channel: NodeChannel = {
         id: data.id,
         name: data.name || "",
         type: data.type || "text",
@@ -498,10 +533,19 @@ export class NodeManager {
         nodeId: data.nodeId || nodeId,
         createdAt: data.createdAt || 0,
         position: data.position ?? 0,
-      });
+      };
+
+      // Queue and schedule flush
+      pendingChannels.push(channel);
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flush, 16);
+      }
     });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 }
 

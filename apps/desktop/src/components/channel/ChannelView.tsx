@@ -3,6 +3,7 @@ import type { TransportMessage } from "@nodes/transport";
 import { useTransport } from "../../providers/TransportProvider";
 import { useMessageStore } from "../../stores/message-store";
 import { useIdentityStore } from "../../stores/identity-store";
+import { createMessageBatcher } from "../../utils/message-batcher";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { TypingIndicator } from "./TypingIndicator";
@@ -43,24 +44,37 @@ export function ChannelView({
       removeTypingUser,
       clearUnread,
       clearChannel,
+      setLoading,
+      messages: existingMessages,
     } = useMessageStore.getState();
+
+    // Create batcher to prevent Gun's rapid updates from flooding React
+    const batcher = createMessageBatcher(addMessage);
 
     // Clean up previous subscriptions
     clearChannel(channelId);
+
+    // Only show loading spinner if we don't have cached messages
+    const hasCachedMessages = (existingMessages[channelId]?.length ?? 0) > 0;
+    if (!hasCachedMessages) {
+      setLoading(channelId, true);
+    }
 
     // Load message history
     transport.message
       .getHistory(channelId, { limit: 50 })
       .then((history: TransportMessage[]) => {
         setMessages(channelId, history);
+        setLoading(channelId, false);
       })
       .catch((err: Error) => {
         console.error("Failed to load message history:", err);
+        setLoading(channelId, false);
       });
 
-    // Subscribe to new messages
+    // Subscribe to new messages (batched to avoid flooding React)
     const messageUnsub = transport.message.subscribe(channelId, (message: TransportMessage) => {
-      addMessage(channelId, message);
+      batcher.add(channelId, message);
     });
     setSubscription(messageUnsub);
 
@@ -90,6 +104,7 @@ export function ChannelView({
 
     // Cleanup on unmount or channel change
     return () => {
+      batcher.cancel();
       messageUnsub();
       typingUnsub();
     };

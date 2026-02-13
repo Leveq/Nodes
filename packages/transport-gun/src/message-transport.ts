@@ -107,11 +107,25 @@ export class GunMessageTransport implements IMessageTransport {
 
   /**
    * Subscribe to real-time messages in a channel.
-   * Uses Gun's .map().on() for reactive updates.
+   * Uses Gun's .map().on() for reactive updates with throttling
+   * to prevent the "syncing 1K+ records" warning.
    */
   subscribe(channelId: string, handler: MessageHandler): Unsubscribe {
     const gun = GunInstanceManager.get();
     const seenIds = new Set<string>();
+    
+    // Throttle: collect messages and flush periodically
+    let pendingMessages: TransportMessage[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingMessages;
+      pendingMessages = [];
+      for (const msg of toProcess) {
+        handler(msg);
+      }
+    };
 
     const ref = gun
       .get("channels")
@@ -138,11 +152,16 @@ export class GunMessageTransport implements IMessageTransport {
           editedAt: data.editedAt,
         };
 
-        handler(message);
+        // Queue message and schedule flush
+        pendingMessages.push(message);
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flush, 16); // ~60fps
+        }
       });
 
     // Return unsubscribe function
     return () => {
+      if (flushTimer) clearTimeout(flushTimer);
       ref.off();
     };
   }

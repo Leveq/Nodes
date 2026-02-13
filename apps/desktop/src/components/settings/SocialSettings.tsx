@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSocialStore } from "../../stores/social-store";
 import { useToastStore } from "../../stores/toast-store";
 import { ProfileManager } from "@nodes/transport-gun";
+import { NameSkeleton } from "../ui";
 
 const profileManager = new ProfileManager();
 
@@ -18,6 +19,12 @@ export function SocialSettings() {
   const addToast = useToastStore((s) => s.addToast);
 
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+
+  // Check if a name is still loading (not yet resolved)
+  const isNameLoading = (publicKey: string) => !resolvedNames[publicKey];
+
+  // Get resolved name or undefined if loading
+  const getName = (publicKey: string) => resolvedNames[publicKey];
 
   // Resolve display names
   useEffect(() => {
@@ -106,8 +113,9 @@ export function SocialSettings() {
         ) : (
           <div className="space-y-2">
             {friends.map((friend) => {
-              const name = resolvedNames[friend.publicKey] || friend.publicKey.slice(0, 8);
-              const initial = name[0]?.toUpperCase() || "?";
+              const name = getName(friend.publicKey);
+              const loading = isNameLoading(friend.publicKey);
+              const initial = name?.[0]?.toUpperCase() || "?";
 
               return (
                 <div
@@ -115,16 +123,22 @@ export function SocialSettings() {
                   className="flex items-center gap-3 px-3 py-2 bg-nodes-bg rounded-lg"
                 >
                   <div className="w-10 h-10 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0">
-                    <span className="text-nodes-primary font-medium">{initial}</span>
+                    {loading ? (
+                      <span className="w-4 h-4 animate-pulse rounded bg-nodes-primary/30" />
+                    ) : (
+                      <span className="text-nodes-primary font-medium">{initial}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-nodes-text font-medium truncate">{name}</div>
+                    <div className="text-nodes-text font-medium truncate">
+                      {loading ? <NameSkeleton width="w-24" /> : name}
+                    </div>
                     <div className="text-xs text-nodes-text-muted">
                       Friends since {formatDate(friend.addedAt)}
                     </div>
                   </div>
                   <button
-                    onClick={() => handleUnfriend(friend.publicKey, name)}
+                    onClick={() => handleUnfriend(friend.publicKey, name || friend.publicKey.slice(0, 8))}
                     className="px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                   >
                     Unfriend
@@ -144,8 +158,9 @@ export function SocialSettings() {
           </h2>
           <div className="space-y-2">
             {outgoingRequests.map((request) => {
-              const name = resolvedNames[request.toKey] || request.toKey.slice(0, 8);
-              const initial = name[0]?.toUpperCase() || "?";
+              const name = getName(request.toKey);
+              const loading = isNameLoading(request.toKey);
+              const initial = name?.[0]?.toUpperCase() || "?";
 
               return (
                 <div
@@ -153,16 +168,22 @@ export function SocialSettings() {
                   className="flex items-center gap-3 px-3 py-2 bg-nodes-bg rounded-lg"
                 >
                   <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center shrink-0">
-                    <span className="text-yellow-500 font-medium">{initial}</span>
+                    {loading ? (
+                      <span className="w-4 h-4 animate-pulse rounded bg-yellow-500/30" />
+                    ) : (
+                      <span className="text-yellow-500 font-medium">{initial}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-nodes-text font-medium truncate">{name}</div>
+                    <div className="text-nodes-text font-medium truncate">
+                      {loading ? <NameSkeleton width="w-24" /> : name}
+                    </div>
                     <div className="text-xs text-nodes-text-muted">
                       Sent {formatDate(request.createdAt)}
                     </div>
                   </div>
                   <button
-                    onClick={() => handleCancelRequest(request.id, name)}
+                    onClick={() => handleCancelRequest(request.id, name || request.toKey.slice(0, 8))}
                     className="px-3 py-1.5 text-sm text-nodes-text-muted hover:text-nodes-text hover:bg-nodes-surface rounded-lg transition-colors"
                   >
                     Cancel
@@ -189,8 +210,9 @@ export function SocialSettings() {
         ) : (
           <div className="space-y-2">
             {blockedUsers.map((blocked) => {
-              const name = resolvedNames[blocked.publicKey] || blocked.publicKey.slice(0, 8);
-              const initial = name[0]?.toUpperCase() || "?";
+              const name = getName(blocked.publicKey);
+              const loading = isNameLoading(blocked.publicKey);
+              const initial = name?.[0]?.toUpperCase() || "?";
 
               return (
                 <div
@@ -198,16 +220,22 @@ export function SocialSettings() {
                   className="flex items-center gap-3 px-3 py-2 bg-nodes-bg rounded-lg"
                 >
                   <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
-                    <span className="text-red-400 font-medium">{initial}</span>
+                    {loading ? (
+                      <span className="w-4 h-4 animate-pulse rounded bg-red-500/30" />
+                    ) : (
+                      <span className="text-red-400 font-medium">{initial}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-nodes-text font-medium truncate">{name}</div>
+                    <div className="text-nodes-text font-medium truncate">
+                      {loading ? <NameSkeleton width="w-24" /> : name}
+                    </div>
                     <div className="text-xs text-nodes-text-muted">
                       Blocked {formatDate(blocked.blockedAt)}
                     </div>
                   </div>
                   <button
-                    onClick={() => handleUnblock(blocked.publicKey, name)}
+                    onClick={() => handleUnblock(blocked.publicKey, name || blocked.publicKey.slice(0, 8))}
                     className="px-3 py-1.5 text-sm text-nodes-text-muted hover:text-nodes-text hover:bg-nodes-surface rounded-lg transition-colors"
                   >
                     Unblock

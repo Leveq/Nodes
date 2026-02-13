@@ -12,13 +12,14 @@ import type { KeyPair } from "@nodes/crypto";
 interface ProfilePopupProps {
   publicKey: string;
   onClose: () => void;
+  onEditProfile?: () => void;
   position?: { x: number; y: number };
 }
 
 /**
  * Profile popup card shown when clicking any user's name/avatar.
  */
-export function ProfilePopup({ publicKey, onClose, position }: ProfilePopupProps) {
+export function ProfilePopup({ publicKey, onClose, onEditProfile, position }: ProfilePopupProps) {
   const myPublicKey = useIdentityStore((s) => s.publicKey);
   const keypair = useIdentityStore((s) => s.keypair);
   const myProfile = useIdentityStore((s) => s.profile);
@@ -220,7 +221,19 @@ export function ProfilePopup({ publicKey, onClose, position }: ProfilePopupProps
           </div>
 
           {/* Actions */}
-          {!isOwnProfile && (
+          {isOwnProfile ? (
+            <div className="p-3 border-t border-nodes-border">
+              <button
+                onClick={() => {
+                  onClose();
+                  onEditProfile?.();
+                }}
+                className="w-full bg-nodes-primary hover:bg-nodes-primary/90 text-white py-2 rounded-lg font-medium text-sm transition-colors"
+              >
+                Edit Profile
+              </button>
+            </div>
+          ) : (
             <div className="p-3 border-t border-nodes-border flex items-center gap-2">
               <button
                 onClick={handleSendMessage}

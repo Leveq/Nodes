@@ -14,6 +14,21 @@ const PUBLIC_PEERS = [
 ];
 
 /**
+ * Suppress Gun's verbose "syncing 1K+ records" warning.
+ * This warning is informational and doesn't indicate a problem -
+ * Gun fires it when rapid .map().on() callbacks occur, which is normal
+ * for batch data loading.
+ */
+const originalWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+  const msg = args[0];
+  if (typeof msg === "string" && msg.includes("syncing 1K+ records")) {
+    return; // Suppress this specific warning
+  }
+  originalWarn.apply(console, args);
+};
+
+/**
  * Singleton GunJS instance manager.
  * Centralizes Gun initialization and provides access to the gun instance
  * and SEA module throughout the application.

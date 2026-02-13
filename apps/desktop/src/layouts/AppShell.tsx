@@ -19,6 +19,7 @@ import { DMSidebar, DMView } from "../components/dm";
 import { RequestsPanel } from "../components/social";
 import { ProfilePopup } from "../components/profile";
 import { SettingsPage } from "../components/settings";
+import { EditProfileModal } from "../components/modals";
 import type { DMConversation } from "@nodes/core";
 
 /**
@@ -45,16 +46,19 @@ export function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   // Keyboard shortcut handlers
   const handleCloseModal = useCallback(() => {
     if (showSettings) {
       setShowSettings(false);
+    } else if (showEditProfile) {
+      setShowEditProfile(false);
     } else if (showProfile) {
       setShowProfile(false);
       setProfileUserId(null);
     }
-  }, [showSettings, showProfile]);
+  }, [showSettings, showProfile, showEditProfile]);
 
   const handleOpenSettings = useCallback(() => {
     setShowSettings(true);
@@ -138,8 +142,8 @@ export function AppShell() {
 
         {/* Secondary sidebar - changes based on view mode */}
         {viewMode === "node" && <ChannelSidebar />}
-        {viewMode === "dm" && <DMSidebar />}
-        {viewMode === "friends" && <RequestsPanel />}
+        {viewMode === "dm" && <DMSidebar onUserClick={openUserProfile} />}
+        {viewMode === "friends" && <RequestsPanel onUserClick={openUserProfile} />}
 
         {/* Main content area - changes based on view mode */}
         {viewMode === "node" && (
@@ -154,6 +158,7 @@ export function AppShell() {
               <DMView
                 conversationId={activeConversation.id}
                 recipientKey={activeConversation.recipientKey}
+                onUserClick={openUserProfile}
               />
             ) : (
               <DMEmptyState />
@@ -167,11 +172,19 @@ export function AppShell() {
       </div>
 
       {/* Status bar / User panel */}
-      <StatusBar onOpenSettings={() => setShowSettings(true)} />
+      <StatusBar 
+        onOpenSettings={() => setShowSettings(true)} 
+        onOpenProfile={() => setShowEditProfile(true)}
+      />
 
       {/* Settings overlay */}
       {showSettings && (
         <SettingsPage onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Edit profile modal */}
+      {showEditProfile && (
+        <EditProfileModal onClose={() => setShowEditProfile(false)} />
       )}
 
       {/* Profile popup for viewing other users */}
@@ -182,6 +195,7 @@ export function AppShell() {
             setShowProfile(false);
             setProfileUserId(null);
           }}
+          onEditProfile={() => setShowEditProfile(true)}
         />
       )}
     </div>

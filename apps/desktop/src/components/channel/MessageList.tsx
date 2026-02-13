@@ -33,6 +33,7 @@ export function MessageList({
   channelTopic,
 }: MessageListProps) {
   const messages = useMessageStore((s) => s.messages[channelId] ?? EMPTY_MESSAGES);
+  const isLoading = useMessageStore((s) => s.loadingChannels[channelId] ?? false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showNewMessagesBanner, setShowNewMessagesBanner] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -96,6 +97,15 @@ export function MessageList({
   useEffect(() => {
     scrollToBottom(false);
   }, [channelId]); // Scroll when channel changes
+
+  // Loading state
+  if (isLoading && messages.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-nodes-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // Empty state
   if (messages.length === 0) {

@@ -199,18 +199,31 @@ export class SocialManager {
   /**
    * Subscribe to changes on a specific request.
    * Used by the SENDER to detect when their request is accepted/declined.
+   * Throttled to prevent rapid-fire callbacks.
    */
   subscribeRequest(
     requestId: string,
     handler: (request: FriendRequest) => void
   ): Unsubscribe {
     const gun = GunInstanceManager.get();
+    
+    // Throttle: collect request updates and flush periodically
+    let pendingRequest: FriendRequest | null = null;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      if (pendingRequest) {
+        handler(pendingRequest);
+        pendingRequest = null;
+      }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ref = (gun.get("requests") as any).get(requestId).on((data: any) => {
       if (!data || !data.id) return;
 
-      handler({
+      pendingRequest = {
         id: data.id,
         fromKey: data.fromKey || "",
         toKey: data.toKey || "",
@@ -219,10 +232,18 @@ export class SocialManager {
         status: data.status || "pending",
         createdAt: data.createdAt || 0,
         respondedAt: data.respondedAt || null,
-      });
+      };
+      
+      // Schedule flush
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flush, 16);
+      }
     });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 
   /**
@@ -273,12 +294,26 @@ export class SocialManager {
 
   /**
    * Subscribe to our request inbox for real-time incoming request detection.
+   * Throttled to prevent rapid-fire callbacks.
    */
   subscribeInbox(
     myKey: string,
     handler: (requestId: string, fromKey: string) => void
   ): Unsubscribe {
     const gun = GunInstanceManager.get();
+    
+    // Throttle: collect inbox updates and flush periodically
+    let pendingInbox: Array<{ requestId: string; fromKey: string }> = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingInbox;
+      pendingInbox = [];
+      for (const { requestId, fromKey } of toProcess) {
+        handler(requestId, fromKey);
+      }
+    };
 
     const ref = gun
       .get("request-inbox")
@@ -287,10 +322,18 @@ export class SocialManager {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on((data: any) => {
         if (!data || !data.requestId) return;
-        handler(data.requestId, data.fromKey);
+        
+        // Queue and schedule flush
+        pendingInbox.push({ requestId: data.requestId, fromKey: data.fromKey });
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flush, 16);
+        }
       });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 
   // ── Friends ──
@@ -375,22 +418,47 @@ export class SocialManager {
    */
   subscribeFriends(handler: (friend: Friend | null, publicKey: string) => void): Unsubscribe {
     const user = GunInstanceManager.user();
+    
+    // Throttle: collect friend updates and flush periodically
+    let pendingUpdates: Array<{ friend: Friend | null; key: string }> = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingUpdates;
+      pendingUpdates = [];
+      for (const { friend, key } of toProcess) {
+        handler(friend, key);
+      }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ref = (user.get("social") as any).get("friends").map().on((data: any, key: string) => {
+      let friend: Friend | null = null;
+      
       if (!data) {
-        handler(null, key);
-        return;
+        // Deleted friend
+      } else if (data.publicKey) {
+        friend = {
+          publicKey: data.publicKey,
+          addedAt: data.addedAt || 0,
+          nickname: data.nickname,
+        };
+      } else {
+        return; // Invalid data, skip
       }
-      if (!data.publicKey) return;
-      handler({
-        publicKey: data.publicKey,
-        addedAt: data.addedAt || 0,
-        nickname: data.nickname,
-      }, key);
+
+      // Queue and schedule flush
+      pendingUpdates.push({ friend, key });
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flush, 16);
+      }
     });
 
-    return () => ref.off();
+    return () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      ref.off();
+    };
   }
 
   // ── Blocking ──
@@ -492,18 +560,20 @@ export class SocialManager {
    * 3. Creates the DM conversation in the sender's graph
    */
   subscribeOutgoingRequests(
-    myKey: string,
+    _myKey: string,
     onAccepted: (request: FriendRequest) => void,
     onDeclined: (request: FriendRequest) => void
   ): Unsubscribe {
     const user = GunInstanceManager.user();
     const subscriptions: Unsubscribe[] = [];
     const seen = new Set<string>();
-
-    // Watch our outgoing requests list for request IDs
+    
+    // Throttle: collect request data and flush periodically
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ref = (user.get("social") as any).get("outgoingRequests").map().on((data: any) => {
-      if (!data || !data.requestId) return;
+    let pendingRequests: any[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const processRequest = (data: { requestId: string }) => {
       if (seen.has(data.requestId)) return;
       seen.add(data.requestId);
 
@@ -532,9 +602,32 @@ export class SocialManager {
       });
 
       subscriptions.push(sub);
+    };
+    
+    const flush = () => {
+      flushTimer = null;
+      const toProcess = pendingRequests;
+      pendingRequests = [];
+      
+      for (const data of toProcess) {
+        processRequest(data);
+      }
+    };
+
+    // Watch our outgoing requests list for request IDs
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ref = (user.get("social") as any).get("outgoingRequests").map().on((data: any) => {
+      if (!data || !data.requestId) return;
+      
+      // Queue and schedule flush
+      pendingRequests.push(data);
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flush, 16);
+      }
     });
 
     return () => {
+      if (flushTimer) clearTimeout(flushTimer);
       ref.off();
       subscriptions.forEach((s) => s());
     };

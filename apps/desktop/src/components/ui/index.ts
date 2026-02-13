@@ -4,4 +4,4 @@ export { Badge } from "./Badge";
 export { CopyablePublicKey } from "./CopyablePublicKey";
 export { PassphraseStrength } from "./PassphraseStrength";
 export { ConnectionStatus, ConnectionIndicator } from "./ConnectionStatus";
-export { Skeleton, ChannelSkeleton, ChannelListSkeleton, MemberSkeleton, MemberListSkeleton } from "./Skeleton";
+export { Skeleton, ChannelSkeleton, ChannelListSkeleton, MemberSkeleton, MemberListSkeleton, NameSkeleton } from "./Skeleton";
