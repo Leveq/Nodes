@@ -51,6 +51,7 @@ export class GunMessageTransport implements IMessageTransport {
     const authorKey = msgObj.authorKey || pair.pub;
     const content = msgObj.content || "";
     const type = msgObj.type || "text";
+    const attachments = (msgObj as any).attachments; // Optional attachments JSON string
 
     const id = generateMessageId();
     const timestamp = Date.now();
@@ -65,7 +66,7 @@ export class GunMessageTransport implements IMessageTransport {
     });
     const signature = await SEA.sign(dataToSign, pair);
 
-    const fullMessage: TransportMessage = {
+    const fullMessage: TransportMessage & { attachments?: string } = {
       id,
       content,
       timestamp,
@@ -74,6 +75,11 @@ export class GunMessageTransport implements IMessageTransport {
       type,
       signature,
     };
+
+    // Add attachments if present
+    if (attachments) {
+      fullMessage.attachments = attachments;
+    }
 
     // Store in the channel's message graph
     // Using .get(id).put() instead of .set() for deterministic addressing
@@ -92,6 +98,7 @@ export class GunMessageTransport implements IMessageTransport {
             channelId: fullMessage.channelId,
             type: fullMessage.type,
             signature: fullMessage.signature,
+            ...(attachments ? { attachments } : {}),
           },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (ack: any) => {
@@ -136,14 +143,17 @@ export class GunMessageTransport implements IMessageTransport {
       .on((data: any, _key: string) => {
         if (!data || !data.id || data.id === "_" || seenIds.has(data.id)) return;
 
-        // Skip Gun metadata
-        if (typeof data !== "object" || !data.content) return;
+        // Skip Gun metadata - but allow messages with attachments even if content is empty
+        if (typeof data !== "object") return;
+        if (!data.content && !data.attachments) return;
+
+        console.log('[MessageTransport] Raw data from Gun:', JSON.stringify(data));
 
         seenIds.add(data.id);
 
-        const message: TransportMessage = {
+        const message: TransportMessage & { attachments?: string } = {
           id: data.id,
-          content: data.content,
+          content: data.content || "",
           timestamp: data.timestamp || Date.now(),
           authorKey: data.authorKey || "",
           channelId: data.channelId || channelId,
@@ -152,8 +162,14 @@ export class GunMessageTransport implements IMessageTransport {
           editedAt: data.editedAt,
         };
 
+        // Include attachments if present
+        if (data.attachments) {
+          console.log('[MessageTransport] Received message with attachments:', data.attachments);
+          message.attachments = data.attachments;
+        }
+
         // Queue message and schedule flush
-        pendingMessages.push(message);
+        pendingMessages.push(message as TransportMessage);
         if (flushTimer === null) {
           flushTimer = setTimeout(flush, 16); // ~60fps
         }
@@ -193,18 +209,27 @@ export class GunMessageTransport implements IMessageTransport {
         .map()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .once((data: any) => {
-          if (!data || !data.id || typeof data !== "object" || !data.content) return;
+          if (!data || !data.id || typeof data !== "object") return;
+          // Allow messages with attachments even if content is empty
+          if (!data.content && !data.attachments) return;
 
-          messages.push({
+          const msg: TransportMessage & { attachments?: string } = {
             id: data.id,
-            content: data.content,
+            content: data.content || "",
             timestamp: data.timestamp || 0,
             authorKey: data.authorKey || "",
             channelId: data.channelId || channelId,
             type: data.type || "text",
             signature: data.signature,
             editedAt: data.editedAt,
-          });
+          };
+
+          // Include attachments if present
+          if (data.attachments) {
+            msg.attachments = data.attachments;
+          }
+
+          messages.push(msg as TransportMessage);
 
           // If we have enough messages, resolve early
           if (messages.length >= limit * 2) {

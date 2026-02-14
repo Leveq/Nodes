@@ -1,11 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useDMStore } from "../../stores/dm-store";
 import { useIdentityStore } from "../../stores/identity-store";
-import { useToastStore } from "../../stores/toast-store";
 import type { KeyPair } from "@nodes/crypto";
 
 interface DMMessageInputProps {
-  conversationId: string;
   recipientKey: string;
   recipientName: string;
 }
@@ -15,7 +13,6 @@ interface DMMessageInputProps {
  * Similar to MessageInput but uses the DM store for encrypted messaging.
  */
 export function DMMessageInput({
-  conversationId,
   recipientKey,
   recipientName,
 }: DMMessageInputProps) {
@@ -25,7 +22,6 @@ export function DMMessageInput({
 
   const sendMessage = useDMStore((s) => s.sendMessage);
   const keypair = useIdentityStore((s) => s.keypair);
-  const addToast = useToastStore((s) => s.addToast);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -58,7 +54,7 @@ export function DMMessageInput({
 
       // Focus textarea after React re-render
       setTimeout(() => textareaRef.current?.focus(), 0);
-    } catch (err) {
+    } catch {
       // Error already shown via toast in store
     } finally {
       setIsSending(false);

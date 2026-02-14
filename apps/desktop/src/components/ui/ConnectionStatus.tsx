@@ -33,7 +33,7 @@ function Spinner({ className = "" }: { className?: string }) {
  * Shows connected/disconnected/reconnecting with appropriate colors.
  */
 export function ConnectionStatus() {
-  const { status, isConnected, peerCount, reconnect, reconnectAttempts } =
+  const { status, reconnect, reconnectAttempts } =
     useConnectionState();
 
   // Determine visual state

@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import type { TransportMessage } from "@nodes/transport";
 import { useDMStore } from "../../stores/dm-store";
-import { useIdentityStore } from "../../stores/identity-store";
 import { ProfileManager } from "@nodes/transport-gun";
 import { groupMessages, isSystemMessage } from "../../utils/message-grouping";
 import { shouldShowDateSeparator } from "../../utils/time";
@@ -10,7 +9,6 @@ import { SystemMessage } from "../channel/SystemMessage";
 import { DateSeparator } from "../channel/DateSeparator";
 import { NewMessagesBanner } from "../channel/NewMessagesBanner";
 import { DMMessageInput } from "./DMMessageInput";
-import type { KeyPair } from "@nodes/crypto";
 
 const profileManager = new ProfileManager();
 
@@ -30,7 +28,6 @@ interface DMViewProps {
 export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProps) {
   const messages = useDMStore((s) => s.messages[conversationId] ?? EMPTY_MESSAGES);
   const isLoading = useDMStore((s) => s.isLoading);
-  const keypair = useIdentityStore((s) => s.keypair);
   
   const [recipientName, setRecipientName] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);

@@ -22,6 +22,7 @@ export interface TransportMessage {
   type: "text" | "system" | "file";
   signature?: string; // SEA signature for verification
   editedAt?: number;
+  attachments?: string; // JSON-stringified FileAttachment[] (Milestone 2.1)
 }
 
 export interface PresenceInfo {

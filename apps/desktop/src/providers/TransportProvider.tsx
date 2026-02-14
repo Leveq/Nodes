@@ -18,8 +18,12 @@ import {
   GunMessageTransport,
   GunPresenceTransport,
   GunConnectionMonitor,
-  LocalFileTransport,
+  IPFSFileTransport,
+  IPFSService,
+  getIPFSPeerAdvertiser,
 } from "@nodes/transport-gun";
+import { useIdentityStore } from "../stores/identity-store";
+import { useNodeStore } from "../stores/node-store";
 
 /**
  * Transport context shape.
@@ -38,6 +42,9 @@ interface TransportContextValue {
   // Convenience methods
   isConnected: boolean;
   reconnect: () => Promise<void>;
+
+  // IPFS state
+  ipfsReady: boolean;
 }
 
 const TransportContext = createContext<TransportContextValue | null>(null);
@@ -53,10 +60,18 @@ export function TransportProvider({ children }: { children: ReactNode }) {
       message: new GunMessageTransport(),
       presence: new GunPresenceTransport(),
       connection: new GunConnectionMonitor(),
-      file: new LocalFileTransport(),
+      file: new IPFSFileTransport(),
     }),
     []
   );
+
+  // IPFS initialization state
+  const [ipfsReady, setIpfsReady] = useState(false);
+
+  // Get public key for peer advertising
+  const publicKey = useIdentityStore((s) => s.publicKey);
+  const members = useNodeStore((s) => s.members);
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
 
   // Track connection state reactively
   const [connectionState, setConnectionState] = useState<ConnectionState>({
@@ -66,6 +81,50 @@ export function TransportProvider({ children }: { children: ReactNode }) {
     lastConnected: null,
     reconnectAttempts: 0,
   });
+
+  // Initialize IPFS on mount
+  useEffect(() => {
+    IPFSService.init()
+      .then(() => {
+        setIpfsReady(true);
+        console.log("[IPFS] Ready for file operations");
+      })
+      .catch((err) => {
+        console.error("[IPFS] Failed to initialize:", err);
+        // Don't fail the whole app - file sharing just won't work
+      });
+
+    return () => {
+      getIPFSPeerAdvertiser().stop();
+      IPFSService.stop();
+    };
+  }, []);
+
+  // Start IPFS peer advertising when we have identity and IPFS is ready
+  useEffect(() => {
+    if (!ipfsReady || !publicKey) return;
+
+    const advertiser = getIPFSPeerAdvertiser();
+    advertiser.start(publicKey).catch(console.error);
+
+    return () => {
+      // Don't stop here - stop in the IPFS cleanup effect above
+    };
+  }, [ipfsReady, publicKey]);
+
+  // Connect to Node members' IPFS nodes when active Node changes
+  useEffect(() => {
+    if (!ipfsReady || !publicKey || !activeNodeId) return;
+
+    const nodeMembers = members[activeNodeId] || [];
+    const memberKeys = nodeMembers.map((m) => m.publicKey);
+
+    if (memberKeys.length > 0) {
+      const advertiser = getIPFSPeerAdvertiser();
+      advertiser.connectToNodeMembers(memberKeys).catch(console.error);
+      advertiser.subscribeToMembers(memberKeys);
+    }
+  }, [ipfsReady, publicKey, activeNodeId, members]);
 
   // Start connection monitoring on mount
   useEffect(() => {
@@ -106,8 +165,9 @@ export function TransportProvider({ children }: { children: ReactNode }) {
       connectionState,
       isConnected: connectionState.connected,
       reconnect,
+      ipfsReady,
     }),
-    [transports, connectionState, reconnect]
+    [transports, connectionState, reconnect, ipfsReady]
   );
 
   return (

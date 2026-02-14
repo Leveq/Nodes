@@ -17,6 +17,7 @@
     "@nodes/transport": "workspace:*",
     "@nodes/transport-gun": "workspace:*",
     "@tauri-apps/api": "^2.1.1",
+    "browser-image-compression": "^2.0.2",
     "gun": "^0.2020.1241",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

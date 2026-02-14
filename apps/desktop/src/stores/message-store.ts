@@ -146,7 +146,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     }));
   },
 
-  clearChannel: (channelId) => {
+  clearChannel: (_channelId) => {
     const { activeSubscription, activeTypingSub } = get();
     if (activeSubscription) activeSubscription();
     if (activeTypingSub) activeTypingSub();

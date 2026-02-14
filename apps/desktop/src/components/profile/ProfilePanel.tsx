@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
-import { Input } from "../ui";
+import { Input, Avatar } from "../ui";
+import { processAvatar } from "../../utils/image-processing";
+import { avatarManager } from "@nodes/transport-gun";
 
 interface ProfilePanelProps {
   onClose: () => void;
@@ -16,6 +18,7 @@ const MAX_STATUS = 64;
  */
 export function ProfilePanel({ onClose }: ProfilePanelProps) {
   const profile = useIdentityStore((s) => s.profile);
+  const publicKey = useIdentityStore((s) => s.publicKey);
   const updateProfile = useIdentityStore((s) => s.updateProfile);
   const addToast = useToastStore((s) => s.addToast);
 
@@ -23,8 +26,10 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
   const [bio, setBio] = useState(profile?.data?.bio || "");
   const [statusMessage, setStatusMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarKey, setAvatarKey] = useState(0); // Force re-render after upload
 
-  const initial = displayName[0]?.toUpperCase() || "?";
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Close on Escape
   useEffect(() => {
@@ -57,6 +62,37 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
     }
   };
 
+  const handleAvatarClick = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input for re-selection
+    e.target.value = "";
+
+    setIsUploadingAvatar(true);
+    try {
+      // Process and resize avatar
+      const { full, small } = await processAvatar(file);
+
+      // Upload to IPFS
+      await avatarManager.uploadAvatar(full, small);
+
+      // Force avatar re-render
+      setAvatarKey((k) => k + 1);
+
+      addToast("success", "Avatar updated!");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to upload avatar";
+      addToast("error", message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-nodes-surface border border-nodes-border rounded-lg w-full max-w-md shadow-xl">
@@ -75,18 +111,44 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
 
         {/* Content */}
         <div className="p-4 space-y-4">
-          {/* Avatar placeholder */}
+          {/* Avatar */}
           <div className="flex flex-col items-center gap-2">
-            <div className="w-20 h-20 rounded-full bg-nodes-primary/20 flex items-center justify-center">
-              <span className="text-nodes-primary font-bold text-2xl">{initial}</span>
-            </div>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
             <button
-              disabled
-              className="text-sm text-nodes-text-muted cursor-not-allowed"
-              title="Avatar upload coming in Phase 2"
+              onClick={handleAvatarClick}
+              disabled={isUploadingAvatar}
+              className="relative group"
             >
-              Change (Phase 2)
+              <Avatar
+                key={avatarKey}
+                publicKey={publicKey}
+                displayName={displayName}
+                size="xl"
+              />
+              {/* Hover overlay */}
+              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                {isUploadingAvatar ? (
+                  <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                )}
+              </div>
             </button>
+            <span className="text-xs text-nodes-text-muted">
+              {isUploadingAvatar ? "Uploading..." : "Click to change avatar"}
+            </span>
           </div>
 
           {/* Display Name */}

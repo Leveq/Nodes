@@ -9,6 +9,12 @@ export { GunPresenceTransport } from "./presence-transport";
 export { GunConnectionMonitor } from "./connection-monitor";
 export { LocalFileTransport } from "./file-transport";
 
+// IPFS (Milestone 2.1)
+export { IPFSService } from "./ipfs-service";
+export { IPFSFileTransport } from "./ipfs-file-transport";
+export { AvatarManager, avatarManager } from "./avatar-manager";
+export { IPFSPeerAdvertiser, getIPFSPeerAdvertiser } from "./ipfs-peer-advertiser";
+
 // Node management
 export { NodeManager } from "./node-manager";
 

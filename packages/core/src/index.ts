@@ -68,6 +68,7 @@ export interface Message {
   authorKey: string; // publicKey
   channelId: string;
   type: "text" | "system" | "file";
+  attachments?: string; // JSON-stringified FileAttachment[]
 }
 
 // ── Direct Message Types ──
@@ -89,8 +90,9 @@ export interface DMMessage {
   timestamp: number;
   authorKey: string;
   conversationId: string;
-  type: "text" | "system";
+  type: "text" | "system" | "file";
   signature?: string;
+  attachments?: string; // JSON-stringified FileAttachment[] (encrypted)
 }
 
 // ── Social / Friend Types ──
@@ -117,3 +119,40 @@ export interface BlockedUser {
   publicKey: string;
   blockedAt: number;
 }
+
+// ── File & Attachment Types (Milestone 2.1) ──
+
+export interface FileAttachment {
+  cid: string;                    // IPFS CID of the file
+  thumbnailCid?: string;          // IPFS CID of thumbnail (images only)
+  filename: string;               // Original filename (may be encrypted in DMs)
+  mimeType: string;               // MIME type
+  size: number;                   // File size in bytes
+  width?: number;                 // Image width (images only)
+  height?: number;                // Image height (images only)
+  encrypted?: boolean;            // Whether the file is encrypted (DMs)
+}
+
+export interface AvatarData {
+  full: string;                   // CID of 256x256 avatar
+  small: string;                  // CID of 64x64 avatar
+  updatedAt: number;
+}
+
+// File upload constraints
+export const FILE_LIMITS = {
+  MAX_FILE_SIZE: 10 * 1024 * 1024,        // 10MB
+  MAX_FILES_PER_MESSAGE: 5,
+  MAX_AVATAR_SIZE: 5 * 1024 * 1024,       // 5MB
+  AVATAR_FULL_SIZE: 256,                  // 256x256
+  AVATAR_SMALL_SIZE: 64,                  // 64x64
+  THUMBNAIL_MAX_WIDTH: 300,               // 300px wide thumbnails
+  ALLOWED_IMAGE_TYPES: [
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp'
+  ] as const,
+  ALLOWED_FILE_TYPES: [
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+    'application/pdf', 'text/plain', 'application/zip',
+    'video/mp4', 'audio/mpeg', 'audio/ogg'
+  ] as const
+} as const;

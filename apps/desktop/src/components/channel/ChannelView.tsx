@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { TransportMessage } from "@nodes/transport";
 import { useTransport } from "../../providers/TransportProvider";
 import { useMessageStore } from "../../stores/message-store";
@@ -7,6 +7,8 @@ import { createMessageBatcher } from "../../utils/message-batcher";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { TypingIndicator } from "./TypingIndicator";
+import { DropZone } from "./DropZone";
+import type { PendingAttachment } from "./FileAttachmentButton";
 
 interface ChannelViewProps {
   channelId: string;
@@ -29,6 +31,14 @@ export function ChannelView({
 }: ChannelViewProps) {
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
+  const [droppedAttachments, setDroppedAttachments] = useState<PendingAttachment[]>([]);
+
+  // Handle files dropped via drag-and-drop
+  const handleFilesDropped = useCallback((files: PendingAttachment[]) => {
+    setDroppedAttachments(files);
+    // Clear after passing to input (input will pick them up via effect)
+    setTimeout(() => setDroppedAttachments([]), 100);
+  }, []);
 
   // Set up subscriptions when channel changes
   useEffect(() => {
@@ -119,14 +129,20 @@ export function ChannelView({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <MessageList
-        channelId={channelId}
-        channelName={channelName}
-        channelTopic={channelTopic}
-      />
-      <TypingIndicator channelId={channelId} />
-      <MessageInput channelId={channelId} channelName={channelName} />
-    </div>
+    <DropZone onFilesDropped={handleFilesDropped}>
+      <div className="flex flex-col h-full">
+        <MessageList
+          channelId={channelId}
+          channelName={channelName}
+          channelTopic={channelTopic}
+        />
+        <TypingIndicator channelId={channelId} />
+        <MessageInput
+          channelId={channelId}
+          channelName={channelName}
+          externalAttachments={droppedAttachments}
+        />
+      </div>
+    </DropZone>
   );
 }
