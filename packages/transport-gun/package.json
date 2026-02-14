@@ -21,6 +21,8 @@
     "@nodes/core": "workspace:*",
     "@nodes/crypto": "workspace:*",
     "@nodes/transport": "workspace:*",
+    "blockstore-idb": "^3.0.1",
+    "datastore-idb": "^4.0.1",
     "gun": "^0.2020.1241",
     "helia": "^6.0.20",
     "libp2p": "^3.1.3",

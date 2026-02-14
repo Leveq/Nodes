@@ -12,6 +12,8 @@ import { bitswap } from "@helia/block-brokers";
 import { multiaddr } from "@multiformats/multiaddr";
 import { peerIdFromString } from "@libp2p/peer-id";
 import { createLibp2p } from "libp2p";
+import { IDBBlockstore } from "blockstore-idb";
+import { IDBDatastore } from "datastore-idb";
 import type { Helia } from "helia";
 import type { UnixFS } from "@helia/unixfs";
 
@@ -36,6 +38,69 @@ let relayPeerId: string | null = null;
 
 // In-flight download cache - prevents duplicate concurrent requests for same CID
 const inflightDownloads = new Map<string, Promise<Uint8Array>>();
+
+// ============================================
+// Download Cache (IndexedDB)
+// ============================================
+const CACHE_DB_NAME = "ipfs-download-cache";
+const CACHE_STORE_NAME = "files";
+const CACHE_VERSION = 1;
+
+let cacheDb: IDBDatabase | null = null;
+
+async function openCacheDb(): Promise<IDBDatabase> {
+  if (cacheDb) return cacheDb;
+  
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CACHE_DB_NAME, CACHE_VERSION);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      cacheDb = request.result;
+      resolve(cacheDb);
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(CACHE_STORE_NAME)) {
+        db.createObjectStore(CACHE_STORE_NAME);
+      }
+    };
+  });
+}
+
+async function getCachedDownload(cid: string): Promise<Uint8Array | null> {
+  try {
+    const db = await openCacheDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHE_STORE_NAME, "readonly");
+      const store = tx.objectStore(CACHE_STORE_NAME);
+      const request = store.get(cid);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result || null);
+    });
+  } catch (err) {
+    console.warn("[IPFS Cache] Failed to read cache:", err);
+    return null;
+  }
+}
+
+async function setCachedDownload(cid: string, data: Uint8Array): Promise<void> {
+  try {
+    const db = await openCacheDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHE_STORE_NAME, "readwrite");
+      const store = tx.objectStore(CACHE_STORE_NAME);
+      const request = store.put(data, cid);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  } catch (err) {
+    console.warn("[IPFS Cache] Failed to write cache:", err);
+  }
+}
 
 export class IPFSService {
   /**
@@ -118,9 +183,18 @@ export class IPFSService {
           },
         });
 
-        // Create Helia with pre-configured libp2p
+        // Create persistent stores using IndexedDB
+        // This ensures uploaded content survives app restart
+        const blockstore = new IDBBlockstore('helia-blocks');
+        const datastore = new IDBDatastore('helia-data');
+        await blockstore.open();
+        await datastore.open();
+
+        // Create Helia with pre-configured libp2p and persistent storage
         heliaInstance = await createHelia({
           libp2p,
+          blockstore,
+          datastore,
           blockBrokers: [bitswap()],
         });
 
@@ -142,6 +216,14 @@ export class IPFSService {
         // Log final addresses available for peer discovery
         const finalAddrs = IPFSService.getMultiaddrs();
         console.log("[IPFS] Final multiaddrs for discovery:", finalAddrs.length, finalAddrs);
+
+        // Log registered protocols to verify bitswap is active
+        const protocols = heliaInstance.libp2p.getProtocols();
+        console.log("[IPFS] Registered protocols:", protocols);
+
+        // Expose for console debugging
+        // @ts-expect-error - intentionally adding to window for debugging
+        if (typeof window !== 'undefined') window.IPFSService = IPFSService;
       } catch (err) {
         console.error("[IPFS] Failed to start Helia node:", err);
         initPromise = null;
@@ -269,17 +351,40 @@ export class IPFSService {
   /**
    * Connect to the local libp2p relay server.
    * This enables circuit relay connections for NAT-ed peers.
+   * 
+   * Set VITE_RELAY_IP environment variable to specify custom relay IP.
    */
   static async connectToLocalRelay(): Promise<void> {
     if (!heliaInstance) return;
 
-    // Try common local development relay addresses
-    const relayAddresses = [
+    // Check for custom relay IP from environment
+    // @ts-expect-error - Vite env variable
+    const customRelayIp = typeof import.meta?.env?.VITE_RELAY_IP === 'string' 
+      // @ts-expect-error - Vite env variable
+      ? import.meta.env.VITE_RELAY_IP 
+      : null;
+
+    // Try common relay addresses (localhost + LAN IPs for cross-device testing)
+    // The relay binds to 0.0.0.0 so it's accessible via any interface
+    const relayAddresses: string[] = [];
+    
+    // Custom IP takes priority
+    if (customRelayIp) {
+      relayAddresses.push(`/ip4/${customRelayIp}/tcp/9010/ws`);
+      console.log("[IPFS] Using custom relay IP:", customRelayIp);
+    }
+    
+    // Then localhost (same device)
+    relayAddresses.push(
       "/ip4/127.0.0.1/tcp/9010/ws",
       "/ip4/localhost/tcp/9010/ws",
+      // Common LAN ranges - try to find relay on local network
+      "/ip4/192.168.1.65/tcp/9010/ws",
+      "/ip4/192.168.0.1/tcp/9010/ws",
+      "/ip4/10.0.0.1/tcp/9010/ws",
+      // Fallback ports
       "/ip4/127.0.0.1/tcp/9002/ws",
-      "/ip4/localhost/tcp/9002/ws",
-    ];
+    );
 
     for (const addr of relayAddresses) {
       try {
@@ -407,6 +512,12 @@ export class IPFSService {
       console.warn("[IPFS] Failed to pin CID:", err);
     }
 
+    // Also save to download cache for instant local retrieval
+    // This ensures the uploader can always view their own content
+    setCachedDownload(cid.toString(), data).catch(() => {
+      // Fire and forget
+    });
+
     if (onProgress) onProgress(100);
 
     console.log("[IPFS] Upload complete. CID:", cid.toString());
@@ -451,6 +562,13 @@ export class IPFSService {
     cidString: string,
     timeoutMs: number
   ): Promise<Uint8Array> {
+    // Check IndexedDB cache first (fast path for previously downloaded content)
+    const cached = await getCachedDownload(cidString);
+    if (cached) {
+      console.log("[IPFS] Cache hit for CID:", cidString, "Size:", cached.length);
+      return cached;
+    }
+
     // Ensure IPFS is initialized
     await IPFSService.init();
     const fs = IPFSService.getFS();
@@ -492,6 +610,11 @@ export class IPFSService {
 
     console.log("[IPFS] Download complete. Size:", result.length, "bytes");
 
+    // Save to IndexedDB cache for offline access
+    setCachedDownload(cidString, result).catch(() => {
+      // Fire and forget - don't block return
+    });
+
     return result;
   }
 
@@ -508,8 +631,15 @@ export class IPFSService {
     peerMultiaddrs: string[],
     timeoutMs: number = 15000
   ): Promise<Uint8Array> {
+    // Check IndexedDB cache first (before any network activity)
+    const cached = await getCachedDownload(cidString);
+    if (cached) {
+      console.log("[IPFS] Cache hit for CID:", cidString, "Size:", cached.length);
+      return cached;
+    }
+
     console.log("[IPFS] Download with peer hint. CID:", cidString);
-    console.log("[IPFS] Peer hints:", peerMultiaddrs);
+    console.log("[IPFS] Peer hints:", peerMultiaddrs.length);
 
     // First, try connecting to the hinted peers
     for (const addr of peerMultiaddrs) {
@@ -539,6 +669,50 @@ export class IPFSService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Diagnostic: Check blockstore status for a CID
+   */
+  static async diagnose(cidString: string): Promise<void> {
+    console.log("=== IPFS Diagnostic for CID:", cidString, "===");
+    
+    try {
+      const helia = IPFSService.getHelia();
+      const cid = CID.parse(cidString);
+      
+      // Check blockstore
+      const hasBlock = await helia.blockstore.has(cid);
+      console.log("[IPFS Diag] In blockstore:", hasBlock);
+      
+      // Check pins
+      let isPinned = false;
+      for await (const pin of helia.pins.ls()) {
+        if (pin.cid.toString() === cidString) {
+          isPinned = true;
+          break;
+        }
+      }
+      console.log("[IPFS Diag] Is pinned:", isPinned);
+      
+      // Check download cache
+      const cached = await getCachedDownload(cidString);
+      console.log("[IPFS Diag] In download cache:", cached ? `${cached.length} bytes` : "no");
+      
+      // Check connections
+      const connections = helia.libp2p.getConnections();
+      console.log("[IPFS Diag] Connections:", connections.length);
+      for (const conn of connections) {
+        console.log("[IPFS Diag]   ", conn.remotePeer.toString().slice(0, 16), 
+                    "| streams:", conn.streams.length,
+                    "| protocols:", conn.streams.map(s => s.protocol?.split('/').pop()).join(',') || 'none');
+      }
+      
+    } catch (err) {
+      console.error("[IPFS Diag] Error:", err);
+    }
+    
+    console.log("=== End Diagnostic ===");
   }
 
   /**

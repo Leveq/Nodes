@@ -186,6 +186,12 @@ importers:
       '@nodes/transport':
         specifier: workspace:*
         version: link:../transport
+      blockstore-idb:
+        specifier: ^3.0.1
+        version: 3.0.1
+      datastore-idb:
+        specifier: ^4.0.1
+        version: 4.0.1
       gun:
         specifier: ^0.2020.1241
         version: 0.2020.1241
@@ -1764,6 +1770,9 @@ packages:
   blockstore-core@6.1.2:
     resolution: {integrity: sha512-yWU38RM8DJ6C7Y2shIeTNVgGiJX/ko2RXqDyNlxMakOc+aVS7k1SCiakMlh6ix0juRNPtj0ySMTXU8UBDXXRCQ==}
 
+  blockstore-idb@3.0.1:
+    resolution: {integrity: sha512-4QSrT/ceQi3AhLFfm67SVCjfsjZD3p+Z7ocpW8bUlXK5WCD3yuWD3VBEqYSbDlkdOBYWD1B4q7zKhpY6v7C5/Q==}
+
   brace-expansion@1.1.12:
     resolution: {integrity: sha512-9T9UjW3r0UW5c1Q7GTwllptXwhvYmEzFhzMfZ9H7FQWt+uZePjZPjBP/W1ZEyZ1twGWom5/56TF4lPcqjnDHcg==}
 
@@ -1918,6 +1927,9 @@ packages:
 
   datastore-core@11.0.2:
     resolution: {integrity: sha512-0pN4hMcaCWcnUBo5OL/8j14Lt1l/p1v2VvzryRYeJAKRLqnFrzy2FhAQ7y0yTA63ki760ImQHfm2XlZrfIdFpQ==}
+
+  datastore-idb@4.0.1:
+    resolution: {integrity: sha512-s/6UsVRDoiDWw6waXQ8zOlOIN421+gpdTNNYmHrU9ePgQDzrLyERFW2b9Dh+3v/UROXR88EYq5Rnn7ynaKQ9eQ==}
 
   debug@2.6.9:
     resolution: {integrity: sha512-bC7ElrdJaJnPbAP+1EotYvqZsb3ecl5wi6Bfi6BJTUcNowp6cvspg0jXznRTKDjm/E7AdgFBVeAPVMNcKGsHMA==}
@@ -2389,6 +2401,9 @@ packages:
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
+
+  idb@8.0.3:
+    resolution: {integrity: sha512-LtwtVyVYO5BqRvcsKuB2iUMnHwPVByPCXFXOpuU96IZPPoPN6xjOGxZQ74pgSVVLQWtUOYgyeL4GE98BY5D3wg==}
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
@@ -5949,6 +5964,17 @@ snapshots:
       it-merge: 3.0.12
       multiformats: 13.4.2
 
+  blockstore-idb@3.0.1:
+    dependencies:
+      blockstore-core: 6.1.2
+      idb: 8.0.3
+      interface-blockstore: 6.0.1
+      interface-store: 7.0.1
+      it-all: 3.0.9
+      it-to-buffer: 4.0.10
+      multiformats: 13.4.2
+      race-signal: 2.0.0
+
   brace-expansion@1.1.12:
     dependencies:
       balanced-match: 1.0.2
@@ -6123,6 +6149,16 @@ snapshots:
       it-pipe: 3.0.1
       it-sort: 3.0.9
       it-take: 3.0.9
+
+  datastore-idb@4.0.1:
+    dependencies:
+      datastore-core: 11.0.2
+      idb: 8.0.3
+      interface-datastore: 9.0.2
+      interface-store: 7.0.1
+      it-filter: 3.1.4
+      it-sort: 3.0.9
+      race-signal: 2.0.0
 
   debug@2.6.9:
     dependencies:
@@ -6639,6 +6675,8 @@ snapshots:
   iconv-lite@0.6.3:
     dependencies:
       safer-buffer: 2.1.2
+
+  idb@8.0.3: {}
 
   ieee754@1.2.1: {}
 

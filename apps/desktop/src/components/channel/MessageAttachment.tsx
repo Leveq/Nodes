@@ -3,6 +3,13 @@ import { FILE_LIMITS, type FileAttachment } from "@nodes/core";
 import { useTransport } from "../../providers/TransportProvider";
 import { getIPFSPeerAdvertiser, IPFSService } from "@nodes/transport-gun";
 
+// Module-level cache for loaded image blob URLs
+// This survives component remounts (tab switches, scrolling, etc.)
+const loadedImageCache = new Map<string, string>();
+
+// Track in-flight loads to prevent duplicate requests
+const inflightLoads = new Map<string, Promise<string>>();
+
 interface MessageAttachmentProps {
   attachment: FileAttachment;
   authorKey: string; // Public key of the message author (for peer connection)
@@ -58,30 +65,55 @@ function ImageAttachment({
   onImageClick,
   encrypted,
 }: ImageAttachmentProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(() => {
+    // Check module-level cache on initial render
+    const cid = attachment.thumbnailCid || attachment.cid;
+    return loadedImageCache.get(cid) || null;
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    const cid = attachment.thumbnailCid || attachment.cid;
+    return !loadedImageCache.has(cid);
+  });
   const [error, setError] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef(false); // Guard against concurrent loads
   const { ipfsReady } = useTransport();
 
   // Use thumbnail CID if available, otherwise use main CID
   const cid = attachment.thumbnailCid || attachment.cid;
 
   const loadImage = useCallback(async () => {
-    // Guard against concurrent loads for same CID
-    if (loadingRef.current) {
-      console.log('[MessageAttachment] Load already in progress for CID:', cid);
+    // Check in-memory cache first (instant)
+    const cached = loadedImageCache.get(cid);
+    if (cached) {
+      console.log('[MessageAttachment] Memory cache hit for CID:', cid);
+      setImageUrl(cached);
+      setIsLoading(false);
       return;
     }
-    loadingRef.current = true;
+
+    // Check if there's already an in-flight load for this CID
+    const inflight = inflightLoads.get(cid);
+    if (inflight) {
+      console.log('[MessageAttachment] Reusing in-flight load for CID:', cid);
+      try {
+        const url = await inflight;
+        setImageUrl(url);
+        setIsLoading(false);
+      } catch {
+        setError(true);
+        setIsLoading(false);
+      }
+      return;
+    }
 
     console.log('[MessageAttachment] Loading image from CID:', cid);
     console.log('[MessageAttachment] Author:', authorKey.slice(0, 12) + '...');
-    try {
-      setIsLoading(true);
-      setError(false);
+    
+    setIsLoading(true);
+    setError(false);
 
+    // Create the load promise and track it
+    const loadPromise = (async (): Promise<string> => {
       // Step 1: Try to connect to the uploader's IPFS node first
       const advertiser = getIPFSPeerAdvertiser();
       const peerInfo = await advertiser.resolvePeerInfo(authorKey);
@@ -109,15 +141,26 @@ function ImageAttachment({
       }
 
       console.log('[MessageAttachment] Got data:', data.length, 'bytes');
-      const blob = new Blob([data]);
+      const blob = new Blob([data.buffer as ArrayBuffer]);
       const url = URL.createObjectURL(blob);
+      
+      // Cache the blob URL
+      loadedImageCache.set(cid, url);
+      
+      return url;
+    })();
+
+    inflightLoads.set(cid, loadPromise);
+
+    try {
+      const url = await loadPromise;
       setImageUrl(url);
     } catch (err) {
       console.error("[MessageAttachment] Failed to load image:", err);
       setError(true);
     } finally {
       setIsLoading(false);
-      loadingRef.current = false;
+      inflightLoads.delete(cid);
     }
   }, [cid, authorKey]);
 
@@ -160,7 +203,8 @@ function ImageAttachment({
     // If we only have a thumbnail, load the full image
     if (attachment.thumbnailCid && imageUrl) {
       try {
-        const blob = await fileTransport.download(attachment.cid);
+        const data = await IPFSService.download(attachment.cid, 30000);
+        const blob = new Blob([data.buffer as ArrayBuffer]);
         const fullUrl = URL.createObjectURL(blob);
         onImageClick(attachment, fullUrl);
       } catch {
@@ -286,7 +330,7 @@ function FileAttachmentCard({ attachment, authorKey, encrypted }: FileAttachment
         data = await IPFSService.download(attachment.cid, 60000);
       }
 
-      const blob = new Blob([data]);
+      const blob = new Blob([data.buffer as ArrayBuffer]);
 
       // Create download link
       const url = URL.createObjectURL(blob);
