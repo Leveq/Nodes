@@ -14,6 +14,7 @@ interface ReactionBarProps {
   reactions: ReactionMap;
   onAddReaction: (emoji: string) => void;
   onRemoveReaction: (emoji: string) => void;
+  canAddReaction?: boolean;
 }
 
 /**
@@ -23,12 +24,13 @@ interface ReactionBarProps {
  *
  * - Each pill is clickable to toggle your reaction
  * - Hover shows who reacted
- * - [+] opens emoji picker to add new reaction
+ * - [+] opens emoji picker to add new reaction (if user has permission)
  */
 export function ReactionBar({
   reactions,
   onAddReaction,
   onRemoveReaction,
+  canAddReaction = true,
 }: ReactionBarProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerPosition, setPickerPosition] = useState<{ x: number; y: number } | null>(null);
@@ -60,8 +62,10 @@ export function ReactionBar({
   // Handle clicking a reaction pill
   const handlePillClick = (emoji: string) => {
     if (hasReacted(emoji)) {
+      // Always allow removing your own reaction
       onRemoveReaction(emoji);
-    } else {
+    } else if (canAddReaction) {
+      // Only allow adding if user has permission
       onAddReaction(emoji);
     }
   };
@@ -117,16 +121,18 @@ export function ReactionBar({
         );
       })}
 
-      {/* Add reaction button */}
-      <button
-        onClick={handleAddClick}
-        className="flex items-center justify-center w-6 h-6 rounded-full 
-                   bg-nodes-surface border border-nodes-border text-nodes-text-muted
-                   hover:bg-nodes-surface/80 hover:text-nodes-text transition-colors"
-        title="Add reaction"
-      >
-        <Plus size={14} />
-      </button>
+      {/* Add reaction button - only show if user has permission */}
+      {canAddReaction && (
+        <button
+          onClick={handleAddClick}
+          className="flex items-center justify-center w-6 h-6 rounded-full 
+                     bg-nodes-surface border border-nodes-border text-nodes-text-muted
+                     hover:bg-nodes-surface/80 hover:text-nodes-text transition-colors"
+          title="Add reaction"
+        >
+          <Plus size={14} />
+        </button>
+      )}
 
       {/* Emoji picker */}
       {showPicker && pickerPosition && (

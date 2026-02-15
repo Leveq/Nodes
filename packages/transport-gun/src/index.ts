@@ -17,9 +17,13 @@ export { IPFSPeerAdvertiser, getIPFSPeerAdvertiser } from "./ipfs-peer-advertise
 
 // Node management
 export { NodeManager } from "./node-manager";
+export { RoleManager, roleManager } from "./role-manager";
 
 // Direct Messages
 export { DMManager } from "./dm-manager";
 
 // Social / Friends
 export { SocialManager, generateRequestId } from "./social-manager";
+
+// Voice (Milestone 2.4)
+export { MeshVoiceTransport, LiveKitVoiceTransport, VoiceManager } from "./voice";

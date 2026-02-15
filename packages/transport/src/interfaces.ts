@@ -2,7 +2,7 @@
 // Protocol-agnostic interfaces that decouple the app from any specific P2P technology.
 // See Architecture Spec Section 2.3
 
-import type { UserStatus } from "@nodes/core";
+import type { UserStatus, VoiceState, VoiceParticipant } from "@nodes/core";
 
 // ── Callback Types ──
 
@@ -211,6 +211,48 @@ export interface IFileTransport {
   getUrl(fileId: string): string;
   getMetadata?(fileId: string): Promise<FileMetadata | null>;
   onProgress?(fileId: string, handler: (p: UploadProgress) => void): Unsubscribe;
+}
+
+/**
+ * IVoiceTransport handles real-time voice communication.
+ * Supports both WebRTC mesh (P2P) and LiveKit SFU modes.
+ */
+export interface IVoiceTransport {
+  /** Join a voice channel */
+  join(channelId: string, nodeId: string): Promise<void>;
+
+  /** Leave the current voice channel */
+  leave(): Promise<void>;
+
+  /** Toggle self-mute */
+  setMuted(muted: boolean): Promise<void>;
+
+  /** Toggle self-deafen */
+  setDeafened(deafened: boolean): Promise<void>;
+
+  /** Server-mute another user (requires muteMembers permission) */
+  serverMute(targetPublicKey: string, muted: boolean): Promise<void>;
+
+  /** Disconnect another user from voice (requires disconnectMembers permission) */
+  disconnectUser(targetPublicKey: string): Promise<void>;
+
+  /** Set input device (microphone) */
+  setInputDevice(deviceId: string): Promise<void>;
+
+  /** Set output device (speaker) */
+  setOutputDevice(deviceId: string): Promise<void>;
+
+  /** Get current voice state */
+  getState(): VoiceState;
+
+  /** Subscribe to voice state changes */
+  onStateChange(handler: (state: VoiceState) => void): Unsubscribe;
+
+  /** Subscribe to participant changes in the current voice channel */
+  onParticipantsChange(handler: (participants: VoiceParticipant[]) => void): Unsubscribe;
+
+  /** Subscribe to speaking state changes */
+  onSpeakingChange(handler: (publicKey: string, speaking: boolean) => void): Unsubscribe;
 }
 
 /**

@@ -1,0 +1,43 @@
+# Fly.io deployment configuration
+# Deploy with: fly launch --config infrastructure/relay/fly.toml
+
+app = "nodes-gun-relay"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[env]
+  PORT = "8080"
+  DATA_DIR = "/data/gun"
+
+[mounts]
+  source = "gun_data"
+  destination = "/data"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.http_checks]]
+    interval = 10000
+    grace_period = 5s
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    timeout = 2000

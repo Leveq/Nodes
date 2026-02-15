@@ -12,6 +12,7 @@ import type {
   IPresenceTransport,
   IConnectionMonitor,
   IFileTransport,
+  IVoiceTransport,
   ConnectionState,
 } from "@nodes/transport";
 import {
@@ -21,9 +22,11 @@ import {
   IPFSFileTransport,
   IPFSService,
   getIPFSPeerAdvertiser,
+  VoiceManager,
 } from "@nodes/transport-gun";
 import { useIdentityStore } from "../stores/identity-store";
 import { useNodeStore } from "../stores/node-store";
+import { useVoiceStore } from "../stores/voice-store";
 
 /**
  * Transport context shape.
@@ -35,6 +38,7 @@ interface TransportContextValue {
   presence: IPresenceTransport;
   connection: IConnectionMonitor;
   file: IFileTransport;
+  voice: IVoiceTransport | null;
 
   // Reactive connection state
   connectionState: ConnectionState;
@@ -72,6 +76,17 @@ export function TransportProvider({ children }: { children: ReactNode }) {
   const publicKey = useIdentityStore((s) => s.publicKey);
   const members = useNodeStore((s) => s.members);
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  
+  // Voice store actions
+  const setVoiceState = useVoiceStore((s) => s.setState);
+  const setVoiceParticipants = useVoiceStore((s) => s.setParticipants);
+  const updateParticipantSpeaking = useVoiceStore((s) => s.updateParticipantSpeaking);
+
+  // Initialize voice manager when we have a public key
+  const voiceManager = useMemo(() => {
+    if (!publicKey) return null;
+    return new VoiceManager(publicKey);
+  }, [publicKey]);
 
   // Track connection state reactively
   const [connectionState, setConnectionState] = useState<ConnectionState>({
@@ -151,6 +166,29 @@ export function TransportProvider({ children }: { children: ReactNode }) {
     };
   }, [transports.connection]);
 
+  // Subscribe to voice state changes
+  useEffect(() => {
+    if (!voiceManager) return;
+
+    const unsubState = voiceManager.onStateChange((state) => {
+      setVoiceState(state);
+    });
+
+    const unsubParticipants = voiceManager.onParticipantsChange((participants) => {
+      setVoiceParticipants(participants);
+    });
+
+    const unsubSpeaking = voiceManager.onSpeakingChange((publicKey, speaking) => {
+      updateParticipantSpeaking(publicKey, speaking);
+    });
+
+    return () => {
+      unsubState();
+      unsubParticipants();
+      unsubSpeaking();
+    };
+  }, [voiceManager, setVoiceState, setVoiceParticipants, updateParticipantSpeaking]);
+
   // Convenience method for reconnecting
   const reconnect = useCallback(async () => {
     await transports.connection.reconnect();
@@ -162,12 +200,13 @@ export function TransportProvider({ children }: { children: ReactNode }) {
       presence: transports.presence,
       connection: transports.connection,
       file: transports.file,
+      voice: voiceManager,
       connectionState,
       isConnected: connectionState.connected,
       reconnect,
       ipfsReady,
     }),
-    [transports, connectionState, reconnect, ipfsReady]
+    [transports, voiceManager, connectionState, reconnect, ipfsReady]
   );
 
   return (
@@ -220,4 +259,11 @@ export function usePresenceTransport(): IPresenceTransport {
  */
 export function useFileTransport(): IFileTransport {
   return useTransport().file;
+}
+
+/**
+ * Hook to access just the voice transport.
+ */
+export function useVoiceTransport(): IVoiceTransport | null {
+  return useTransport().voice;
 }

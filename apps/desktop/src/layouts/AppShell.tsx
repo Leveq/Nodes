@@ -4,12 +4,15 @@ import { useIdentityStore } from "../stores/identity-store";
 import { useNavigationStore } from "../stores/navigation-store";
 import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
+import { useVoiceStore } from "../stores/voice-store";
 import { useNodeSubscriptions } from "../hooks/useNodeSubscriptions";
+import { useRoleSubscriptions } from "../hooks/useRoleSubscriptions";
 import { useDMSubscriptions } from "../hooks/useDMSubscriptions";
 import { usePresenceSubscriptions } from "../hooks/usePresenceSubscriptions";
 import { usePresenceStatus } from "../hooks/usePresenceStatus";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useGracefulShutdown } from "../hooks/useGracefulShutdown";
+import { useTransport } from "../providers/TransportProvider";
 import { NodeSidebar } from "./NodeSidebar";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { MainContent } from "./MainContent";
@@ -42,6 +45,10 @@ export function AppShell() {
   const [showMembers, setShowMembers] = useState(true);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   
+  // Voice state for keyboard shortcuts
+  const { voice } = useTransport();
+  const voiceState = useVoiceStore((s) => s.state);
+  
   // UI state for settings and profile
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -64,10 +71,25 @@ export function AppShell() {
     setShowSettings(true);
   }, []);
 
+  // Voice toggle handlers
+  const handleToggleMute = useCallback(() => {
+    if (voice && voiceState.channelId) {
+      voice.setMuted(!voiceState.muted);
+    }
+  }, [voice, voiceState.channelId, voiceState.muted]);
+
+  const handleToggleDeafen = useCallback(() => {
+    if (voice && voiceState.channelId) {
+      voice.setDeafened(!voiceState.deafened);
+    }
+  }, [voice, voiceState.channelId, voiceState.deafened]);
+
   // Register keyboard shortcuts
   useKeyboardShortcuts({
     onOpenSettings: handleOpenSettings,
     onCloseModal: handleCloseModal,
+    onToggleMute: handleToggleMute,
+    onToggleDeafen: handleToggleDeafen,
   });
 
   // Function to open a user's profile popup
@@ -83,6 +105,9 @@ export function AppShell() {
 
   // Subscribe to all channels in the active Node for unread tracking
   useNodeSubscriptions();
+
+  // Subscribe to roles for the active Node
+  useRoleSubscriptions();
 
   // Subscribe to all DM conversations for unread tracking
   useDMSubscriptions();

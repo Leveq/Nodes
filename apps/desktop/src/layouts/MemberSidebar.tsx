@@ -4,10 +4,13 @@ import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
 import { useIdentityStore } from "../stores/identity-store";
 import { useNavigationStore } from "../stores/navigation-store";
-import { ProfileManager } from "@nodes/transport-gun";
+import { useNodeRoles, usePermissions, useMyRoles } from "../hooks/usePermissions";
+import { useRoleStore } from "../stores/role-store";
+import { ProfileManager, roleManager } from "@nodes/transport-gun";
 import { MemberListSkeleton, NameSkeleton } from "../components/ui";
-import type { NodeMember } from "@nodes/core";
+import type { NodeMember, Role } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
+import { BUILT_IN_ROLE_IDS } from "@nodes/core";
 
 const profileManager = new ProfileManager();
 
@@ -16,11 +19,12 @@ const NAME_CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * MemberSidebar displays the member list for the active Node.
- * Members are grouped by role (Owner, Members) with presence dots.
+ * Members are grouped by their highest role with presence dots.
  */
 export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) => void }) {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const members = useNodeStore((s) => s.members);
+  const roles = useNodeRoles();
   const nodeMembers = useMemo(
     () => (activeNodeId ? members[activeNodeId] || [] : []),
     [activeNodeId, members]
@@ -148,21 +152,47 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   const isOnline = (member: NodeMember) => 
     member.status === "online" || member.status === "idle" || member.status === "dnd";
 
-  // Group members by role
-  const owners = nodeMembers.filter((m) => m.role === "owner");
-  const admins = nodeMembers.filter((m) => m.role === "admin");
-  const regularMembers = nodeMembers.filter((m) => m.role === "member");
+  // Helper to get member's highest role
+  const getHighestRole = (member: NodeMember): Role | undefined => {
+    const memberRoles = member.roles || [];
+    let highest: Role | undefined;
+    for (const roleId of memberRoles) {
+      const role = roles.find((r) => r.id === roleId);
+      if (role && (!highest || role.position < highest.position)) {
+        highest = role;
+      }
+    }
+    // Fall back to Member role if no explicit roles
+    if (!highest) {
+      highest = roles.find((r) => r.id === BUILT_IN_ROLE_IDS.MEMBER);
+    }
+    return highest;
+  };
 
-  // Further split by online/offline
-  const onlineOwners = owners.filter(isOnline);
-  const offlineOwners = owners.filter((m) => !isOnline(m));
-  const onlineAdmins = admins.filter(isOnline);
-  const offlineAdmins = admins.filter((m) => !isOnline(m));
-  const onlineMembers = regularMembers.filter(isOnline);
-  const offlineMembers = regularMembers.filter((m) => !isOnline(m));
+  // Group members by their highest role
+  const membersByRole: Map<string, { role: Role; members: NodeMember[] }> = new Map();
+  
+  for (const member of nodeMembers) {
+    const highestRole = getHighestRole(member);
+    if (!highestRole) continue;
+    
+    if (!membersByRole.has(highestRole.id)) {
+      membersByRole.set(highestRole.id, { role: highestRole, members: [] });
+    }
+    membersByRole.get(highestRole.id)!.members.push(member);
+  }
 
-  // Combine all offline members
-  const allOffline = [...offlineOwners, ...offlineAdmins, ...offlineMembers];
+  // Sort role groups by position (highest rank first)
+  const sortedRoleGroups = Array.from(membersByRole.values())
+    .sort((a, b) => a.role.position - b.role.position);
+
+  // Split each role group into online/offline
+  const onlineGroups = sortedRoleGroups.map(({ role, members }) => ({
+    role,
+    members: members.filter(isOnline),
+  })).filter((g) => g.members.length > 0);
+
+  const offlineMembers = nodeMembers.filter((m) => !isOnline(m));
 
   return (
     <div className="w-60 bg-depth-secondary border-l border-surface-border flex flex-col shrink-0">
@@ -193,11 +223,13 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
           <MemberListSkeleton />
         ) : (
           <>
-            {/* Online Owners */}
-            {onlineOwners.length > 0 && (
+            {/* Online members grouped by role */}
+            {onlineGroups.map(({ role, members: roleMembers }) => (
               <MemberGroup
-                title="Owner"
-                members={onlineOwners}
+                key={`online-${role.id}`}
+                title={role.name}
+                titleColor={role.color}
+                members={roleMembers}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
                 onSendMessage={handleSendMessage}
@@ -207,48 +239,15 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
                 isFriend={isFriend}
                 hasPendingRequest={hasPendingRequest}
                 onUserClick={onUserClick}
+                roles={roles}
               />
-            )}
-
-            {/* Online Admins */}
-            {onlineAdmins.length > 0 && (
-              <MemberGroup
-                title="Admins"
-                members={onlineAdmins}
-                resolvedNames={resolvedNames}
-                myPublicKey={myPublicKey}
-                onSendMessage={handleSendMessage}
-                onAddFriend={handleAddFriend}
-                onRemoveFriend={removeFriend}
-                onBlockUser={blockUser}
-                isFriend={isFriend}
-                hasPendingRequest={hasPendingRequest}
-                onUserClick={onUserClick}
-              />
-            )}
-
-            {/* Online Members */}
-            {onlineMembers.length > 0 && (
-              <MemberGroup
-                title="Online"
-                members={onlineMembers}
-                resolvedNames={resolvedNames}
-                myPublicKey={myPublicKey}
-                onSendMessage={handleSendMessage}
-                onAddFriend={handleAddFriend}
-                onRemoveFriend={removeFriend}
-                onBlockUser={blockUser}
-                isFriend={isFriend}
-                hasPendingRequest={hasPendingRequest}
-                onUserClick={onUserClick}
-              />
-            )}
+            ))}
 
             {/* Offline Section */}
-            {allOffline.length > 0 && (
+            {offlineMembers.length > 0 && (
               <MemberGroup
                 title="Offline"
-                members={allOffline}
+                members={offlineMembers}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
                 onSendMessage={handleSendMessage}
@@ -258,6 +257,7 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
                 isFriend={isFriend}
                 hasPendingRequest={hasPendingRequest}
                 onUserClick={onUserClick}
+                roles={roles}
               />
             )}
 
@@ -275,6 +275,7 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
 
 interface MemberGroupProps {
   title: string;
+  titleColor?: string;
   members: NodeMember[];
   resolvedNames: Record<string, string>;
   myPublicKey: string | null;
@@ -285,10 +286,12 @@ interface MemberGroupProps {
   isFriend: (publicKey: string) => boolean;
   hasPendingRequest: (toKey: string) => boolean;
   onUserClick?: (userId: string) => void;
+  roles?: Role[];
 }
 
 function MemberGroup({ 
   title, 
+  titleColor,
   members, 
   resolvedNames, 
   myPublicKey, 
@@ -299,30 +302,53 @@ function MemberGroup({
   isFriend,
   hasPendingRequest,
   onUserClick,
+  roles = [],
 }: MemberGroupProps) {
+  // Helper to get member's highest role for display color
+  const getMemberHighestRole = (member: NodeMember): Role | undefined => {
+    const memberRoles = member.roles || [];
+    let highest: Role | undefined;
+    for (const roleId of memberRoles) {
+      const role = roles.find((r) => r.id === roleId);
+      if (role && (!highest || role.position < highest.position)) {
+        highest = role;
+      }
+    }
+    return highest;
+  };
+
   return (
     <div className="px-2 mb-4">
-      <h4 className="px-2 text-xs font-semibold text-nodes-text-muted uppercase tracking-wide mb-1">
+      <h4 
+        className="px-2 text-xs font-semibold uppercase tracking-wide mb-1"
+        style={{ color: titleColor || "var(--nodes-text-muted)" }}
+      >
         {title} — {members.length}
       </h4>
-      {members.map((member) => (
-        <MemberItem
-          key={member.publicKey}
-          publicKey={member.publicKey}
-          displayName={resolvedNames[member.publicKey]}
-          isNameLoading={!resolvedNames[member.publicKey]}
-          status={member.status}
-          role={member.role}
-          isMe={member.publicKey === myPublicKey}
-          isFriend={isFriend(member.publicKey)}
-          hasPending={hasPendingRequest(member.publicKey)}
-          onSendMessage={() => onSendMessage(member.publicKey)}
-          onAddFriend={() => onAddFriend(member.publicKey)}
-          onRemoveFriend={() => onRemoveFriend(member.publicKey)}
-          onBlockUser={() => onBlockUser(member.publicKey)}
-          onViewProfile={onUserClick ? () => onUserClick(member.publicKey) : undefined}
-        />
-      ))}
+      {members.map((member) => {
+        const memberRole = getMemberHighestRole(member);
+        return (
+          <MemberItem
+            key={member.publicKey}
+            publicKey={member.publicKey}
+            displayName={resolvedNames[member.publicKey]}
+            isNameLoading={!resolvedNames[member.publicKey]}
+            status={member.status}
+            role={member.role}
+            roleColor={memberRole?.color}
+            memberRoles={member.roles || []}
+            allRoles={roles}
+            isMe={member.publicKey === myPublicKey}
+            isFriend={isFriend(member.publicKey)}
+            hasPending={hasPendingRequest(member.publicKey)}
+            onSendMessage={() => onSendMessage(member.publicKey)}
+            onAddFriend={() => onAddFriend(member.publicKey)}
+            onRemoveFriend={() => onRemoveFriend(member.publicKey)}
+            onBlockUser={() => onBlockUser(member.publicKey)}
+            onViewProfile={onUserClick ? () => onUserClick(member.publicKey) : undefined}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -333,6 +359,9 @@ interface MemberItemProps {
   isNameLoading: boolean;
   status?: string;
   role?: "owner" | "admin" | "member";
+  roleColor?: string;
+  memberRoles: string[];
+  allRoles: Role[];
   isMe: boolean;
   isFriend: boolean;
   hasPending: boolean;
@@ -344,10 +373,14 @@ interface MemberItemProps {
 }
 
 function MemberItem({ 
+  publicKey,
   displayName, 
   isNameLoading,
   status, 
   role,
+  roleColor,
+  memberRoles,
+  allRoles,
   isMe, 
   isFriend,
   hasPending,
@@ -358,8 +391,15 @@ function MemberItem({
   onViewProfile,
 }: MemberItemProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const [showRolesSubmenu, setShowRolesSubmenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
+  
+  // Permission checks for role assignment
+  const { canAssignRoles } = usePermissions();
+  const myRoles = useMyRoles();
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const getResolver = useRoleStore((s) => s.getResolver);
   
   // Determine status color
   const statusColor =
@@ -370,6 +410,38 @@ function MemberItem({
       : status === "dnd"
       ? "bg-red-500"
       : "bg-gray-500";
+  
+  // Check which roles I can assign to this member
+  const assignableRoles = useMemo(() => {
+    if (!activeNodeId || !canAssignRoles) return [];
+    const resolver = getResolver(activeNodeId);
+    
+    // Filter roles that I can assign (based on hierarchy)
+    return allRoles.filter((r) => {
+      // Can't assign Owner role
+      if (r.id === BUILT_IN_ROLE_IDS.OWNER) return false;
+      // Check if I can assign this role based on my position
+      return resolver.canAssignRole(myRoles, r.id);
+    }).sort((a, b) => a.position - b.position);
+  }, [activeNodeId, canAssignRoles, allRoles, myRoles, getResolver]);
+  
+  // Handle role toggle
+  const handleRoleToggle = async (roleId: string) => {
+    if (!activeNodeId) return;
+    
+    const hasRole = memberRoles.includes(roleId);
+    try {
+      if (hasRole) {
+        await roleManager.removeRole(activeNodeId, publicKey, roleId);
+      } else {
+        await roleManager.assignRole(activeNodeId, publicKey, roleId);
+      }
+      // Refresh members to get updated roles
+      useNodeStore.getState().loadMembers(activeNodeId);
+    } catch (err) {
+      console.error("Failed to toggle role:", err);
+    }
+  };
 
   const handleClick = () => {
     if (isMe) {
@@ -428,13 +500,13 @@ function MemberItem({
         </div>
 
         {/* Name with friend indicator */}
-        <span className="text-nodes-text text-sm truncate flex items-center gap-1">
+        <span className="text-sm truncate flex items-center gap-1">
           {isNameLoading ? (
             <NameSkeleton width="w-20" />
           ) : (
             <>
               {role === "owner" && <span title="Node Owner">👑</span>}
-              {displayName}
+              <span style={{ color: roleColor || 'var(--nodes-text)' }}>{displayName}</span>
               {isMe && <span className="text-nodes-text-muted ml-1">(you)</span>}
               {!isMe && isFriend && (
                 <svg className="w-3 h-3 text-nodes-accent" fill="currentColor" viewBox="0 0 20 20">
@@ -527,6 +599,71 @@ function MemberItem({
                 </svg>
                 View Profile
               </button>
+            )}
+
+            {/* Roles submenu - only show if user can assign roles */}
+            {canAssignRoles && assignableRoles.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowRolesSubmenu(!showRolesSubmenu)}
+                  className="w-full px-3 py-2 text-left text-sm text-nodes-text hover:bg-nodes-bg transition-colors flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    Roles
+                  </div>
+                  <svg 
+                    className={`w-3 h-3 transition-transform ${showRolesSubmenu ? 'rotate-90' : ''}`} 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor" 
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                
+                {/* Roles submenu content */}
+                {showRolesSubmenu && (
+                  <div className="border-t border-nodes-border bg-nodes-bg/50">
+                    {assignableRoles.map((r) => {
+                      const hasRole = memberRoles.includes(r.id);
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => handleRoleToggle(r.id)}
+                          className="w-full px-4 py-1.5 text-left text-sm text-nodes-text hover:bg-nodes-bg transition-colors flex items-center gap-2"
+                        >
+                          {/* Checkbox */}
+                          <div 
+                            className={`w-4 h-4 rounded border flex items-center justify-center ${
+                              hasRole 
+                                ? 'bg-nodes-accent border-nodes-accent' 
+                                : 'border-nodes-border'
+                            }`}
+                          >
+                            {hasRole && (
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          {/* Role color dot */}
+                          {r.color && (
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: r.color }}
+                            />
+                          )}
+                          <span>{r.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Divider */}

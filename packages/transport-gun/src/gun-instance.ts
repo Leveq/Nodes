@@ -7,11 +7,38 @@ type GunUser = ReturnType<GunInstance["user"]>;
 // Local relay for development (run: node scripts/gun-relay.mjs)
 const LOCAL_RELAY = "http://localhost:8765/gun";
 
+// Staging relay - set VITE_GUN_RELAY_URL env var to your deployed relay
+const STAGING_RELAY = import.meta.env.VITE_GUN_RELAY_URL as string | undefined;
+
 // Public relays - these change frequently, local relay is most reliable
 const PUBLIC_PEERS = [
   "https://gun-manhattan.herokuapp.com/gun",
   "https://gun-us.herokuapp.com/gun",
 ];
+
+/**
+ * Get the list of Gun relay peers based on environment.
+ * Priority: VITE_GUN_RELAY_URL > local relay > public peers
+ */
+function getDefaultPeers(): string[] {
+  const peers: string[] = [];
+  
+  // If staging relay is set, use it as primary
+  if (STAGING_RELAY) {
+    console.log("[Gun] Using staging relay:", STAGING_RELAY);
+    peers.push(STAGING_RELAY);
+  }
+  
+  // In development, also try local relay
+  if (import.meta.env.DEV) {
+    peers.push(LOCAL_RELAY);
+  }
+  
+  // Always include public peers as fallback
+  peers.push(...PUBLIC_PEERS);
+  
+  return peers;
+}
 
 /**
  * Suppress Gun's verbose "syncing 1K+ records" warning.
@@ -39,17 +66,18 @@ let gunInstance: GunInstance | null = null;
 export class GunInstanceManager {
   /**
    * Initialize GunJS with relay peers.
-   * Prefers local relay (run scripts/gun-relay.mjs) for dev,
+   * Uses VITE_GUN_RELAY_URL if set, otherwise local relay in dev,
    * falls back to public peers.
    */
   static init(peers?: string[]): GunInstance {
     if (gunInstance) return gunInstance;
 
-    // Use provided peers, or default to local + public relays
-    const defaultPeers = [LOCAL_RELAY, ...PUBLIC_PEERS];
+    // Use provided peers, or get defaults based on environment
+    const activePeers = peers ?? getDefaultPeers();
+    console.log("[Gun] Connecting to peers:", activePeers);
 
     gunInstance = Gun({
-      peers: peers ?? defaultPeers,
+      peers: activePeers,
       localStorage: true, // Use browser localStorage for persistence
       radisk: true, // Enable Radisk storage engine
     });

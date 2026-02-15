@@ -12,6 +12,8 @@ import {
 interface MessageContextMenuProps {
   messageId: string;
   isOwnMessage: boolean;
+  canDelete?: boolean;
+  canReact?: boolean;
   isDeleted?: boolean;
   onReply: () => void;
   onEdit: () => void;
@@ -32,13 +34,15 @@ interface MessageContextMenuProps {
  * Or as a dropdown from ⋮:
  * - Reply
  * - Edit (own messages only)
- * - Delete (own messages only)
+ * - Delete (own messages or with deleteAnyMessage permission)
  * - Copy text
  * - Copy link to message
- * - Add reaction
+ * - Add reaction (with useReactions permission)
  */
 export function MessageContextMenu({
   isOwnMessage,
+  canDelete: canDeleteProp,
+  canReact: canReactProp,
   isDeleted = false,
   onReply,
   onEdit,
@@ -49,6 +53,11 @@ export function MessageContextMenu({
 }: MessageContextMenuProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  // canDelete defaults to isOwnMessage if not provided (backward compat)
+  const canDelete = canDeleteProp ?? isOwnMessage;
+  // canReact defaults to true if not provided (backward compat)
+  const canReact = canReactProp ?? true;
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -122,7 +131,9 @@ export function MessageContextMenu({
   return (
     <div className="absolute -top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-nodes-bg rounded-lg border border-nodes-border shadow-lg px-1 py-0.5">
       {/* Quick action buttons */}
-      <IconButton icon={SmilePlus} label="Add reaction" onClick={onAddReaction} />
+      {canReact && (
+        <IconButton icon={SmilePlus} label="Add reaction" onClick={onAddReaction} />
+      )}
       <IconButton icon={Reply} label="Reply" onClick={onReply} />
       {isOwnMessage && (
         <IconButton icon={Edit} label="Edit message" onClick={onEdit} />
@@ -148,12 +159,14 @@ export function MessageContextMenu({
             )}
             <DropdownItem icon={Copy} label="Copy text" onClick={onCopyText} />
             <DropdownItem icon={Link} label="Copy link" onClick={onCopyLink} />
-            <DropdownItem
-              icon={SmilePlus}
-              label="Add reaction"
-              onClick={onAddReaction}
-            />
-            {isOwnMessage && (
+            {canReact && (
+              <DropdownItem
+                icon={SmilePlus}
+                label="Add reaction"
+                onClick={onAddReaction}
+              />
+            )}
+            {canDelete && (
               <>
                 <div className="border-t border-nodes-border my-1" />
                 <DropdownItem

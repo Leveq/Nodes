@@ -1,5 +1,7 @@
 import type { NodeServer, NodeMember, NodeChannel, NodeInvite } from "@nodes/core";
+import { BUILT_IN_ROLE_IDS } from "@nodes/core";
 import { GunInstanceManager } from "./gun-instance";
+import { roleManager } from "./role-manager";
 
 /**
  * NodeManager handles CRUD operations for Nodes (community servers).
@@ -60,8 +62,11 @@ export class NodeManager {
             return;
           }
 
-          // Add creator as owner member
-          await this.addMember(id, creatorPublicKey, "owner");
+          // Initialize built-in roles
+          await roleManager.initializeRoles(id, creatorPublicKey);
+
+          // Add creator as owner member (with owner role)
+          await this.addMember(id, creatorPublicKey, [BUILT_IN_ROLE_IDS.OWNER]);
 
           // Create default channels
           await this.createChannel(id, "general", "text", "General discussion", 0);
@@ -224,17 +229,48 @@ export class NodeManager {
 
   // ── Member Management ──
 
+  /**
+   * Add a member to a Node.
+   * @param roles - Array of role IDs, or legacy role string for backwards compat
+   */
   async addMember(
     nodeId: string,
     publicKey: string,
-    role: "owner" | "admin" | "member"
+    roles: string[] | "owner" | "admin" | "member"
   ): Promise<void> {
     const gun = GunInstanceManager.get();
+
+    // Convert legacy role string to roles array
+    let roleIds: string[];
+    let legacyRole: "owner" | "admin" | "member";
+
+    if (Array.isArray(roles)) {
+      roleIds = roles;
+      // Derive legacy role for backwards compat
+      if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) {
+        legacyRole = "owner";
+      } else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) {
+        legacyRole = "admin";
+      } else {
+        legacyRole = "member";
+      }
+    } else {
+      // Legacy: convert string to array
+      legacyRole = roles;
+      if (roles === "owner") {
+        roleIds = [BUILT_IN_ROLE_IDS.OWNER];
+      } else if (roles === "admin") {
+        roleIds = [BUILT_IN_ROLE_IDS.ADMIN];
+      } else {
+        roleIds = [];  // Member role is implicit
+      }
+    }
 
     gun.get("nodes").get(nodeId).get("members").get(publicKey).put({
       publicKey,
       joinedAt: Date.now(),
-      role,
+      roles: JSON.stringify(roleIds),
+      role: legacyRole,  // Keep legacy field for backwards compat
     });
   }
 
@@ -248,11 +284,32 @@ export class NodeManager {
           resolve(null);
           return;
         }
+
+        // Parse roles array (support both new and legacy format)
+        let roles: string[] = [];
+        if (data.roles) {
+          try {
+            roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
+          } catch {
+            roles = [];
+          }
+        } else if (data.role) {
+          // Legacy format: convert single role to array
+          if (data.role === "owner") roles = [BUILT_IN_ROLE_IDS.OWNER];
+          else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
+        }
+
+        // Derive legacy role field
+        let legacyRole: "owner" | "admin" | "member" = "member";
+        if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) legacyRole = "owner";
+        else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) legacyRole = "admin";
+
         resolve({
           publicKey: data.publicKey,
           displayName: "", // Resolved separately via profile lookup
           joinedAt: data.joinedAt || 0,
-          role: data.role || "member",
+          roles,
+          role: legacyRole,
         });
       });
     });
@@ -276,11 +333,31 @@ export class NodeManager {
       gun.get("nodes").get(nodeId).get("members").map().once((data: any) => {
         if (!data || !data.publicKey) return;
 
+        // Parse roles array (support both new and legacy format)
+        let roles: string[] = [];
+        if (data.roles) {
+          try {
+            roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
+          } catch {
+            roles = [];
+          }
+        } else if (data.role) {
+          // Legacy format: convert single role to array
+          if (data.role === "owner") roles = [BUILT_IN_ROLE_IDS.OWNER];
+          else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
+        }
+
+        // Derive legacy role field
+        let legacyRole: "owner" | "admin" | "member" = "member";
+        if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) legacyRole = "owner";
+        else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) legacyRole = "admin";
+
         members.push({
           publicKey: data.publicKey,
           displayName: "",
           joinedAt: data.joinedAt || 0,
-          role: data.role || "member",
+          roles,
+          role: legacyRole,
         });
       });
 
@@ -479,11 +556,31 @@ export class NodeManager {
     const ref = gun.get("nodes").get(nodeId).get("members").map().on((data: any) => {
       if (!data || !data.publicKey) return;
 
+      // Parse roles array (support both new and legacy format)
+      let roles: string[] = [];
+      if (data.roles) {
+        try {
+          roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
+        } catch {
+          roles = [];
+        }
+      } else if (data.role) {
+        // Legacy format: convert single role to array
+        if (data.role === "owner") roles = [BUILT_IN_ROLE_IDS.OWNER];
+        else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
+      }
+
+      // Derive legacy role field
+      let legacyRole: "owner" | "admin" | "member" = "member";
+      if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) legacyRole = "owner";
+      else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) legacyRole = "admin";
+
       const member: NodeMember = {
         publicKey: data.publicKey,
         displayName: "",
         joinedAt: data.joinedAt || 0,
-        role: data.role || "member",
+        roles,
+        role: legacyRole,
       };
 
       // Queue and schedule flush

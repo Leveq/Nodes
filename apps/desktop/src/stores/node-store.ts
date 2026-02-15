@@ -32,7 +32,7 @@ interface NodeState {
   setActiveChannel: (channelId: string | null) => void;
   loadChannels: (nodeId: string) => Promise<void>;
   loadMembers: (nodeId: string) => Promise<void>;
-  createChannel: (nodeId: string, name: string, topic?: string) => Promise<void>;
+  createChannel: (nodeId: string, name: string, topic?: string, type?: "text" | "voice") => Promise<void>;
   deleteChannel: (nodeId: string, channelId: string) => Promise<void>;
   generateInvite: (nodeId: string) => Promise<string>;
   getActiveNode: () => NodeServer | null;
@@ -226,12 +226,12 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     }
   },
 
-  createChannel: async (nodeId, name, topic = "") => {
+  createChannel: async (nodeId, name, topic = "", type = "text") => {
     try {
       const existingChannels = get().channels[nodeId] || [];
       const position = existingChannels.length;
 
-      await nodeManager.createChannel(nodeId, name, "text", topic, position);
+      await nodeManager.createChannel(nodeId, name, type, topic, position);
 
       // Reload channels
       await get().loadChannels(nodeId);

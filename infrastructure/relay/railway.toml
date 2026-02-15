@@ -1,0 +1,13 @@
+# Railway deployment configuration for Gun relay
+# Deploy with: railway up
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "infrastructure/relay/Dockerfile"
+
+[deploy]
+startCommand = "node relay.mjs"
+healthcheckPath = "/health"
+healthcheckTimeout = 5
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

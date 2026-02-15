@@ -4,6 +4,7 @@ import { useIdentityStore } from "../../stores/identity-store";
 import { useMessageStore } from "../../stores/message-store";
 import { useToastStore } from "../../stores/toast-store";
 import { useReplyStore } from "../../stores/reply-store";
+import { usePermissions } from "../../hooks/usePermissions";
 import { FileAttachmentButton, type PendingAttachment } from "./FileAttachmentButton";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ReplyPreview } from "./ReplyPreview";
@@ -44,8 +45,14 @@ export function MessageInput({
   const typingTimeoutRef = useRef<number | null>(null);
 
   const { ipfsReady, ...transport } = useTransport();
+  const transportRef = useRef(transport);
+  transportRef.current = transport; // Keep ref updated
+  
   const publicKey = useIdentityStore((s) => s.publicKey);
   const addToast = useToastStore((s) => s.addToast);
+  
+  // Permission checks
+  const { canSendMessages, canSendFiles } = usePermissions(channelId);
 
   // Reply state
   const replyTarget = useReplyStore((s) => s.replyTargets[channelId]);
@@ -76,22 +83,27 @@ export function MessageInput({
     }
   }, [content]);
 
-  // Clear typing indicator on unmount
+  // Clear typing indicator on unmount only
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      // Clear typing on unmount
-      transport?.presence.setTyping(channelId, false).catch(() => {});
+      // Clear typing on unmount (using ref to get current transport)
+      const currentTransport = transportRef.current;
+      if (currentTransport?.presence) {
+        currentTransport.presence.setTyping(channelId, false).catch(() => {});
+      }
     };
-  }, [channelId, transport]);
+  }, [channelId]);
 
   const handleTyping = useCallback(() => {
-    if (!transport || !content.trim()) return;
+    if (!transport) return;
 
     // Set typing to true
-    transport.presence.setTyping(channelId, true).catch(() => {});
+    transport.presence.setTyping(channelId, true).catch((err) => {
+      console.error("[MessageInput] setTyping error:", err);
+    });
 
     // Clear previous timeout
     if (typingTimeoutRef.current) {
@@ -102,11 +114,15 @@ export function MessageInput({
     typingTimeoutRef.current = window.setTimeout(() => {
       transport.presence.setTyping(channelId, false).catch(() => {});
     }, 3000);
-  }, [channelId, transport, content]);
+  }, [channelId, transport]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
-    handleTyping();
+    const newValue = e.target.value;
+    setContent(newValue);
+    // Only send typing indicator if there's actual content
+    if (newValue.trim()) {
+      handleTyping();
+    }
   };
 
   const handleSend = async () => {
@@ -309,32 +325,34 @@ export function MessageInput({
 
       <div className="px-4 py-3">
         <div className="message-input-container flex items-center gap-3 p-2">
-          {/* File attachment button */}
-          <FileAttachmentButton
-            onFilesSelected={handleFilesSelected}
-            disabled={isSending}
-            currentCount={pendingAttachments.length}
-          />
+          {/* File attachment button - only show if user can send files */}
+          {canSendFiles && (
+            <FileAttachmentButton
+              onFilesSelected={handleFilesSelected}
+              disabled={isSending || !canSendMessages}
+              currentCount={pendingAttachments.length}
+            />
+          )}
 
           <textarea
             ref={textareaRef}
             value={content}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={`Message #${channelName}`}
+            placeholder={canSendMessages ? `Message #${channelName}` : "You don't have permission to send messages"}
             rows={1}
-            disabled={isSending}
+            disabled={isSending || !canSendMessages}
             className="flex-1 bg-transparent text-text-primary placeholder-text-muted resize-none focus:outline-none min-h-[24px] max-h-[200px]"
           />
           <button
             onClick={handleSend}
-            disabled={!hasContent || isSending}
+            disabled={!hasContent || isSending || !canSendMessages}
             className={`p-2 rounded-lg transition-colors shrink-0 ${
-              hasContent
+              hasContent && canSendMessages
                 ? "send-btn-active"
                 : "text-text-muted cursor-not-allowed"
             }`}
-            title="Send message"
+            title={canSendMessages ? "Send message" : "You don't have permission to send messages"}
           >
             {isSending ? (
               <svg

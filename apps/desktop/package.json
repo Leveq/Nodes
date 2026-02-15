@@ -14,6 +14,8 @@
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
+    "@livekit/components-react": "^2.9.19",
+    "@livekit/components-styles": "^1.2.0",
     "@nodes/core": "workspace:*",
     "@nodes/crypto": "workspace:*",
     "@nodes/transport": "workspace:*",
@@ -24,6 +26,7 @@
     "browser-image-compression": "^2.0.2",
     "gun": "^0.2020.1241",
     "highlight.js": "^11.11.1",
+    "livekit-client": "^2.17.1",
     "lucide-react": "^0.564.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

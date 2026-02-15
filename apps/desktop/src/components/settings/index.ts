@@ -2,5 +2,8 @@ export { SettingsPage } from './SettingsPage';
 export { AccountSettings } from './AccountSettings';
 export { PrivacySettings } from './PrivacySettings';
 export { SocialSettings } from './SocialSettings';
+export { VoiceSettings } from './VoiceSettings';
 export { AppearanceSettings } from './AppearanceSettings';
 export { AboutSettings } from './AboutSettings';
+export { RolesTab } from './RolesTab';
+export { RoleEditor } from './RoleEditor';

@@ -15,6 +15,7 @@ export function CreateChannelModal({ nodeId, onClose }: CreateChannelModalProps)
   const { createChannel } = useNodeStore();
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
+  const [channelType, setChannelType] = useState<"text" | "voice">("text");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,7 +45,7 @@ export function CreateChannelModal({ nodeId, onClose }: CreateChannelModalProps)
     setIsSubmitting(true);
 
     try {
-      await createChannel(nodeId, name.trim(), topic.trim());
+      await createChannel(nodeId, name.trim(), topic.trim(), channelType);
       onClose();
     } catch {
       // Error handled by store via toast
@@ -87,19 +88,21 @@ export function CreateChannelModal({ nodeId, onClose }: CreateChannelModalProps)
           maxLength={256}
         />
 
-        {/* Channel type selector (voice disabled for now) */}
+        {/* Channel type selector */}
         <div>
           <label className="block text-sm font-medium text-nodes-text mb-2">
             Channel Type
           </label>
           <div className="space-y-2">
-            <label className="flex items-center gap-3 p-3 bg-nodes-bg rounded-lg border border-nodes-accent cursor-pointer">
+            <label className={`flex items-center gap-3 p-3 bg-nodes-bg rounded-lg border cursor-pointer transition-colors ${
+              channelType === "text" ? "border-nodes-accent" : "border-nodes-border hover:border-nodes-border-hover"
+            }`}>
               <input
                 type="radio"
                 name="channelType"
                 value="text"
-                checked
-                readOnly
+                checked={channelType === "text"}
+                onChange={() => setChannelType("text")}
                 className="text-nodes-accent"
               />
               <div>
@@ -109,18 +112,21 @@ export function CreateChannelModal({ nodeId, onClose }: CreateChannelModalProps)
                 </div>
               </div>
             </label>
-            <label className="flex items-center gap-3 p-3 bg-nodes-bg rounded-lg border border-nodes-border opacity-50 cursor-not-allowed">
+            <label className={`flex items-center gap-3 p-3 bg-nodes-bg rounded-lg border cursor-pointer transition-colors ${
+              channelType === "voice" ? "border-nodes-accent" : "border-nodes-border hover:border-nodes-border-hover"
+            }`}>
               <input
                 type="radio"
                 name="channelType"
                 value="voice"
-                disabled
+                checked={channelType === "voice"}
+                onChange={() => setChannelType("voice")}
                 className="text-nodes-accent"
               />
               <div>
                 <div className="font-medium text-nodes-text">🔊 Voice</div>
                 <div className="text-xs text-nodes-text-muted">
-                  Coming in Phase 2
+                  Talk with voice in real-time
                 </div>
               </div>
             </label>

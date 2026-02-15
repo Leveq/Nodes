@@ -68,7 +68,9 @@ export class GunPresenceTransport implements IPresenceTransport {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pair = (user as any)._.sea;
 
-    if (!pair) return;
+    if (!pair) {
+      return;
+    }
 
     gun.get("typing").get(channelId).get(pair.pub).put({
       isTyping,

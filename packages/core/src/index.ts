@@ -1,6 +1,9 @@
 // Core types for the Nodes platform
 // These will be expanded in subsequent milestones
 
+// Export permission resolver
+export { PermissionResolver, createPermissionResolver } from "./permissions";
+
 export interface User {
   publicKey: string;
   displayName: string;
@@ -37,8 +40,10 @@ export interface NodeMember {
   publicKey: string;
   displayName: string;
   joinedAt: number;
-  role: "owner" | "admin" | "member";
+  roles: string[];        // Array of role IDs (e.g., ["role_moderator", "role_custom_xyz"])
   status?: UserStatus;
+  // Legacy field - kept for backwards compatibility, derived from roles
+  role?: "owner" | "admin" | "member";
 }
 
 export interface NodeChannel {
@@ -156,3 +161,196 @@ export const FILE_LIMITS = {
     'video/mp4', 'audio/mpeg', 'audio/ogg'
   ] as const
 } as const;
+
+// ── Role & Permission Types (Milestone 2.3) ──
+
+export const BUILT_IN_ROLE_IDS = {
+  OWNER: "role_owner",
+  ADMIN: "role_admin",
+  MODERATOR: "role_moderator",
+  MEMBER: "role_member",
+} as const;
+
+export type BuiltInRoleId = typeof BUILT_IN_ROLE_IDS[keyof typeof BUILT_IN_ROLE_IDS];
+
+export interface Role {
+  id: string;
+  name: string;
+  color: string;           // hex color, e.g. "#E74C3C"
+  position: number;        // 0 = highest (owner), higher number = lower rank
+  permissions: RolePermissions;
+  isBuiltIn: boolean;
+  createdAt: number;
+  createdBy: string;       // publicKey of creator
+}
+
+export interface RolePermissions {
+  // Node management
+  manageNode: boolean;           // Edit name, description, icon
+  manageChannels: boolean;       // Create, delete, reorder channels
+  editChannelSettings: boolean;  // Edit name, topic of existing channels
+
+  // Role management
+  manageRoles: boolean;          // Create, edit, delete roles
+  assignRoles: boolean;          // Assign roles to members
+
+  // Messaging
+  sendMessages: boolean;
+  sendFiles: boolean;
+  useReactions: boolean;
+  embedLinks: boolean;
+  editOwnMessages: boolean;
+  deleteOwnMessages: boolean;
+  deleteAnyMessage: boolean;     // Moderation: delete others' messages
+
+  // Moderation
+  kickMembers: boolean;
+  banMembers: boolean;
+  manageInvites: boolean;
+  viewAuditLog: boolean;
+
+  // Voice (prep for 2.4)
+  connectVoice: boolean;
+  muteMembers: boolean;
+  moveMembers: boolean;
+  disconnectMembers: boolean;
+}
+
+export type OverrideState = "allow" | "deny" | "inherit";
+
+export interface ChannelPermissionOverride {
+  roleId: string;
+  overrides: Partial<Record<keyof RolePermissions, OverrideState>>;
+}
+
+// Default permission sets for built-in roles
+export const DEFAULT_PERMISSIONS: Record<BuiltInRoleId, RolePermissions> = {
+  [BUILT_IN_ROLE_IDS.OWNER]: {
+    manageNode: true, manageChannels: true, editChannelSettings: true,
+    manageRoles: true, assignRoles: true,
+    sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
+    editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: true,
+    kickMembers: true, banMembers: true, manageInvites: true, viewAuditLog: true,
+    connectVoice: true, muteMembers: true, moveMembers: true, disconnectMembers: true,
+  },
+  [BUILT_IN_ROLE_IDS.ADMIN]: {
+    manageNode: true, manageChannels: true, editChannelSettings: true,
+    manageRoles: true, assignRoles: true,
+    sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
+    editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: true,
+    kickMembers: true, banMembers: true, manageInvites: true, viewAuditLog: true,
+    connectVoice: true, muteMembers: true, moveMembers: true, disconnectMembers: true,
+  },
+  [BUILT_IN_ROLE_IDS.MODERATOR]: {
+    manageNode: false, manageChannels: false, editChannelSettings: true,
+    manageRoles: false, assignRoles: false,
+    sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
+    editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: true,
+    kickMembers: true, banMembers: false, manageInvites: false, viewAuditLog: true,
+    connectVoice: true, muteMembers: true, moveMembers: false, disconnectMembers: true,
+  },
+  [BUILT_IN_ROLE_IDS.MEMBER]: {
+    manageNode: false, manageChannels: false, editChannelSettings: false,
+    manageRoles: false, assignRoles: false,
+    sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
+    editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: false,
+    kickMembers: false, banMembers: false, manageInvites: false, viewAuditLog: false,
+    connectVoice: true, muteMembers: false, moveMembers: false, disconnectMembers: false,
+  },
+};
+
+// ── Voice Types (Milestone 2.4) ──
+
+export type VoiceTier = "mesh" | "livekit";
+
+export interface VoiceState {
+  channelId: string | null;     // Currently connected voice channel
+  tier: VoiceTier | null;       // Current connection tier
+  muted: boolean;               // Self-muted
+  deafened: boolean;            // Self-deafened
+  speaking: boolean;            // Currently transmitting audio
+  connecting: boolean;          // Connection in progress
+}
+
+export interface VoiceParticipant {
+  publicKey: string;
+  displayName: string;
+  muted: boolean;               // Self-muted OR server-muted
+  deafened: boolean;
+  speaking: boolean;
+  serverMuted: boolean;         // Muted by a moderator
+  roleColor?: string;
+}
+
+export interface VoiceChannelState {
+  channelId: string;
+  participants: VoiceParticipant[];
+  tier: VoiceTier;
+  maxParticipants: number;
+}
+
+export interface NodeVoiceConfig {
+  livekitUrl?: string;          // Custom LiveKit server URL
+  livekitApiKey?: string;       // API key (stored encrypted)
+  livekitApiSecret?: string;    // API secret (stored encrypted)
+  useDefaultServer: boolean;    // Use community LiveKit instance
+  maxUsersPerChannel: number;   // Default: 50
+}
+
+export const VOICE_CONSTANTS = {
+  MESH_MAX_PARTICIPANTS: 6,
+  DEFAULT_MAX_PARTICIPANTS: 50,
+  SPEAKING_THRESHOLD_DB: -50,   // dB level to trigger "speaking" indicator
+  SPEAKING_DEBOUNCE_MS: 200,    // Debounce to prevent flickering
+  ICE_SERVERS: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ],
+} as const;
+
+// Helper to create default built-in roles for a new Node
+export function createDefaultRoles(creatorKey: string): Role[] {
+  const now = Date.now();
+  return [
+    {
+      id: BUILT_IN_ROLE_IDS.OWNER,
+      name: "Owner",
+      color: "#F1C40F",  // Gold
+      position: 0,
+      permissions: DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.OWNER],
+      isBuiltIn: true,
+      createdAt: now,
+      createdBy: creatorKey,
+    },
+    {
+      id: BUILT_IN_ROLE_IDS.ADMIN,
+      name: "Admin",
+      color: "#E74C3C",  // Red
+      position: 1,
+      permissions: DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.ADMIN],
+      isBuiltIn: true,
+      createdAt: now,
+      createdBy: creatorKey,
+    },
+    {
+      id: BUILT_IN_ROLE_IDS.MODERATOR,
+      name: "Moderator",
+      color: "#3498DB",  // Blue
+      position: 2,
+      permissions: DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.MODERATOR],
+      isBuiltIn: true,
+      createdAt: now,
+      createdBy: creatorKey,
+    },
+    {
+      id: BUILT_IN_ROLE_IDS.MEMBER,
+      name: "Member",
+      color: "#95A5A6",  // Gray
+      position: 100,     // High number so custom roles can be inserted between
+      permissions: DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.MEMBER],
+      isBuiltIn: true,
+      createdAt: now,
+      createdBy: creatorKey,
+    },
+  ];
+}

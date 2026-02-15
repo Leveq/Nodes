@@ -7,6 +7,7 @@ export type {
   IPresenceTransport,
   IAuthProvider,
   IFileTransport,
+  IVoiceTransport,
   IConnectionMonitor,
   MessageHandler,
   PresenceHandler,

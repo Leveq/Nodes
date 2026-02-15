@@ -3,6 +3,7 @@ import type { TransportMessage, ReactionData } from "@nodes/transport";
 import type { FileAttachment } from "@nodes/core";
 import { useDisplayName } from "../../hooks/useDisplayName";
 import { useLinkPreview } from "../../hooks/useLinkPreview";
+import { usePermissions, useMemberRoleColor } from "../../hooks/usePermissions";
 import { useIdentityStore } from "../../stores/identity-store";
 import { formatMessageTime, formatFullTimestamp } from "../../utils/time";
 import { getFirstPreviewableUrl } from "../../utils/url-detection";
@@ -65,6 +66,13 @@ export const MessageItem = memo(function MessageItem({
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
   const addToast = useToastStore((s) => s.addToast);
+  
+  // Permission checks
+  const { canDeleteAnyMessage, permissions } = usePermissions(message.channelId);
+  const canReact = permissions?.useReactions ?? true;
+  
+  // Author's role color
+  const authorRoleColor = useMemberRoleColor(message.authorKey);
 
   // Link preview - extract first non-image URL from message content
   const previewUrl = useMemo(() => {
@@ -84,6 +92,9 @@ export const MessageItem = memo(function MessageItem({
 
   // Check if current user owns this message
   const isOwnMessage = publicKey === message.authorKey;
+  
+  // Can delete if own message or has deleteAnyMessage permission
+  const canDelete = isOwnMessage || canDeleteAnyMessage;
 
   // Handle save edit
   const handleSaveEdit = async (newContent: string) => {
@@ -113,7 +124,7 @@ export const MessageItem = memo(function MessageItem({
   }, [isOwnMessage, isEditing, message.id, message.content, startEditing]);
 
   const handleDelete = useCallback(async () => {
-    if (!transport || !isOwnMessage) return;
+    if (!transport || !canDelete) return;
     try {
       await transport.message.deleteMessage(message.channelId, message.id);
       addToast("success", "Message deleted");
@@ -121,7 +132,7 @@ export const MessageItem = memo(function MessageItem({
       console.error("Failed to delete message:", err);
       addToast("error", "Failed to delete message");
     }
-  }, [transport, isOwnMessage, message.channelId, message.id, addToast]);
+  }, [transport, canDelete, message.channelId, message.id, addToast]);
 
   const handleCopyText = useCallback(() => {
     navigator.clipboard.writeText(message.content);
@@ -202,6 +213,8 @@ export const MessageItem = memo(function MessageItem({
             <MessageContextMenu
               messageId={message.id}
               isOwnMessage={isOwnMessage}
+              canDelete={canDelete}
+              canReact={canReact}
               isDeleted={isDeleted}
               onReply={handleReply}
               onEdit={handleEdit}
@@ -285,6 +298,7 @@ export const MessageItem = memo(function MessageItem({
                     reactions={reactions}
                     onAddReaction={onAddReaction}
                     onRemoveReaction={onRemoveReaction}
+                    canAddReaction={canReact}
                   />
                 )}
               </>
@@ -338,6 +352,8 @@ export const MessageItem = memo(function MessageItem({
           <MessageContextMenu
             messageId={message.id}
             isOwnMessage={isOwnMessage}
+            canDelete={canDelete}
+            canReact={canReact}
             isDeleted={isDeleted}
             onReply={handleReply}
             onEdit={handleEdit}
@@ -364,7 +380,12 @@ export const MessageItem = memo(function MessageItem({
             {isLoading ? (
               <NameSkeleton width="w-20" />
             ) : (
-              <span className="font-medium text-nodes-text">{displayName}</span>
+              <span 
+                className="font-medium"
+                style={{ color: authorRoleColor || 'var(--nodes-text)' }}
+              >
+                {displayName}
+              </span>
             )}
             <span
               className="text-xs text-nodes-text-muted"
@@ -437,6 +458,7 @@ export const MessageItem = memo(function MessageItem({
                   reactions={reactions}
                   onAddReaction={onAddReaction}
                   onRemoveReaction={onRemoveReaction}
+                  canAddReaction={canReact}
                 />
               )}
             </>
