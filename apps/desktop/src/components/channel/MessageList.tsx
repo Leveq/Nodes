@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import type { TransportMessage } from "@nodes/transport";
+import type { TransportMessage, ReactionData } from "@nodes/transport";
 import { useMessageStore } from "../../stores/message-store";
 import { groupMessages, isSystemMessage } from "../../utils/message-grouping";
 import { shouldShowDateSeparator } from "../../utils/time";
@@ -11,10 +11,16 @@ import { NewMessagesBanner } from "./NewMessagesBanner";
 // Stable empty array to avoid new references on each render
 const EMPTY_MESSAGES: TransportMessage[] = [];
 
+// Type for message reactions: messageId → emoji → reactions
+type MessageReactionsMap = Record<string, Record<string, ReactionData[]>>;
+
 interface MessageListProps {
   channelId: string;
   channelName: string;
   channelTopic?: string;
+  reactions?: MessageReactionsMap;
+  onAddReaction?: (messageId: string, emoji: string) => void;
+  onRemoveReaction?: (messageId: string, emoji: string) => void;
 }
 
 /**
@@ -31,6 +37,9 @@ export function MessageList({
   channelId,
   channelName,
   channelTopic,
+  reactions,
+  onAddReaction,
+  onRemoveReaction,
 }: MessageListProps) {
   const messages = useMessageStore((s) => s.messages[channelId] ?? EMPTY_MESSAGES);
   const isLoading = useMessageStore((s) => s.loadingChannels[channelId] ?? false);
@@ -38,6 +47,7 @@ export function MessageList({
   const [showNewMessagesBanner, setShowNewMessagesBanner] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const prevMessageCountRef = useRef(messages.length);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
 
   // Group messages by author
   const messageGroups = useMemo(() => groupMessages(messages), [messages]);
@@ -64,6 +74,21 @@ export function MessageList({
     }
     setShowNewMessagesBanner(false);
     setIsAtBottom(true);
+  }, []);
+
+  // Scroll to a specific message by ID
+  const scrollToMessage = useCallback((messageId: string) => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    // Find the message element
+    const messageEl = container.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageEl) {
+      messageEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Highlight briefly
+      setHighlightedMessageId(messageId);
+      setTimeout(() => setHighlightedMessageId(null), 2000);
+    }
   }, []);
 
   // Handle scroll events
@@ -161,7 +186,13 @@ export function MessageList({
                     <SystemMessage key={msg.id} message={msg} />
                   ))
                 ) : (
-                  <MessageGroup group={group} />
+                  <MessageGroup
+                    group={group}
+                    reactions={reactions}
+                    onAddReaction={onAddReaction}
+                    onRemoveReaction={onRemoveReaction}
+                    onScrollToMessage={scrollToMessage}
+                  />
                 )}
               </div>
             );

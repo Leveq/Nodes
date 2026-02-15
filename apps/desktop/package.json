@@ -12,15 +12,24 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
     "@nodes/core": "workspace:*",
     "@nodes/crypto": "workspace:*",
     "@nodes/transport": "workspace:*",
     "@nodes/transport-gun": "workspace:*",
     "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-http": "^2.5.7",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "browser-image-compression": "^2.0.2",
     "gun": "^0.2020.1241",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^0.564.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

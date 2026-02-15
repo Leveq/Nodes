@@ -48,6 +48,8 @@ fn main() {
 
             Ok(())
         })
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_http::init())
         .run(tauri::generate_context!())
         .expect("error while running Nodes");
 }

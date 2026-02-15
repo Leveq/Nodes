@@ -4,7 +4,7 @@ export { ProfileManager } from "./profile-manager";
 export type { ProfileData, ProfileWithVisibility } from "./profile-manager";
 
 // Transport implementations
-export { GunMessageTransport } from "./message-transport";
+export { GunMessageTransport, generateMessageId } from "./message-transport";
 export { GunPresenceTransport } from "./presence-transport";
 export { GunConnectionMonitor } from "./connection-monitor";
 export { LocalFileTransport } from "./file-transport";

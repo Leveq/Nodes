@@ -23,7 +23,36 @@ export interface TransportMessage {
   signature?: string; // SEA signature for verification
   editedAt?: number;
   attachments?: string; // JSON-stringified FileAttachment[] (Milestone 2.1)
+  
+  // Reply reference (Milestone 2.2)
+  replyTo?: {
+    messageId: string;
+    authorKey: string;
+    contentPreview: string; // first 100 chars of original
+  };
+
+  // Deletion tracking (Milestone 2.2)
+  deleted?: boolean;
+  deletedAt?: number;
+  deletedBy?: string; // authorKey of who deleted (for mod deletions)
+
+  // Edit history (Milestone 2.2)
+  edited?: boolean;
+  editHistory?: Array<{
+    content: string;
+    editedAt: number;
+  }>;
 }
+
+// Reaction data for a single user's reaction (Milestone 2.2)
+export interface ReactionData {
+  emoji: string;
+  userKey: string;
+  timestamp: number;
+}
+
+// Map of emoji → list of reactions for that emoji
+export type MessageReactions = Record<string, ReactionData[]>;
 
 export interface PresenceInfo {
   publicKey: string;
@@ -97,7 +126,8 @@ export interface IMessageTransport {
   /** Send a message to a channel. Can pass a string for simple text messages. */
   send(
     channelId: string,
-    message: string | Partial<Omit<TransportMessage, "id" | "timestamp" | "signature">>
+    message: string | Partial<Omit<TransportMessage, "id" | "timestamp" | "signature">>,
+    providedId?: string
   ): Promise<TransportMessage>;
 
   /** Subscribe to real-time messages in a channel */
@@ -115,6 +145,20 @@ export interface IMessageTransport {
     messageId: string,
     newContent: string
   ): Promise<TransportMessage>;
+
+  // ── Reaction Methods (Milestone 2.2) ──
+
+  /** Add a reaction to a message */
+  addReaction(channelId: string, messageId: string, emoji: string): Promise<void>;
+
+  /** Remove a reaction from a message */
+  removeReaction(channelId: string, messageId: string, emoji: string): Promise<void>;
+
+  /** Subscribe to reaction changes for a channel's messages */
+  subscribeReactions(
+    channelId: string,
+    handler: (messageId: string, reactions: MessageReactions) => void
+  ): Unsubscribe;
 }
 
 /**

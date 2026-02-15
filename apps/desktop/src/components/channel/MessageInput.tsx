@@ -1,10 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTransport } from "../../providers/TransportProvider";
 import { useIdentityStore } from "../../stores/identity-store";
+import { useMessageStore } from "../../stores/message-store";
 import { useToastStore } from "../../stores/toast-store";
+import { useReplyStore } from "../../stores/reply-store";
 import { FileAttachmentButton, type PendingAttachment } from "./FileAttachmentButton";
 import { AttachmentPreview } from "./AttachmentPreview";
+import { ReplyPreview } from "./ReplyPreview";
 import type { FileAttachment } from "@nodes/core";
+import { useDisplayName } from "../../hooks/useDisplayName";
+import { generateMessageId } from "@nodes/transport-gun";
 
 interface MessageInputProps {
   channelId: string;
@@ -41,6 +46,18 @@ export function MessageInput({
   const { ipfsReady, ...transport } = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
   const addToast = useToastStore((s) => s.addToast);
+
+  // Reply state
+  const replyTarget = useReplyStore((s) => s.replyTargets[channelId]);
+  const clearReplyTarget = useReplyStore((s) => s.clearReplyTarget);
+  const { displayName: replyAuthorName } = useDisplayName(replyTarget?.authorKey ?? "");
+
+  // Auto-focus textarea when replying
+  useEffect(() => {
+    if (replyTarget && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [replyTarget]);
 
   // Merge external attachments (from drag-and-drop)
   useEffect(() => {
@@ -105,6 +122,70 @@ export function MessageInput({
       return;
     }
 
+    // For text-only messages: instant send with optimistic update
+    if (!hasAttachments) {
+      // Capture values before clearing
+      const messageContent = trimmed;
+      const currentReplyTarget = replyTarget;
+      
+      // Generate ID for both optimistic message and actual send
+      const messageId = generateMessageId();
+      const timestamp = Date.now();
+      
+      // Add optimistic message to store immediately
+      useMessageStore.getState().addMessage(channelId, {
+        id: messageId,
+        content: messageContent,
+        timestamp,
+        authorKey: publicKey,
+        channelId,
+        type: "text",
+        signature: "", // Will be filled by actual message
+        ...(currentReplyTarget ? {
+          replyTo: {
+            messageId: currentReplyTarget.messageId,
+            authorKey: currentReplyTarget.authorKey,
+            contentPreview: currentReplyTarget.contentPreview,
+          }
+        } : {}),
+      });
+      
+      // Clear input immediately for snappy UX
+      setContent("");
+      clearReplyTarget(channelId);
+      
+      // Reset textarea height and refocus
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.focus();
+      }
+
+      // Clear typing indicator
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      transport.presence.setTyping(channelId, false).catch(() => {});
+
+      // Send to Gun with the same ID (deduplication will prevent double-display)
+      transport.message.send(channelId, {
+        content: messageContent,
+        authorKey: publicKey,
+        type: "text",
+        replyTo: currentReplyTarget ? {
+          messageId: currentReplyTarget.messageId,
+          authorKey: currentReplyTarget.authorKey,
+          contentPreview: currentReplyTarget.contentPreview,
+        } : undefined,
+      } as any, messageId).catch(() => {
+        addToast("error", "Failed to send message. Please try again.");
+        // On failure, remove the optimistic message
+        // Note: For now we don't remove it - message might still have been sent
+      });
+
+      return;
+    }
+
+    // For messages with attachments: need loading state for IPFS upload
     setIsSending(true);
 
     try {
@@ -143,17 +224,22 @@ export function MessageInput({
       }
 
       // Send message with attachments
-      console.log('[MessageInput] Sending message with attachments:', attachments);
       await transport.message.send(channelId, {
         content: trimmed || "",
         authorKey: publicKey,
-        type: hasAttachments ? "file" : "text",
+        type: "file",
         attachments: attachments.length > 0 ? JSON.stringify(attachments) : undefined,
+        replyTo: replyTarget ? {
+          messageId: replyTarget.messageId,
+          authorKey: replyTarget.authorKey,
+          contentPreview: replyTarget.contentPreview,
+        } : undefined,
       } as any);
 
-      // Clear input and attachments
+      // Clear input, attachments, and reply target
       setContent("");
       setPendingAttachments([]);
+      clearReplyTarget(channelId);
 
       // Clear typing indicator
       if (typingTimeoutRef.current) {
@@ -170,7 +256,7 @@ export function MessageInput({
     } finally {
       setIsSending(false);
       // Focus textarea after React re-render completes
-      requestAnimationFrame(() => textareaRef.current?.focus());
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
 
@@ -206,6 +292,15 @@ export function MessageInput({
 
   return (
     <div className="border-t border-surface-border bg-depth-primary">
+      {/* Reply preview */}
+      {replyTarget && (
+        <ReplyPreview
+          authorName={replyAuthorName}
+          contentPreview={replyTarget.contentPreview}
+          onCancel={() => clearReplyTarget(channelId)}
+        />
+      )}
+
       {/* Attachment preview */}
       <AttachmentPreview
         attachments={pendingAttachments}

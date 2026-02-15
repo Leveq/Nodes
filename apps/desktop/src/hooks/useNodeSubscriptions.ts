@@ -13,7 +13,6 @@ import { useIdentityStore } from "../stores/identity-store";
 export function useNodeSubscriptions() {
   const transport = useTransport();
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
-  const activeChannelId = useNodeStore((s) => s.activeChannelId);
   const publicKey = useIdentityStore((s) => s.publicKey);
 
   // Store all channel subscriptions for cleanup
@@ -76,11 +75,10 @@ export function useNodeSubscriptions() {
       pendingMessagesRef.current.clear();
     };
 
-    // Subscribe to each channel (except the active one - ChannelView handles that)
+    // Subscribe to each channel for background unread tracking
+    // Note: ChannelView also subscribes to the active channel for its own view,
+    // deduplication in the store handles any overlap
     for (const channel of nodeChannels) {
-      // Skip the active channel - it's handled by ChannelView
-      if (channel.id === activeChannelId) continue;
-
       const channelId = channel.id;
 
       const unsub = transport.message.subscribe(channelId, (message: TransportMessage) => {
@@ -118,5 +116,5 @@ export function useNodeSubscriptions() {
       subscriptionsRef.current.forEach((unsub) => unsub());
       subscriptionsRef.current = [];
     };
-  }, [transport, activeNodeId, activeChannelId, publicKey]);
+  }, [transport, activeNodeId, publicKey]);
 }

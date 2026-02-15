@@ -7,10 +7,10 @@ type GunUser = ReturnType<GunInstance["user"]>;
 // Local relay for development (run: node scripts/gun-relay.mjs)
 const LOCAL_RELAY = "http://localhost:8765/gun";
 
-// Fallback public relays (often unreliable)
+// Public relays - these change frequently, local relay is most reliable
 const PUBLIC_PEERS = [
-  "https://peer.wallie.io/gun",
-  "https://gunjs.herokuapp.com/gun",
+  "https://gun-manhattan.herokuapp.com/gun",
+  "https://gun-us.herokuapp.com/gun",
 ];
 
 /**

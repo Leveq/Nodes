@@ -1,14 +1,18 @@
 import { useEffect, useState, useCallback } from "react";
-import type { TransportMessage } from "@nodes/transport";
+import type { TransportMessage, ReactionData } from "@nodes/transport";
 import { useTransport } from "../../providers/TransportProvider";
 import { useMessageStore } from "../../stores/message-store";
 import { useIdentityStore } from "../../stores/identity-store";
+import { useReactionStore } from "../../stores/reaction-store";
 import { createMessageBatcher } from "../../utils/message-batcher";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { TypingIndicator } from "./TypingIndicator";
 import { DropZone } from "./DropZone";
 import type { PendingAttachment } from "./FileAttachmentButton";
+
+// Stable empty object to avoid new references on each render
+const EMPTY_REACTIONS: Record<string, Record<string, ReactionData[]>> = {};
 
 interface ChannelViewProps {
   channelId: string;
@@ -32,6 +36,11 @@ export function ChannelView({
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
   const [droppedAttachments, setDroppedAttachments] = useState<PendingAttachment[]>([]);
+  
+  // Reactions state - use stable empty object to prevent infinite re-renders
+  const channelReactions = useReactionStore((s) => s.reactions[channelId]);
+  const reactions = channelReactions ?? EMPTY_REACTIONS;
+  const setReactionsForMessage = useReactionStore((s) => s.setReactionsForMessage);
 
   // Handle files dropped via drag-and-drop
   const handleFilesDropped = useCallback((files: PendingAttachment[]) => {
@@ -39,6 +48,69 @@ export function ChannelView({
     // Clear after passing to input (input will pick them up via effect)
     setTimeout(() => setDroppedAttachments([]), 100);
   }, []);
+
+  // Handle adding a reaction (optimistic update + Gun write)
+  const handleAddReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!transport) return;
+    
+    // Get current user's public key for optimistic update
+    const currentUserKey = useIdentityStore.getState().publicKey;
+    if (!currentUserKey) return;
+    
+    // Optimistic update - immediately show the reaction
+    const currentReactions = useReactionStore.getState().reactions[channelId]?.[messageId] || {};
+    const emojiReactions = currentReactions[emoji] || [];
+    const alreadyReacted = emojiReactions.some(r => r.userKey === currentUserKey);
+    
+    if (!alreadyReacted) {
+      const updatedReactions = {
+        ...currentReactions,
+        [emoji]: [
+          ...emojiReactions,
+          { emoji, userKey: currentUserKey, timestamp: Date.now() }
+        ]
+      };
+      setReactionsForMessage(channelId, messageId, updatedReactions);
+    }
+    
+    try {
+      await transport.message.addReaction(channelId, messageId, emoji);
+    } catch (err) {
+      console.error("Failed to add reaction:", err);
+      // Revert optimistic update on error
+      setReactionsForMessage(channelId, messageId, currentReactions);
+    }
+  }, [transport, channelId, setReactionsForMessage]);
+
+  // Handle removing a reaction (optimistic update + Gun write)
+  const handleRemoveReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!transport) return;
+    
+    // Get current user's public key for optimistic update
+    const currentUserKey = useIdentityStore.getState().publicKey;
+    if (!currentUserKey) return;
+    
+    // Optimistic update - immediately remove the reaction
+    const currentReactions = useReactionStore.getState().reactions[channelId]?.[messageId] || {};
+    const emojiReactions = currentReactions[emoji] || [];
+    const updatedEmojiReactions = emojiReactions.filter(r => r.userKey !== currentUserKey);
+    
+    const updatedReactions = { ...currentReactions };
+    if (updatedEmojiReactions.length > 0) {
+      updatedReactions[emoji] = updatedEmojiReactions;
+    } else {
+      delete updatedReactions[emoji];
+    }
+    setReactionsForMessage(channelId, messageId, updatedReactions);
+    
+    try {
+      await transport.message.removeReaction(channelId, messageId, emoji);
+    } catch (err) {
+      console.error("Failed to remove reaction:", err);
+      // Revert optimistic update on error
+      setReactionsForMessage(channelId, messageId, currentReactions);
+    }
+  }, [transport, channelId, setReactionsForMessage]);
 
   // Set up subscriptions when channel changes
   useEffect(() => {
@@ -109,6 +181,16 @@ export function ChannelView({
     );
     setTypingSubscription(typingUnsub);
 
+    // Subscribe to reactions
+    const { setReactionsForMessage: setReactions } = useReactionStore.getState();
+    
+    const reactionUnsub = transport.message.subscribeReactions(
+      channelId,
+      (messageId: string, reactions: Record<string, ReactionData[]>) => {
+        setReactions(channelId, messageId, reactions);
+      }
+    );
+
     // Clear unread count for this channel
     clearUnread(channelId);
 
@@ -117,6 +199,7 @@ export function ChannelView({
       batcher.cancel();
       messageUnsub();
       typingUnsub();
+      reactionUnsub();
     };
   }, [channelId, transport, publicKey]);
 
@@ -135,6 +218,9 @@ export function ChannelView({
           channelId={channelId}
           channelName={channelName}
           channelTopic={channelTopic}
+          reactions={reactions}
+          onAddReaction={handleAddReaction}
+          onRemoveReaction={handleRemoveReaction}
         />
         <TypingIndicator channelId={channelId} />
         <MessageInput

@@ -59,21 +59,88 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   },
 
   setMessages: (channelId, messages) => {
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [channelId]: deduplicateMessages(messages),
-      },
-    }));
+    set((state) => {
+      const existing = state.messages[channelId] || [];
+      
+      // Merge new messages with existing, keeping both
+      // This prevents history from overwriting newer subscription messages
+      const messageMap = new Map<string, TransportMessage>();
+      
+      // Add existing messages first
+      for (const msg of existing) {
+        messageMap.set(msg.id, msg);
+      }
+      
+      // Add/update with new messages (prefer newer data)
+      for (const msg of messages) {
+        const existingMsg = messageMap.get(msg.id);
+        if (existingMsg) {
+          // Keep the message with better data - prefer non-empty content
+          const merged: TransportMessage = {
+            ...existingMsg,
+            content: msg.content || existingMsg.content,
+            ...(msg.replyTo !== undefined && { replyTo: msg.replyTo }),
+            ...(msg.edited !== undefined && { edited: msg.edited }),
+            ...(msg.editedAt !== undefined && { editedAt: msg.editedAt }),
+            ...(msg.editHistory !== undefined && { editHistory: msg.editHistory }),
+            ...(msg.deleted !== undefined && { deleted: msg.deleted }),
+            ...(msg.deletedAt !== undefined && { deletedAt: msg.deletedAt }),
+            ...(msg.deletedBy !== undefined && { deletedBy: msg.deletedBy }),
+            ...(msg.attachments && { attachments: msg.attachments }),
+            ...(msg.signature && { signature: msg.signature }),
+          };
+          messageMap.set(msg.id, merged);
+        } else {
+          messageMap.set(msg.id, msg);
+        }
+      }
+      
+      const mergedMessages = Array.from(messageMap.values());
+      
+      return {
+        messages: {
+          ...state.messages,
+          [channelId]: deduplicateMessages(mergedMessages),
+        },
+      };
+    });
   },
 
   addMessage: (channelId, message) => {
     set((state) => {
       const existing = state.messages[channelId] || [];
 
-      // Avoid duplicates
-      if (existing.some((m) => m.id === message.id)) {
-        return state;
+      // Check if message already exists
+      const existingIndex = existing.findIndex((m) => m.id === message.id);
+      if (existingIndex !== -1) {
+        const existingMsg = existing[existingIndex];
+        
+        // Smart merge: only update fields that have meaningful new values
+        // Don't overwrite good content with empty content
+        const merged: TransportMessage = {
+          ...existingMsg,
+          // Only update content if new content is non-empty
+          content: message.content || existingMsg.content,
+          // Update optional fields only if they exist in new message
+          ...(message.replyTo !== undefined && { replyTo: message.replyTo }),
+          ...(message.edited !== undefined && { edited: message.edited }),
+          ...(message.editedAt !== undefined && { editedAt: message.editedAt }),
+          ...(message.editHistory !== undefined && { editHistory: message.editHistory }),
+          ...(message.deleted !== undefined && { deleted: message.deleted }),
+          ...(message.deletedAt !== undefined && { deletedAt: message.deletedAt }),
+          ...(message.deletedBy !== undefined && { deletedBy: message.deletedBy }),
+          ...(message.attachments && { attachments: message.attachments }),
+          ...(message.signature && { signature: message.signature }),
+        };
+        
+        const updated = [...existing];
+        updated[existingIndex] = merged;
+        return {
+          messages: {
+            ...state.messages,
+            [channelId]: updated,
+          },
+        };
       }
 
       return {

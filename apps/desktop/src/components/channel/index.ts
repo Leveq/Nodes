@@ -14,3 +14,12 @@ export { AttachmentPreview } from "./AttachmentPreview";
 export { MessageAttachment } from "./MessageAttachment";
 export { ImageLightbox } from "./ImageLightbox";
 export { DropZone } from "./DropZone";
+
+// Message enhancements (Milestone 2.2)
+export { MarkdownRenderer } from "./MarkdownRenderer";
+export { ReactionBar } from "./ReactionBar";
+export { default as EmojiPicker } from "./EmojiPicker";
+export { ReplyPreview } from "./ReplyPreview";
+export { QuotedMessage } from "./QuotedMessage";
+export { MessageEditor } from "./MessageEditor";
+export { MessageContextMenu } from "./MessageContextMenu";

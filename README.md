@@ -12,7 +12,7 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v0.1.0-alpha)
+## What Works Today (v0.2.0-alpha)
 
 - **Self-sovereign identity** — Keypair-based identity with encrypted local keystore and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management
@@ -21,6 +21,13 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 - **Friend system** — Request/accept flow gates all DMs — no unsolicited messages
 - **Presence** — Online/idle/DND/invisible status with heartbeat
 - **Profile system** — Editable profiles with per-field visibility controls (public/friends/nobody)
+- **File sharing** — Drag-and-drop uploads via IPFS, inline image previews, image attachments
+- **Emoji reactions** — React to messages with any emoji, syncs P2P in real-time
+- **Reply/quote** — Reply to specific messages with clickable quote references
+- **Markdown rendering** — Bold, italic, code, code blocks with syntax highlighting, links, blockquotes, lists
+- **Link previews** — OpenGraph metadata cards for URLs, special YouTube embeds with thumbnails
+- **Message editing** — Edit your own messages with "(edited)" indicator and history
+- **Message deletion** — Soft-delete your own messages, displays "[Message deleted]"
 - **Desktop app** — Native Tauri binary with system tray (~15MB, ~80MB RAM)
 
 ## Screenshots
@@ -99,7 +106,9 @@ nodes/
 Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 
 ### Phase 2 — Competitive Features (In Progress)
-Voice/video channels, file sharing (IPFS), roles & permissions, moderation tools, message reactions/replies/threads, search.
+- ✅ File sharing (IPFS) — Milestone 2.1
+- ✅ Message reactions, replies, markdown, link previews, editing, deletion — Milestone 2.2
+- Voice/video channels, roles & permissions, moderation tools, search — Upcoming
 
 ### Phase 3 — Platform Expansion
 Web client (PWA), plugin/bot system, Node discovery, notifications, theming.

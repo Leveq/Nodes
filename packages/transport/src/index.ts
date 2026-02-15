@@ -22,5 +22,8 @@ export type {
   ConnectionStatus,
   FileMetadata,
   UploadProgress,
+  // Reactions (Milestone 2.2)
+  ReactionData,
+  MessageReactions,
 } from "./interfaces";
 
