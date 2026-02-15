@@ -12,7 +12,7 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v0.2.0-alpha)
+## What Works Today (v0.4.0-alpha)
 
 - **Self-sovereign identity** — Keypair-based identity with encrypted local keystore and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management
@@ -28,6 +28,8 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 - **Link previews** — OpenGraph metadata cards for URLs, special YouTube embeds with thumbnails
 - **Message editing** — Edit your own messages with "(edited)" indicator and history
 - **Message deletion** — Soft-delete your own messages, displays "[Message deleted]"
+- **Roles & permissions** — Customizable roles with colors, hierarchy, and granular permissions
+- **Voice channels** — P2P WebRTC voice chat with speaking indicators, mute/deafen controls
 - **Desktop app** — Native Tauri binary with system tray (~15MB, ~80MB RAM)
 
 ## Screenshots
@@ -46,8 +48,8 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 | P2P Data | GunJS + SEA | Real-time sync, cryptographic auth |
 | Identity | Self-Sovereign (SSI) | Users serve their own profile via keypair |
 | Encryption | SEA (ECDSA + ECDH + AES-256) | Signing, key exchange, E2E encryption |
-| Voice/Video | LiveKit + WebRTC | Coming in Phase 2 |
-| File Storage | IPFS (Helia) | Coming in Phase 2 |
+| Voice/Video | WebRTC (P2P mesh) | Real-time voice chat |
+| File Storage | IPFS (Helia) | Decentralized file sharing |
 
 **Transport Abstraction Layer:** The app never touches GunJS directly. All P2P operations go through protocol-agnostic interfaces, so the underlying transport can be swapped without rewriting the UI or business logic.
 
@@ -105,10 +107,12 @@ nodes/
 ### Phase 1 — Foundation ✅
 Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 
-### Phase 2 — Competitive Features (In Progress)
+### Phase 2 — Competitive Features ✅
 - ✅ File sharing (IPFS) — Milestone 2.1
 - ✅ Message reactions, replies, markdown, link previews, editing, deletion — Milestone 2.2
-- Voice/video channels, roles & permissions, moderation tools, search — Upcoming
+- ✅ Roles & permissions — Milestone 2.3
+- ✅ Voice channels (P2P WebRTC) — Milestone 2.4
+- Moderation tools, search — Upcoming
 
 ### Phase 3 — Platform Expansion
 Web client (PWA), plugin/bot system, Node discovery, notifications, theming.
@@ -131,11 +135,12 @@ Mobile (React Native), federation, self-hosting toolkit, performance hardening.
 
 Nodes is early-stage alpha. If you're interested in contributing, open an issue to discuss before submitting a PR. Areas where help is most needed:
 
-- WebRTC/LiveKit voice implementation
-- IPFS file sharing integration
+- Video chat implementation
+- Mobile app (React Native)
 - Automated test coverage
 - UI/UX design and polish
 - Security auditing
+- Documentation
 
 ## License
 

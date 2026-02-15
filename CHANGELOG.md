@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-alpha] - 2026-02-15
+
+### Added
+
+**Milestone 2.3 — Roles & Permissions**
+- Role system with customizable colors and names
+- Granular permissions (manage channels, kick/ban, manage roles, etc.)
+- Role hierarchy for permission inheritance
+- Admin role auto-assigned to Node creators
+- Member list sorted by role hierarchy
+- Role color display on usernames in chat
+- Permission-gated UI (buttons hidden if no permission)
+
+**Milestone 2.4 — Voice Channels**
+- P2P WebRTC voice chat via mesh topology
+- Real-time speaking indicators (neon blue ring)
+- Audio level detection with dB threshold
+- Mute/deafen controls with keyboard shortcuts (Ctrl+Shift+M/D)
+- Voice channel participant list (visible without joining)
+- Automatic peer connection management
+- ICE candidate queuing for reliable connections
+- Heartbeat-based presence for voice channels
+- Gun signaling for WebRTC offer/answer/ICE exchange
+
+**Infrastructure**
+- Staging environment at nodes-staging.leveq.dev
+- Automated staging deployment script
+- Gun relay at nodesrelay.leveq.dev
+
+### Fixed
+- Speaking indicator debounce logic (was never firing)
+- Gun subscription loops causing browser freeze
+- ICE candidates arriving before SDP offer processed
+- Stale signaling messages being replayed
+- History marks persisting incorrectly on old channels
+
+### Changed
+- Voice uses direct P2P mesh (no server required for small groups)
+- Speaking detection uses RMS-based audio analysis
+- Debounced state emission to prevent UI flickering
+
 ## [0.2.0-alpha] - 2026-02-14
 
 ### Added
@@ -75,6 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[unreleased]: https://github.com/Leveq/Nodes/compare/v0.2.0-alpha...HEAD
+[unreleased]: https://github.com/Leveq/Nodes/compare/v0.4.0-alpha...HEAD
+[0.4.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.2.0-alpha...v0.4.0-alpha
 [0.2.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/Leveq/Nodes/releases/tag/v0.1.0-alpha
