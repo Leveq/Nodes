@@ -8,7 +8,7 @@ Your identity is a cryptographic keypair generated on your device. Your profile 
 
 ## Why Nodes?
 
-Discord now requires government ID verification. Their 2025 data breach exposed millions of those IDs. Users are being asked to hand over more personal data to a platform that already proved it can't protect what it has.
+Discord now requires government ID verification. Their 2025 data breach exposed tens of thousands of government IDs submitted for age verification. Users are being asked to hand over more personal data to a platform that already proved it can't protect what it has.
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
