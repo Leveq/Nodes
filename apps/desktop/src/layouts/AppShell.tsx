@@ -12,6 +12,7 @@ import { usePresenceSubscriptions } from "../hooks/usePresenceSubscriptions";
 import { usePresenceStatus } from "../hooks/usePresenceStatus";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useGracefulShutdown } from "../hooks/useGracefulShutdown";
+import { useModerationEvents } from "../hooks/useModerationEvents";
 import { useTransport } from "../providers/TransportProvider";
 import { NodeSidebar } from "./NodeSidebar";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -109,6 +110,9 @@ export function AppShell() {
   // Subscribe to roles for the active Node
   useRoleSubscriptions();
 
+  // Subscribe to kick/ban events for the current user
+  useModerationEvents();
+
   // Subscribe to all DM conversations for unread tracking
   useDMSubscriptions();
 
@@ -192,8 +196,10 @@ export function AppShell() {
         )}
         {viewMode === "friends" && <FriendsEmptyState />}
 
-        {/* Member sidebar - only in Node mode and collapsible */}
-        {viewMode === "node" && showMembers && <MemberSidebar onUserClick={openUserProfile} />}
+        {/* Member sidebar - always mounted to preserve state, hidden when not in node view */}
+        <div className={viewMode === "node" && showMembers ? "" : "hidden"}>
+          <MemberSidebar onUserClick={openUserProfile} />
+        </div>
       </div>
 
       {/* Status bar / User panel */}

@@ -5,12 +5,14 @@ import { useMessageStore } from "../../stores/message-store";
 import { useToastStore } from "../../stores/toast-store";
 import { useReplyStore } from "../../stores/reply-store";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useSlowMode } from "../../hooks/useSlowMode";
 import { FileAttachmentButton, type PendingAttachment } from "./FileAttachmentButton";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ReplyPreview } from "./ReplyPreview";
 import type { FileAttachment } from "@nodes/core";
 import { useDisplayName } from "../../hooks/useDisplayName";
 import { generateMessageId } from "@nodes/transport-gun";
+import { Clock } from "lucide-react";
 
 interface MessageInputProps {
   channelId: string;
@@ -53,6 +55,9 @@ export function MessageInput({
   
   // Permission checks
   const { canSendMessages, canSendFiles } = usePermissions(channelId);
+
+  // Slow mode state
+  const { canSend: slowModeCanSend, remainingSeconds, slowModeDelay, markSent, isExempt: slowModeExempt } = useSlowMode(channelId);
 
   // Reply state
   const replyTarget = useReplyStore((s) => s.replyTargets[channelId]);
@@ -132,6 +137,12 @@ export function MessageInput({
     if ((!trimmed && !hasAttachments) || !publicKey || !transport || isSending)
       return;
 
+    // Check slow mode
+    if (!slowModeCanSend) {
+      addToast("warning", `Slow mode is active. Please wait ${remainingSeconds} seconds.`);
+      return;
+    }
+
     // Check if IPFS is ready for file uploads
     if (hasAttachments && !ipfsReady) {
       addToast("warning", "IPFS is still initializing. Please wait a moment and try again.");
@@ -140,6 +151,9 @@ export function MessageInput({
 
     // For text-only messages: instant send with optimistic update
     if (!hasAttachments) {
+      // Mark as sent for slow mode tracking
+      markSent();
+      
       // Capture values before clearing
       const messageContent = trimmed;
       const currentReplyTarget = replyTarget;
@@ -203,6 +217,9 @@ export function MessageInput({
 
     // For messages with attachments: need loading state for IPFS upload
     setIsSending(true);
+
+    // Mark as sent for slow mode tracking (do it before async operations)
+    markSent();
 
     try {
       // Upload attachments to IPFS
@@ -324,12 +341,23 @@ export function MessageInput({
       />
 
       <div className="px-4 py-3">
+        {/* Slow mode indicator */}
+        {slowModeDelay > 0 && !slowModeExempt && (
+          <div className="flex items-center gap-1.5 text-xs text-text-muted mb-2">
+            <Clock className="w-3 h-3" />
+            <span>
+              Slow mode: {slowModeDelay}s
+              {remainingSeconds > 0 && ` (${remainingSeconds}s remaining)`}
+            </span>
+          </div>
+        )}
+
         <div className="message-input-container flex items-center gap-3 p-2">
           {/* File attachment button - only show if user can send files */}
           {canSendFiles && (
             <FileAttachmentButton
               onFilesSelected={handleFilesSelected}
-              disabled={isSending || !canSendMessages}
+              disabled={isSending || !canSendMessages || !slowModeCanSend}
               currentCount={pendingAttachments.length}
             />
           )}
@@ -339,20 +367,32 @@ export function MessageInput({
             value={content}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={canSendMessages ? `Message #${channelName}` : "You don't have permission to send messages"}
+            placeholder={
+              !canSendMessages 
+                ? "You don't have permission to send messages"
+                : !slowModeCanSend
+                  ? `Slow mode: wait ${remainingSeconds}s`
+                  : `Message #${channelName}`
+            }
             rows={1}
-            disabled={isSending || !canSendMessages}
+            disabled={isSending || !canSendMessages || !slowModeCanSend}
             className="flex-1 bg-transparent text-text-primary placeholder-text-muted resize-none focus:outline-none min-h-[24px] max-h-[200px]"
           />
           <button
             onClick={handleSend}
-            disabled={!hasContent || isSending || !canSendMessages}
+            disabled={!hasContent || isSending || !canSendMessages || !slowModeCanSend}
             className={`p-2 rounded-lg transition-colors shrink-0 ${
-              hasContent && canSendMessages
+              hasContent && canSendMessages && slowModeCanSend
                 ? "send-btn-active"
                 : "text-text-muted cursor-not-allowed"
             }`}
-            title={canSendMessages ? "Send message" : "You don't have permission to send messages"}
+            title={
+              !canSendMessages 
+                ? "You don't have permission to send messages"
+                : !slowModeCanSend
+                  ? `Slow mode: wait ${remainingSeconds}s`
+                  : "Send message"
+            }
           >
             {isSending ? (
               <svg

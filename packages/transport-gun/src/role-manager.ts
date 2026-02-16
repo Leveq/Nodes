@@ -64,7 +64,7 @@ export class RoleManager {
             resolve(roles.sort((a, b) => a.position - b.position));
           }
         }
-      }, 3000);
+      }, 5000); // Increased timeout for slower connections
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       gun.get("nodes").get(nodeId).get("roles").map().once((data: any) => {
@@ -93,17 +93,14 @@ export class RoleManager {
         });
       });
 
+      // Resolve earlier if we have roles
       setTimeout(() => {
-        if (!resolved) {
+        if (!resolved && roles.length > 0) {
           clearTimeout(timeout);
           resolved = true;
-          if (roles.length === 0) {
-            resolve(createDefaultRoles("system"));
-          } else {
-            resolve(roles.sort((a, b) => a.position - b.position));
-          }
+          resolve(roles.sort((a, b) => a.position - b.position));
         }
-      }, 1500);
+      }, 2000);
     });
   }
 

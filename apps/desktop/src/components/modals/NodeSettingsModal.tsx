@@ -4,8 +4,9 @@ import { Button, Input } from "../ui";
 import { useNodeStore } from "../../stores/node-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
-import { usePermissions } from "../../hooks/usePermissions";
+import { usePermissions, useHasPermission } from "../../hooks/usePermissions";
 import { RolesTab } from "../settings/RolesTab";
+import { ModerationTab } from "../settings/ModerationTab";
 
 interface NodeSettingsModalProps {
   onClose: () => void;
@@ -25,12 +26,15 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
   const publicKey = useIdentityStore((s) => s.publicKey);
   const addToast = useToastStore((s) => s.addToast);
   const { isOwner, canManageNode, canManageRoles } = usePermissions();
+  const canKickMembers = useHasPermission("kickMembers");
+  const canBanMembers = useHasPermission("banMembers");
+  const canModerate = canKickMembers || canBanMembers;
 
   // Compute active node instead of using method that calls get()
   const node = nodes.find((n) => n.id === activeNodeId) || null;
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"general" | "roles">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "roles" | "moderation">("general");
 
   const [name, setName] = useState(node?.name || "");
   const [description, setDescription] = useState(node?.description || "");
@@ -113,6 +117,13 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
             label="Roles"
             isActive={activeTab === "roles"}
             onClick={() => setActiveTab("roles")}
+          />
+        )}
+        {(canModerate || isOwner) && (
+          <TabButton
+            label="Moderation"
+            isActive={activeTab === "moderation"}
+            onClick={() => setActiveTab("moderation")}
           />
         )}
       </div>
@@ -236,6 +247,8 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
       )}
 
       {activeTab === "roles" && <RolesTab />}
+
+      {activeTab === "moderation" && <ModerationTab />}
     </Modal>
   );
 }

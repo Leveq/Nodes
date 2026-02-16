@@ -4,6 +4,8 @@ export { useNodeSubscriptions } from "./useNodeSubscriptions";
 export { useRoleSubscriptions } from "./useRoleSubscriptions";
 export { useAvatar } from "./useAvatar";
 export { useVoiceChannelParticipants } from "./useVoiceChannelParticipants";
+export { useModerationEvents } from "./useModerationEvents";
+export { useSlowMode } from "./useSlowMode";
 export {
   usePermissions,
   useMyRoles,

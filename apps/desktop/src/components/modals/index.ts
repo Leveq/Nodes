@@ -3,4 +3,7 @@ export { CreateNodeModal } from "./CreateNodeModal";
 export { JoinNodeModal } from "./JoinNodeModal";
 export { CreateChannelModal } from "./CreateChannelModal";
 export { NodeSettingsModal } from "./NodeSettingsModal";
+export { ChannelSettingsModal } from "./ChannelSettingsModal";
 export { EditProfileModal } from "./EditProfileModal";
+export { KickDialog } from "./KickDialog";
+export { BanDialog } from "./BanDialog";

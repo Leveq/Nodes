@@ -162,6 +162,12 @@ export class NodeManager {
       throw new Error("Invalid invite link.");
     }
 
+    // Check if banned
+    const isBanned = await this.isUserBanned(invite.nodeId, publicKey);
+    if (isBanned) {
+      throw new Error("You are banned from this Node.");
+    }
+
     // Check if already a member
     const existingMember = await this.getMember(invite.nodeId, publicKey);
     if (existingMember) {
@@ -180,6 +186,27 @@ export class NodeManager {
     });
 
     return node;
+  }
+
+  /**
+   * Check if a user is banned from a Node.
+   */
+  async isUserBanned(nodeId: string, publicKey: string): Promise<boolean> {
+    const gun = GunInstanceManager.get();
+    return new Promise((resolve) => {
+      gun
+        .get("nodes")
+        .get(nodeId)
+        .get("bans")
+        .get(publicKey)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .once((data: any) => {
+          resolve(data !== null && data !== undefined && data.bannedAt);
+        });
+
+      // Timeout fallback - assume not banned if can't fetch
+      setTimeout(() => resolve(false), 2000);
+    });
   }
 
   /**
@@ -448,6 +475,7 @@ export class NodeManager {
           nodeId: data.nodeId || nodeId,
           createdAt: data.createdAt || 0,
           position: data.position ?? 0,
+          slowMode: data.slowMode ?? 0,
         });
       });
 
@@ -464,7 +492,7 @@ export class NodeManager {
   async updateChannel(
     nodeId: string,
     channelId: string,
-    updates: Partial<Pick<NodeChannel, "name" | "topic" | "position">>
+    updates: Partial<Pick<NodeChannel, "name" | "topic" | "position" | "slowMode">>
   ): Promise<void> {
     const gun = GunInstanceManager.get();
 

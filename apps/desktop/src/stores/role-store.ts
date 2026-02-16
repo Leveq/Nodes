@@ -28,6 +28,12 @@ interface RoleActions {
   // Set roles for a node
   setRoles: (nodeId: string, roles: Role[]) => void;
   
+  // Add or update a single role (for optimistic updates)
+  upsertRole: (nodeId: string, role: Role) => void;
+  
+  // Remove a role by ID
+  removeRole: (nodeId: string, roleId: string) => void;
+  
   // Set channel overrides for a specific channel
   setChannelOverrides: (nodeId: string, channelId: string, overrides: ChannelPermissionOverride[]) => void;
   
@@ -85,6 +91,46 @@ export const useRoleStore = create<RoleState & RoleActions>((set, get) => ({
   setRoles: (nodeId, roles) => {
     set((state) => {
       const newRolesByNode = { ...state.rolesByNode, [nodeId]: roles };
+      
+      // Invalidate cached resolver for this node
+      const newResolvers = { ...state.resolvers };
+      delete newResolvers[nodeId];
+      
+      return { rolesByNode: newRolesByNode, resolvers: newResolvers };
+    });
+  },
+
+  upsertRole: (nodeId, role) => {
+    set((state) => {
+      const existingRoles = state.rolesByNode[nodeId] || [];
+      const roleIndex = existingRoles.findIndex(r => r.id === role.id);
+      
+      let newRoles: Role[];
+      if (roleIndex >= 0) {
+        // Update existing role
+        newRoles = [...existingRoles];
+        newRoles[roleIndex] = role;
+      } else {
+        // Add new role
+        newRoles = [...existingRoles, role];
+      }
+      
+      const newRolesByNode = { ...state.rolesByNode, [nodeId]: newRoles };
+      
+      // Invalidate cached resolver for this node
+      const newResolvers = { ...state.resolvers };
+      delete newResolvers[nodeId];
+      
+      return { rolesByNode: newRolesByNode, resolvers: newResolvers };
+    });
+  },
+
+  removeRole: (nodeId, roleId) => {
+    set((state) => {
+      const existingRoles = state.rolesByNode[nodeId] || [];
+      const newRoles = existingRoles.filter(r => r.id !== roleId);
+      
+      const newRolesByNode = { ...state.rolesByNode, [nodeId]: newRoles };
       
       // Invalidate cached resolver for this node
       const newResolvers = { ...state.resolvers };

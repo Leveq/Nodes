@@ -1,21 +1,24 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNodeStore } from "../stores/node-store";
 import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
 import { useIdentityStore } from "../stores/identity-store";
 import { useNavigationStore } from "../stores/navigation-store";
-import { useNodeRoles, usePermissions, useMyRoles } from "../hooks/usePermissions";
+import { useNodeRoles, usePermissions, useMyRoles, useCanModifyMember, useHasPermission } from "../hooks/usePermissions";
 import { useRoleStore } from "../stores/role-store";
-import { ProfileManager, roleManager } from "@nodes/transport-gun";
+import { useToastStore } from "../stores/toast-store";
+import { ProfileManager, roleManager, getModerationManager } from "@nodes/transport-gun";
 import { MemberListSkeleton, NameSkeleton } from "../components/ui";
+import { KickDialog, BanDialog } from "../components/modals";
 import type { NodeMember, Role } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
-import { BUILT_IN_ROLE_IDS } from "@nodes/core";
+import { BUILT_IN_ROLE_IDS, createDefaultRoles } from "@nodes/core";
+import { DoorOpen, Gavel } from "lucide-react";
 
 const profileManager = new ProfileManager();
 
-// TTL for cached names (5 minutes)
-const NAME_CACHE_TTL = 5 * 60 * 1000;
+// Default roles to use as fallback when node roles haven't loaded
+const DEFAULT_FALLBACK_ROLES = createDefaultRoles("fallback");
 
 /**
  * MemberSidebar displays the member list for the active Node.
@@ -24,16 +27,53 @@ const NAME_CACHE_TTL = 5 * 60 * 1000;
 export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) => void }) {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const members = useNodeStore((s) => s.members);
-  const roles = useNodeRoles();
-  const nodeMembers = useMemo(
+  const displayNameCache = useNodeStore((s) => s.displayNameCache);
+  const setDisplayNames = useNodeStore((s) => s.setDisplayNames);
+  const isDisplayNameStale = useNodeStore((s) => s.isDisplayNameStale);
+  const nodeRoles = useNodeRoles();
+  // Use fallback roles if node-specific roles haven't loaded yet
+  const roles = nodeRoles.length > 0 ? nodeRoles : DEFAULT_FALLBACK_ROLES;
+  
+  // Cache previous valid members to prevent empty state during transitions
+  const prevMembersRef = useRef<{ nodeId: string | null; members: NodeMember[] }>({ nodeId: null, members: [] });
+  
+  // Get current members for this node
+  const currentMembers = useMemo(
     () => (activeNodeId ? members[activeNodeId] || [] : []),
     [activeNodeId, members]
   );
-  const isMembersLoading = activeNodeId ? members[activeNodeId] === undefined : false;
-  const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
-  const resolvedNamesRef = useRef<Record<string, string>>({});
-  const lastRefreshRef = useRef<number>(0);
+  
+  // Use current members if available, otherwise use cached (prevents flicker)
+  const nodeMembers = useMemo(() => {
+    if (currentMembers.length > 0) {
+      // Update cache when we have valid members
+      prevMembersRef.current = { nodeId: activeNodeId, members: currentMembers };
+      return currentMembers;
+    }
+    // If current is empty but we have cached members for SAME node, use them
+    // (This handles the case where members reload returns empty briefly)
+    if (prevMembersRef.current.nodeId === activeNodeId && prevMembersRef.current.members.length > 0) {
+      return prevMembersRef.current.members;
+    }
+    // Otherwise return empty (will show skeleton)
+    return currentMembers;
+  }, [activeNodeId, currentMembers]);
+  
+  // Show skeleton only on first load of a node (no cached data)
+  const isMembersLoading = activeNodeId 
+    ? members[activeNodeId] === undefined && nodeMembers.length === 0
+    : false;
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Derive resolved names from global cache (with fallback to truncated pubkey)
+  const resolvedNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const member of nodeMembers) {
+      const cached = displayNameCache[member.publicKey];
+      names[member.publicKey] = cached?.name || member.publicKey.slice(0, 8);
+    }
+    return names;
+  }, [nodeMembers, displayNameCache]);
 
   // DM functionality
   const startConversation = useDMStore((s) => s.startConversation);
@@ -73,7 +113,7 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   // Helper to check if someone is a friend
   const isFriend = (publicKey: string) => friends.some((f) => f.publicKey === publicKey);
 
-  // Force refresh all names (clears cache and re-fetches)
+  // Force refresh all names (re-fetches from profiles)
   const refreshNames = useCallback(async () => {
     if (isRefreshing || nodeMembers.length === 0) return;
     
@@ -89,60 +129,48 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
       }
     }
     
-    resolvedNamesRef.current = names;
-    setResolvedNames(names);
-    lastRefreshRef.current = Date.now();
+    setDisplayNames(names);
     setIsRefreshing(false);
-  }, [nodeMembers, isRefreshing]);
+  }, [nodeMembers, isRefreshing, setDisplayNames]);
 
-  // Resolve display names for members
+  // Resolve display names for members (only fetches missing/stale names)
   useEffect(() => {
+    // Check if any members need name resolution
+    const membersNeedingNames = nodeMembers.filter(
+      m => !displayNameCache[m.publicKey] || isDisplayNameStale(m.publicKey)
+    );
+    
+    if (membersNeedingNames.length === 0) return;
+    
     async function resolveNames() {
       const names: Record<string, string> = {};
-      let hasNewNames = false;
       
-      for (const member of nodeMembers) {
-        if (!resolvedNamesRef.current[member.publicKey]) {
-          hasNewNames = true;
-          try {
-            const profile = await profileManager.getPublicProfile(member.publicKey);
-            names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
-          } catch {
-            names[member.publicKey] = member.publicKey.slice(0, 8);
-          }
+      for (const member of membersNeedingNames) {
+        try {
+          const profile = await profileManager.getPublicProfile(member.publicKey);
+          names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
+        } catch {
+          names[member.publicKey] = member.publicKey.slice(0, 8);
         }
       }
       
-      if (hasNewNames && Object.keys(names).length > 0) {
-        resolvedNamesRef.current = { ...resolvedNamesRef.current, ...names };
-        setResolvedNames(resolvedNamesRef.current);
+      if (Object.keys(names).length > 0) {
+        setDisplayNames(names);
       }
     }
     resolveNames();
-  }, [nodeMembers]);
+  }, [nodeMembers, displayNameCache, isDisplayNameStale, setDisplayNames]);
 
   // Update cached name when own profile changes
   useEffect(() => {
     if (myPublicKey && myProfile?.data.displayName) {
       const newName = myProfile.data.displayName;
-      if (resolvedNamesRef.current[myPublicKey] !== newName) {
-        resolvedNamesRef.current = { ...resolvedNamesRef.current, [myPublicKey]: newName };
-        setResolvedNames(resolvedNamesRef.current);
+      const cached = displayNameCache[myPublicKey];
+      if (!cached || cached.name !== newName) {
+        setDisplayNames({ [myPublicKey]: newName });
       }
     }
-  }, [myPublicKey, myProfile?.data.displayName, profileVersion]);
-
-  // TTL auto-refresh (every 5 minutes)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const timeSinceLastRefresh = Date.now() - lastRefreshRef.current;
-      if (timeSinceLastRefresh >= NAME_CACHE_TTL && nodeMembers.length > 0) {
-        refreshNames();
-      }
-    }, 60 * 1000); // Check every minute
-    
-    return () => clearInterval(interval);
-  }, [refreshNames, nodeMembers.length]);
+  }, [myPublicKey, myProfile?.data.displayName, profileVersion, displayNameCache, setDisplayNames]);
 
   if (!activeNodeId) {
     return null;
@@ -232,6 +260,8 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
                 members={roleMembers}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
+                myDisplayName={myProfile?.data.displayName || myPublicKey?.slice(0, 8) || "Unknown"}
+                nodeId={activeNodeId || ""}
                 onSendMessage={handleSendMessage}
                 onAddFriend={handleAddFriend}
                 onRemoveFriend={removeFriend}
@@ -250,6 +280,8 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
                 members={offlineMembers}
                 resolvedNames={resolvedNames}
                 myPublicKey={myPublicKey}
+                myDisplayName={myProfile?.data.displayName || myPublicKey?.slice(0, 8) || "Unknown"}
+                nodeId={activeNodeId || ""}
                 onSendMessage={handleSendMessage}
                 onAddFriend={handleAddFriend}
                 onRemoveFriend={removeFriend}
@@ -279,6 +311,8 @@ interface MemberGroupProps {
   members: NodeMember[];
   resolvedNames: Record<string, string>;
   myPublicKey: string | null;
+  myDisplayName: string;
+  nodeId: string;
   onSendMessage: (publicKey: string) => void;
   onAddFriend: (publicKey: string) => Promise<void>;
   onRemoveFriend: (publicKey: string) => Promise<void>;
@@ -294,7 +328,9 @@ function MemberGroup({
   titleColor,
   members, 
   resolvedNames, 
-  myPublicKey, 
+  myPublicKey,
+  myDisplayName,
+  nodeId,
   onSendMessage,
   onAddFriend,
   onRemoveFriend,
@@ -341,6 +377,8 @@ function MemberGroup({
             isMe={member.publicKey === myPublicKey}
             isFriend={isFriend(member.publicKey)}
             hasPending={hasPendingRequest(member.publicKey)}
+            nodeId={nodeId}
+            myDisplayName={myDisplayName}
             onSendMessage={() => onSendMessage(member.publicKey)}
             onAddFriend={() => onAddFriend(member.publicKey)}
             onRemoveFriend={() => onRemoveFriend(member.publicKey)}
@@ -370,6 +408,8 @@ interface MemberItemProps {
   onRemoveFriend: () => Promise<void>;
   onBlockUser: () => Promise<void>;
   onViewProfile?: () => void;
+  nodeId: string | null;
+  myDisplayName: string;
 }
 
 function MemberItem({ 
@@ -389,15 +429,27 @@ function MemberItem({
   onRemoveFriend,
   onBlockUser,
   onViewProfile,
+  nodeId,
+  myDisplayName,
 }: MemberItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showRolesSubmenu, setShowRolesSubmenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [showKickDialog, setShowKickDialog] = useState(false);
+  const [showBanDialog, setShowBanDialog] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  
+  const myPublicKey = useIdentityStore((s) => s.publicKey);
+  const addToast = useToastStore((s) => s.addToast);
   
   // Permission checks for role assignment
   const { canAssignRoles } = usePermissions();
   const myRoles = useMyRoles();
+  
+  // Moderation permission checks
+  const canKick = useHasPermission("kickMembers");
+  const canBan = useHasPermission("banMembers");
+  const canModifyMember = useCanModifyMember(memberRoles);
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const getResolver = useRoleStore((s) => s.getResolver);
   
@@ -452,7 +504,7 @@ function MemberItem({
       // Position menu to the left of the button
       setMenuPosition({
         top: rect.top,
-        left: rect.left - 168, // 160px menu width + 8px gap
+        left: rect.left - 200, // 192px menu width + 8px gap
       });
       setShowMenu(!showMenu);
     }
@@ -477,6 +529,48 @@ function MemberItem({
     setShowMenu(false);
     await onBlockUser();
   };
+
+  const handleKick = async (reason?: string) => {
+    if (!nodeId || !myPublicKey) return;
+    
+    const moderationManager = getModerationManager();
+    await moderationManager.kickMember(
+      nodeId,
+      publicKey,
+      myPublicKey,
+      myDisplayName,
+      displayName || publicKey.slice(0, 8),
+      reason
+    );
+    
+    addToast("success", `Kicked ${displayName || publicKey.slice(0, 8)}`);
+    
+    // Refresh member list
+    useNodeStore.getState().loadMembers(nodeId);
+  };
+
+  const handleBan = async (reason?: string) => {
+    if (!nodeId || !myPublicKey) return;
+    
+    const moderationManager = getModerationManager();
+    await moderationManager.banMember(
+      nodeId,
+      publicKey,
+      myPublicKey,
+      myDisplayName,
+      displayName || publicKey.slice(0, 8),
+      reason
+    );
+    
+    addToast("success", `Banned ${displayName || publicKey.slice(0, 8)}`);
+    
+    // Refresh member list
+    useNodeStore.getState().loadMembers(nodeId);
+  };
+
+  // Determine if kick/ban actions should be shown
+  const showKickAction = canKick && canModifyMember && !isMe;
+  const showBanAction = canBan && canModifyMember && !isMe;
 
   return (
     <div className="relative">
@@ -529,7 +623,7 @@ function MemberItem({
           
           {/* Menu - fixed positioned to appear to the left of the member item */}
           <div 
-            className="fixed z-20 bg-nodes-surface border border-nodes-border rounded-lg shadow-lg py-1 w-40"
+            className="fixed z-20 bg-bg-float border border-nodes-border rounded-lg shadow-lg py-1 w-48"
             style={{ top: menuPosition.top, left: menuPosition.left }}
           >
             {/* Send Message - only for friends */}
@@ -627,7 +721,7 @@ function MemberItem({
                 
                 {/* Roles submenu content */}
                 {showRolesSubmenu && (
-                  <div className="border-t border-nodes-border bg-nodes-bg/50">
+                  <div className="border-t border-nodes-border bg-bg-tertiary max-h-48 overflow-y-auto">
                     {assignableRoles.map((r) => {
                       const hasRole = memberRoles.includes(r.id);
                       return (
@@ -666,6 +760,39 @@ function MemberItem({
               </div>
             )}
 
+            {/* Moderation section - kick/ban */}
+            {(showKickAction || showBanAction) && (
+              <>
+                <div className="my-1 border-t border-nodes-border" />
+                
+                {showKickAction && (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowKickDialog(true);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-accent-warning hover:bg-nodes-bg transition-colors flex items-center gap-2"
+                  >
+                    <DoorOpen className="w-4 h-4" />
+                    Kick
+                  </button>
+                )}
+                
+                {showBanAction && (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowBanDialog(true);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-accent-error hover:bg-nodes-bg transition-colors flex items-center gap-2"
+                  >
+                    <Gavel className="w-4 h-4" />
+                    Ban
+                  </button>
+                )}
+              </>
+            )}
+
             {/* Divider */}
             <div className="my-1 border-t border-nodes-border" />
 
@@ -682,6 +809,24 @@ function MemberItem({
           </div>
         </>
       )}
+
+      {/* Kick Dialog */}
+      <KickDialog
+        memberName={displayName || publicKey.slice(0, 8)}
+        memberKey={publicKey}
+        open={showKickDialog}
+        onClose={() => setShowKickDialog(false)}
+        onConfirm={handleKick}
+      />
+
+      {/* Ban Dialog */}
+      <BanDialog
+        memberName={displayName || publicKey.slice(0, 8)}
+        memberKey={publicKey}
+        open={showBanDialog}
+        onClose={() => setShowBanDialog(false)}
+        onConfirm={handleBan}
+      />
     </div>
   );
 }

@@ -54,6 +54,7 @@ export interface NodeChannel {
   nodeId: string;
   createdAt: number;
   position: number; // For ordering in sidebar
+  slowMode?: number; // Slow mode delay in seconds (0 = off)
 }
 
 export interface NodeInvite {
@@ -307,6 +308,70 @@ export const VOICE_CONSTANTS = {
     { urls: "stun:stun1.l.google.com:19302" },
   ],
 } as const;
+
+// ── Moderation Types (Milestone 2.5) ──
+
+export type AuditAction =
+  | "member_kick"
+  | "member_ban"
+  | "member_unban"
+  | "message_delete"
+  | "message_bulk_delete"
+  | "message_purge"
+  | "slow_mode_set"
+  | "slow_mode_clear"
+  | "role_assign"
+  | "role_remove"
+  | "role_create"
+  | "role_update"
+  | "role_delete"
+  | "channel_create"
+  | "channel_delete"
+  | "channel_update"
+  | "voice_mute"
+  | "voice_disconnect";
+
+export interface AuditLogEntry {
+  id: string;
+  action: AuditAction;
+  actorKey: string;         // publicKey of who performed the action
+  actorName: string;        // Display name snapshot
+  targetKey?: string;       // publicKey of target user (if applicable)
+  targetName?: string;      // Target display name snapshot
+  channelId?: string;       // Channel context (if applicable)
+  channelName?: string;     // Channel name snapshot
+  reason?: string;          // Optional reason provided by moderator
+  metadata?: string;        // JSON string for action-specific data
+  timestamp: number;
+}
+
+export interface BanEntry {
+  publicKey: string;
+  bannedBy: string;         // publicKey of the banner
+  bannedAt: number;         // Timestamp
+  reason: string;           // Optional reason (empty string if none)
+}
+
+export interface KickNotification {
+  kickedBy: string;         // publicKey of the kicker
+  kickedAt: number;         // Timestamp
+  reason: string;           // Optional reason
+  banned: boolean;          // True if this is a ban (not just a kick)
+}
+
+export interface SlowModeConfig {
+  enabled: boolean;
+  delaySeconds: number;     // 0, 5, 10, 30, 60, 300
+}
+
+export const SLOW_MODE_OPTIONS = [
+  { value: 0, label: "Off" },
+  { value: 5, label: "5 seconds" },
+  { value: 10, label: "10 seconds" },
+  { value: 30, label: "30 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 300, label: "5 minutes" },
+] as const;
 
 // Helper to create default built-in roles for a new Node
 export function createDefaultRoles(creatorKey: string): Role[] {

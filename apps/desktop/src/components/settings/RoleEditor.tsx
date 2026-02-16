@@ -5,6 +5,7 @@ import { DEFAULT_PERMISSIONS } from "@nodes/core";
 import { roleManager } from "@nodes/transport-gun";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
+import { useRoleStore } from "../../stores/role-store";
 import { Button, Input } from "../ui";
 
 // Preset color palette
@@ -44,6 +45,7 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
   );
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Permission toggle handler
   const togglePermission = useCallback((key: keyof RolePermissions) => {
@@ -69,7 +71,11 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
     try {
       if (isCreating) {
         // Position 50 is default (between built-in roles and Member)
-        await roleManager.createRole(nodeId, name.trim(), color, 50, permissions, publicKey);
+        const newRole = await roleManager.createRole(nodeId, name.trim(), color, 50, permissions, publicKey);
+        
+        // Optimistically add the role to the store immediately using upsert
+        useRoleStore.getState().upsertRole(nodeId, newRole);
+        
         addToast("success", `Role "${name}" created`);
       } else if (role) {
         await roleManager.updateRole(nodeId, role.id, {
@@ -77,8 +83,18 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
           color,
           permissions,
         });
+        
+        // Optimistically update the role in the store using upsert
+        useRoleStore.getState().upsertRole(nodeId, {
+          ...role,
+          name: isBuiltIn ? role.name : name.trim(),
+          color,
+          permissions,
+        });
+        
         addToast("success", `Role "${name}" updated`);
       }
+      
       onClose();
     } catch (err) {
       console.error("Failed to save role:", err);
@@ -88,17 +104,35 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
     }
   };
 
-  // Delete handler
+  // Delete handler with timeout
   const handleDelete = async () => {
-    if (!role || isBuiltIn) return;
+    if (!role || isBuiltIn || isDeleting) return;
+
+    setIsDeleting(true);
+    
+    // Create a timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Delete operation timed out")), 10000);
+    });
 
     try {
-      await roleManager.deleteRole(nodeId, role.id);
+      // Race between delete operation and timeout
+      await Promise.race([
+        roleManager.deleteRole(nodeId, role.id),
+        timeoutPromise
+      ]);
+      
+      // Remove the role from the store to update the UI
+      useRoleStore.getState().removeRole(nodeId, role.id);
+      
       addToast("success", `Role "${role.name}" deleted`);
       onDeleted();
     } catch (err) {
       console.error("Failed to delete role:", err);
       addToast("error", `Failed to delete role: ${(err as Error).message}`);
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -321,17 +355,21 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
           <div className="ml-auto">
             {showDeleteConfirm ? (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-nodes-text-muted">Delete?</span>
+                <span className="text-sm text-nodes-text-muted">
+                  {isDeleting ? "Deleting..." : "Delete?"}
+                </span>
                 <Button
                   variant="danger"
                   onClick={handleDelete}
+                  disabled={isDeleting}
                   className="py-1! px-2! text-sm"
                 >
-                  Yes
+                  {isDeleting ? "..." : "Yes"}
                 </Button>
                 <Button
                   variant="ghost"
                   onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
                   className="py-1! px-2! text-sm"
                 >
                   No
