@@ -37,10 +37,26 @@ export function useMyRoles(nodeId?: string | null): string[] {
 
 /**
  * Check if the current user is the owner of a Node
+ * Checks both role assignment AND node.owner field (for race condition fallback)
  */
 export function useIsOwner(nodeId?: string | null): boolean {
   const myRoles = useMyRoles(nodeId);
-  return myRoles.includes(BUILT_IN_ROLE_IDS.OWNER);
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const publicKey = useIdentityStore((s) => s.publicKey);
+  const targetNodeId = nodeId ?? activeNodeId;
+  
+  // Check if owner role is assigned
+  const hasOwnerRole = myRoles.includes(BUILT_IN_ROLE_IDS.OWNER);
+  
+  // Fallback: check if current user is the node's creator
+  // This handles the race condition where members haven't loaded yet
+  const isNodeCreator = useNodeStore((s) => {
+    if (!targetNodeId || !publicKey) return false;
+    const node = s.nodes.find((n) => n.id === targetNodeId);
+    return node?.owner === publicKey;
+  });
+  
+  return hasOwnerRole || isNodeCreator;
 }
 
 /**
@@ -84,6 +100,8 @@ export function useHasPermission(
   
   // Compute permission outside selector using useMemo
   return useMemo(() => {
+    // Owners have all permissions even if roles haven't loaded
+    if (isOwner) return true;
     if (!activeNodeId || !nodeRoles) return false;
     const resolver = createPermissionResolver(nodeRoles);
     return resolver.hasPermission(myRoles, permission, isOwner);
@@ -172,8 +190,18 @@ export function useHighestRole(userRoleIds: string[], nodeId?: string | null) {
  */
 export function usePermissions(_channelId?: string) {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const publicKey = useIdentityStore((s) => s.publicKey);
   const myRoles = useMyRoles();
-  const isOwner = myRoles.includes(BUILT_IN_ROLE_IDS.OWNER);
+  const hasOwnerRole = myRoles.includes(BUILT_IN_ROLE_IDS.OWNER);
+  
+  // Fallback: check if current user is the node's creator (for race condition)
+  const isNodeCreator = useNodeStore((s) => {
+    if (!activeNodeId || !publicKey) return false;
+    const node = s.nodes.find((n) => n.id === activeNodeId);
+    return node?.owner === publicKey;
+  });
+  
+  const isOwner = hasOwnerRole || isNodeCreator;
   const isAdmin = isOwner || myRoles.includes(BUILT_IN_ROLE_IDS.ADMIN);
   const isMod = isAdmin || myRoles.includes(BUILT_IN_ROLE_IDS.MODERATOR);
 
@@ -195,23 +223,24 @@ export function usePermissions(_channelId?: string) {
     isAdmin,
     isModerator: isMod,
     permissions,
-    // Common permission shortcuts
-    canManageNode: permissions?.manageNode ?? false,
-    canManageChannels: permissions?.manageChannels ?? false,
-    canManageRoles: permissions?.manageRoles ?? false,
-    canAssignRoles: permissions?.assignRoles ?? false,
+    // Common permission shortcuts - owners get all permissions even if roles haven't loaded
+    canManageNode: permissions?.manageNode ?? isOwner,
+    canManageChannels: permissions?.manageChannels ?? isOwner,
+    canEditChannelSettings: permissions?.editChannelSettings ?? isOwner,
+    canManageRoles: permissions?.manageRoles ?? isOwner,
+    canAssignRoles: permissions?.assignRoles ?? isOwner,
     canSendMessages: permissions?.sendMessages ?? true,
     canSendFiles: permissions?.sendFiles ?? true,
-    canDeleteAnyMessage: permissions?.deleteAnyMessage ?? false,
-    canKickMembers: permissions?.kickMembers ?? false,
-    canBanMembers: permissions?.banMembers ?? false,
-    canManageInvites: permissions?.manageInvites ?? false,
-    canViewAuditLog: permissions?.viewAuditLog ?? false,
+    canDeleteAnyMessage: permissions?.deleteAnyMessage ?? isOwner,
+    canKickMembers: permissions?.kickMembers ?? isOwner,
+    canBanMembers: permissions?.banMembers ?? isOwner,
+    canManageInvites: permissions?.manageInvites ?? isOwner,
+    canViewAuditLog: permissions?.viewAuditLog ?? isOwner,
     // Voice permissions
     canConnectVoice: permissions?.connectVoice ?? true,
-    canMuteMembers: permissions?.muteMembers ?? false,
-    canMoveMembers: permissions?.moveMembers ?? false,
-    canDisconnectMembers: permissions?.disconnectMembers ?? false,
+    canMuteMembers: permissions?.muteMembers ?? isOwner,
+    canMoveMembers: permissions?.moveMembers ?? isOwner,
+    canDisconnectMembers: permissions?.disconnectMembers ?? isOwner,
   };
 }
 
@@ -223,6 +252,7 @@ export function useCanModifyMember(targetRoleIds: string[], nodeId?: string | nu
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const targetNodeId = nodeId ?? activeNodeId;
   const myRoles = useMyRoles(targetNodeId);
+  const isOwner = useIsOwner(targetNodeId);
   
   // Get stable roles array
   const nodeRoles = useRoleStore((s) => 
@@ -231,10 +261,12 @@ export function useCanModifyMember(targetRoleIds: string[], nodeId?: string | nu
 
   // Compute with useMemo
   return useMemo(() => {
+    // Owners can modify anyone
+    if (isOwner) return true;
     if (!targetNodeId || !nodeRoles) return false;
     const resolver = createPermissionResolver(nodeRoles);
     return resolver.canModify(myRoles, targetRoleIds);
-  }, [targetNodeId, nodeRoles, myRoles, targetRoleIds]);
+  }, [targetNodeId, nodeRoles, myRoles, targetRoleIds, isOwner]);
 }
 
 /**

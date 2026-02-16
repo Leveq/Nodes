@@ -1,9 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNodeStore } from "../stores/node-store";
 import { useMessageStore } from "../stores/message-store";
 import { useVoiceStore } from "../stores/voice-store";
-import { CreateChannelModal } from "../components/modals/CreateChannelModal";
-import { NodeSettingsModal } from "../components/modals/NodeSettingsModal";
+import { CreateChannelModal, NodeSettingsModal, ChannelSettingsModal } from "../components/modals";
 import { ChannelListSkeleton } from "../components/ui";
 import { VoiceChannelEntry, VoiceConnectionBar } from "../components/voice";
 import { usePermissions } from "../hooks/usePermissions";
@@ -21,6 +20,7 @@ export function ChannelSidebar() {
   const nodes = useNodeStore((s) => s.nodes);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [channelSettingsId, setChannelSettingsId] = useState<string | null>(null);
   
   // Voice state and transport
   const voiceTransport = useVoiceTransport();
@@ -146,6 +146,7 @@ export function ChannelSidebar() {
                     name={channel.name}
                     isActive={channel.id === activeChannelId}
                     onClick={() => setActiveChannel(channel.id)}
+                    onOpenSettings={() => setChannelSettingsId(channel.id)}
                   />
                 ))}
 
@@ -232,6 +233,12 @@ export function ChannelSidebar() {
       {showSettings && (
         <NodeSettingsModal onClose={() => setShowSettings(false)} />
       )}
+      {channelSettingsId && (
+        <ChannelSettingsModal
+          channelId={channelSettingsId}
+          onClose={() => setChannelSettingsId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -241,40 +248,93 @@ interface ChannelItemProps {
   name: string;
   isActive: boolean;
   onClick: () => void;
+  onOpenSettings?: () => void;
 }
 
-function ChannelItem({ channelId, name, isActive, onClick }: ChannelItemProps) {
+function ChannelItem({ channelId, name, isActive, onClick, onOpenSettings }: ChannelItemProps) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
+  
   const unreadCount = useMessageStore((s) => s.unreadCounts[channelId] || 0);
   const clearUnread = useMessageStore((s) => s.clearUnread);
+  const { canEditChannelSettings, canManageChannels } = usePermissions();
+  const canOpenSettings = canEditChannelSettings || canManageChannels;
 
   const handleClick = () => {
     onClick();
     clearUnread(channelId);
   };
+  
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (canOpenSettings && onOpenSettings) {
+      setMenuPos({ x: e.clientX, y: e.clientY });
+      setShowMenu(true);
+    }
+  };
+  
+  // Close menu on click outside
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showMenu]);
 
   const hasUnread = unreadCount > 0;
   const displayCount = unreadCount > 99 ? "99+" : unreadCount;
 
   return (
-    <button
-      onClick={handleClick}
-      className={`channel-item w-full flex items-center gap-1.5 text-left ${
-        isActive
-          ? "channel-item-active"
-          : hasUnread
-          ? "text-text-primary"
-          : ""
-      }`}
-    >
-      <span className="text-lg leading-none">#</span>
-      <span className={`truncate flex-1 ${hasUnread ? "font-semibold" : ""}`}>
-        {name}
-      </span>
-      {hasUnread && !isActive && (
-        <span className="bg-accent-primary text-white text-xs rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center">
-          {displayCount}
+    <>
+      <button
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        className={`channel-item w-full flex items-center gap-1.5 text-left ${
+          isActive
+            ? "channel-item-active"
+            : hasUnread
+            ? "text-text-primary"
+            : ""
+        }`}
+      >
+        <span className="text-lg leading-none">#</span>
+        <span className={`truncate flex-1 ${hasUnread ? "font-semibold" : ""}`}>
+          {name}
         </span>
+        {hasUnread && !isActive && (
+          <span className="bg-accent-primary text-white text-xs rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center">
+            {displayCount}
+          </span>
+        )}
+      </button>
+      
+      {/* Context menu */}
+      {showMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-bg-float border border-nodes-border rounded-lg shadow-lg py-1 min-w-44"
+          style={{ top: menuPos.y, left: menuPos.x }}
+        >
+          <button
+            onClick={() => {
+              setShowMenu(false);
+              onOpenSettings?.();
+            }}
+            className="w-full px-3 py-2 text-left text-sm text-nodes-text hover:bg-nodes-bg transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Edit Channel
+          </button>
+        </div>
       )}
-    </button>
+    </>
   );
 }

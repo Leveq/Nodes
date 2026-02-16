@@ -74,7 +74,7 @@ export function RolesTab() {
             Roles define permissions for members
           </p>
         </div>
-        {canManageRoles && (
+        {(canManageRoles || isOwner) && (
           <button
             onClick={() => setIsCreating(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-nodes-primary text-white rounded-lg hover:bg-nodes-primary/80 transition-colors"
@@ -97,7 +97,7 @@ export function RolesTab() {
               key={role.id}
               role={role}
               isSelected={selectedRoleId === role.id}
-              canEdit={canManageRoles || (isOwner && role.isBuiltIn)}
+              canEdit={canManageRoles || isOwner}
               onClick={() => setSelectedRoleId(role.id)}
             />
           ))

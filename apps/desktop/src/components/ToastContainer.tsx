@@ -9,10 +9,10 @@ const icons: Record<ToastType, string> = {
 };
 
 const styles: Record<ToastType, string> = {
-  success: "bg-nodes-accent/10 border-nodes-accent text-nodes-accent",
-  error: "bg-nodes-danger/10 border-nodes-danger text-nodes-danger",
-  info: "bg-nodes-primary/10 border-nodes-primary text-nodes-primary",
-  warning: "bg-yellow-500/10 border-yellow-500 text-yellow-500",
+  success: "bg-bg-float border-nodes-accent text-nodes-accent",
+  error: "bg-bg-float border-nodes-danger text-nodes-danger",
+  info: "bg-bg-float border-nodes-primary text-nodes-primary",
+  warning: "bg-bg-float border-yellow-500 text-yellow-500",
 };
 
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: () => void }) {

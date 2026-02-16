@@ -12,11 +12,14 @@ import { useRoleStore } from "../stores/role-store";
 
 export function useRoleSubscriptions() {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
-  const setRoles = useRoleStore((s) => s.setRoles);
   const setLoading = useRoleStore((s) => s.setLoading);
+  const upsertRole = useRoleStore((s) => s.upsertRole);
+  const setRoles = useRoleStore((s) => s.setRoles);
   
   // Store cleanup function
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  // Track if initial load is complete to avoid overwriting optimistic updates
+  const initialLoadComplete = useRef(false);
 
   useEffect(() => {
     // Cleanup previous subscription
@@ -24,21 +27,34 @@ export function useRoleSubscriptions() {
       unsubscribeRef.current();
       unsubscribeRef.current = null;
     }
+    initialLoadComplete.current = false;
 
     if (!activeNodeId) return;
 
     // Set loading state
     setLoading(activeNodeId, true);
 
-    // Subscribe to role changes
+    // Subscribe to role changes - use upsertRole for each role instead of replacing all
     unsubscribeRef.current = roleManager.subscribeToRoles(activeNodeId, (roles) => {
-      setRoles(activeNodeId, roles);
+      if (!initialLoadComplete.current) {
+        // On initial load, set all roles at once
+        setRoles(activeNodeId, roles);
+        initialLoadComplete.current = true;
+      } else {
+        // After initial load, upsert each role to preserve optimistic updates
+        for (const role of roles) {
+          upsertRole(activeNodeId, role);
+        }
+      }
       setLoading(activeNodeId, false);
     });
 
     // Also load roles immediately (subscription takes time to trigger)
     roleManager.getRoles(activeNodeId).then((roles) => {
-      setRoles(activeNodeId, roles);
+      if (!initialLoadComplete.current) {
+        setRoles(activeNodeId, roles);
+        initialLoadComplete.current = true;
+      }
       setLoading(activeNodeId, false);
     });
 
@@ -48,5 +64,5 @@ export function useRoleSubscriptions() {
         unsubscribeRef.current = null;
       }
     };
-  }, [activeNodeId, setRoles, setLoading]);
+  }, [activeNodeId, setRoles, setLoading, upsertRole]);
 }

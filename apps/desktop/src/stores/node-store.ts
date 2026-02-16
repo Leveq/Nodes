@@ -3,6 +3,14 @@ import { NodeManager } from "@nodes/transport-gun";
 import type { NodeServer, NodeMember, NodeChannel } from "@nodes/core";
 import { useToastStore } from "./toast-store";
 
+// TTL for cached display names (5 minutes)
+const DISPLAY_NAME_CACHE_TTL = 5 * 60 * 1000;
+
+interface CachedDisplayName {
+  name: string;
+  lastFetched: number;
+}
+
 interface NodeState {
   // State
   nodes: NodeServer[];
@@ -12,6 +20,7 @@ interface NodeState {
   members: Record<string, NodeMember[]>; // nodeId → members
   loadingChannels: Record<string, boolean>; // nodeId → loading state
   isLoading: boolean;
+  displayNameCache: Record<string, CachedDisplayName>; // publicKey → cached name
 
   // Actions
   loadUserNodes: () => Promise<void>;
@@ -23,6 +32,7 @@ interface NodeState {
   ) => Promise<NodeServer>;
   joinNode: (inviteString: string, publicKey: string) => Promise<void>;
   leaveNode: (nodeId: string, publicKey: string) => Promise<void>;
+  removeNodeFromState: (nodeId: string) => void; // For kick/ban - removes from local state only
   deleteNode: (nodeId: string) => Promise<void>;
   updateNode: (
     nodeId: string,
@@ -33,10 +43,21 @@ interface NodeState {
   loadChannels: (nodeId: string) => Promise<void>;
   loadMembers: (nodeId: string) => Promise<void>;
   createChannel: (nodeId: string, name: string, topic?: string, type?: "text" | "voice") => Promise<void>;
+  updateChannel: (
+    nodeId: string,
+    channelId: string,
+    updates: Partial<Pick<NodeChannel, "name" | "topic" | "position" | "slowMode">>
+  ) => Promise<void>;
   deleteChannel: (nodeId: string, channelId: string) => Promise<void>;
   generateInvite: (nodeId: string) => Promise<string>;
   getActiveNode: () => NodeServer | null;
   getActiveChannel: () => NodeChannel | null;
+  
+  // Display name cache actions
+  getDisplayName: (publicKey: string) => string | undefined;
+  isDisplayNameStale: (publicKey: string) => boolean;
+  setDisplayNames: (names: Record<string, string>) => void;
+  invalidateDisplayName: (publicKey: string) => void;
 }
 
 const nodeManager = new NodeManager();
@@ -49,6 +70,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   members: {},
   loadingChannels: {},
   isLoading: false,
+  displayNameCache: {},
 
   loadUserNodes: async () => {
     set({ isLoading: true });
@@ -130,6 +152,26 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     }
   },
 
+  // Remove a node from local state only (for kick/ban scenarios)
+  // Does NOT call backend - the removal already happened server-side
+  removeNodeFromState: (nodeId) => {
+    set((state) => ({
+      nodes: state.nodes.filter((n) => n.id !== nodeId),
+      activeNodeId: state.activeNodeId === nodeId ? null : state.activeNodeId,
+      activeChannelId: state.activeNodeId === nodeId ? null : state.activeChannelId,
+      channels: (() => {
+        const newChannels = { ...state.channels };
+        delete newChannels[nodeId];
+        return newChannels;
+      })(),
+      members: (() => {
+        const newMembers = { ...state.members };
+        delete newMembers[nodeId];
+        return newMembers;
+      })(),
+    }));
+  },
+
   deleteNode: async (nodeId) => {
     try {
       const node = get().nodes.find((n) => n.id === nodeId);
@@ -167,17 +209,30 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   setActiveNode: (nodeId) => {
-    // Check if we have cached channels for this node
+    const currentNodeId = get().activeNodeId;
+    
+    // If already on this node, don't reload (prevents flicker when switching views)
+    if (nodeId === currentNodeId) {
+      return;
+    }
+    
+    // Check if we have cached data for this node
     const cachedChannels = nodeId ? get().channels[nodeId] : null;
+    const cachedMembers = nodeId ? get().members[nodeId] : null;
     const firstChannelId = cachedChannels?.[0]?.id ?? null;
 
-    // If we have cached channels, auto-select first immediately
+    // Set active node and channel immediately
     set({ activeNodeId: nodeId, activeChannelId: firstChannelId });
 
     if (nodeId) {
-      // Load channels and members for the active Node (will refresh cache)
-      get().loadChannels(nodeId);
-      get().loadMembers(nodeId);
+      // Only load channels if not cached
+      if (!cachedChannels || cachedChannels.length === 0) {
+        get().loadChannels(nodeId);
+      }
+      // Only load members if not cached
+      if (!cachedMembers || cachedMembers.length === 0) {
+        get().loadMembers(nodeId);
+      }
     }
   },
 
@@ -243,6 +298,24 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     }
   },
 
+  updateChannel: async (nodeId, channelId, updates) => {
+    try {
+      await nodeManager.updateChannel(nodeId, channelId, updates);
+
+      set((state) => ({
+        channels: {
+          ...state.channels,
+          [nodeId]: (state.channels[nodeId] || []).map((c) =>
+            c.id === channelId ? { ...c, ...updates } : c
+          ),
+        },
+      }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      useToastStore.getState().addToast("error", `Failed to update channel: ${message}`);
+    }
+  },
+
   deleteChannel: async (nodeId, channelId) => {
     try {
       await nodeManager.deleteChannel(nodeId, channelId);
@@ -286,5 +359,40 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     if (!activeNodeId || !activeChannelId) return null;
     const nodeChannels = channels[activeNodeId] || [];
     return nodeChannels.find((c) => c.id === activeChannelId) || null;
+  },
+
+  // Display name cache methods
+  getDisplayName: (publicKey: string) => {
+    const cached = get().displayNameCache[publicKey];
+    return cached?.name;
+  },
+
+  isDisplayNameStale: (publicKey: string) => {
+    const cached = get().displayNameCache[publicKey];
+    if (!cached) return true;
+    return Date.now() - cached.lastFetched > DISPLAY_NAME_CACHE_TTL;
+  },
+
+  setDisplayNames: (names: Record<string, string>) => {
+    const now = Date.now();
+    set((state) => ({
+      displayNameCache: {
+        ...state.displayNameCache,
+        ...Object.fromEntries(
+          Object.entries(names).map(([key, name]) => [
+            key,
+            { name, lastFetched: now },
+          ])
+        ),
+      },
+    }));
+  },
+
+  invalidateDisplayName: (publicKey: string) => {
+    set((state) => {
+      const { [publicKey]: _removed, ...rest } = state.displayNameCache;
+      void _removed; // Intentionally unused - destructuring to remove key
+      return { displayNameCache: rest };
+    });
   },
 }));
