@@ -2,7 +2,7 @@
  * About settings section: version, links, philosophy.
  */
 export function AboutSettings() {
-  const version = "0.1.0-alpha";
+  const version = "0.4.0-alpha";
 
   return (
     <div className="space-y-8">
@@ -22,7 +22,7 @@ export function AboutSettings() {
           </svg>
         </div>
         <h1 className="text-2xl font-bold text-nodes-text mb-1">Nodes</h1>
-        <p className="text-nodes-text-muted text-sm">v{version} — Phase 1</p>
+        <p className="text-nodes-text-muted text-sm">v{version}</p>
       </section>
 
       {/* Description */}
