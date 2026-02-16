@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Milestone 2.5 — Moderation Tools**
+- Slow mode for channels (configurable delay between messages)
+- Kick members with optional reason
+- Ban members with optional reason and automatic removal
+- Kick/ban detection — users automatically redirected when removed
+- Moderation tab in Node settings (view kicked/banned members)
+- Unban functionality for Node owners and moderators
+
+### Fixed
+- Member list flickering when switching nodes or views (improved caching)
+- Transparent backgrounds on context menus and toasts
+- Roles submenu width too narrow in member context menu
+- "Create Role" button not appearing for owners (race condition with permissions)
+- Role creation not persisting to Gun (optimistic updates + upsert pattern)
+- Role deletion not updating UI immediately
+- Owner permissions not working before members/roles loaded from Gun
+
+### Changed
+- Permission checks now fall back to node ownership when roles haven't loaded
+- Role subscriptions use upsert pattern to preserve optimistic updates
+- Delete confirmation shows loading state and disables buttons during operation
+- Added 10-second timeout for role deletion operations
+
 ## [0.4.0-alpha] - 2026-02-15
 
 ### Added

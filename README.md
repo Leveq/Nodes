@@ -29,6 +29,7 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 - **Message editing** — Edit your own messages with "(edited)" indicator and history
 - **Message deletion** — Soft-delete your own messages, displays "[Message deleted]"
 - **Roles & permissions** — Customizable roles with colors, hierarchy, and granular permissions
+- **Moderation tools** — Kick/ban members, slow mode for channels, moderation audit in settings
 - **Voice channels** — P2P WebRTC voice chat with speaking indicators, mute/deafen controls
 - **Desktop app** — Native Tauri binary with system tray (~15MB, ~80MB RAM)
 
@@ -112,7 +113,8 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Message reactions, replies, markdown, link previews, editing, deletion — Milestone 2.2
 - ✅ Roles & permissions — Milestone 2.3
 - ✅ Voice channels (P2P WebRTC) — Milestone 2.4
-- Moderation tools, search — Upcoming
+- ✅ Moderation tools (kick, ban, slow mode) — Milestone 2.5
+- Search — Upcoming
 
 ### Phase 3 — Platform Expansion
 Web client (PWA), plugin/bot system, Node discovery, notifications, theming.
