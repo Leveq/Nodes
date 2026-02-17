@@ -116,10 +116,14 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Roles & permissions — Milestone 2.3
 - ✅ Voice channels (P2P WebRTC) — Milestone 2.4
 - ✅ Moderation tools (kick, ban, slow mode) — Milestone 2.5
-- ✅ Full-text search — Milestone 3.1
 
-### Phase 3 — Platform Expansion
-Web client (PWA), plugin/bot system, Node discovery, notifications, theming.
+### Phase 3 — Platform Expansion 🚧
+- ✅ Full-text search — Milestone 3.1
+- ✅ Node Discovery — Milestone 3.2
+- 🔲 Web client (PWA) — Milestone 3.3
+- 🔲 Notifications — Milestone 3.4
+- 🔲 Plugin/bot system — Milestone 3.5
+- 🔲 Theming — Milestone 3.6
 
 ### Phase 4 — Scale
 Mobile (React Native), federation, self-hosting toolkit, performance hardening.
