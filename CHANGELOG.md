@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-alpha] - 2026-02-17
+
+### Added
+
+**Milestone 3.2 — Node Discovery**
+- Public Node directory stored in Gun graph (`gun.get("directory")`)
+- Browse/search/filter communities without invite links
+- 12 predefined categories with emoji icons (Gaming, Technology, Music, etc.)
+- Free-form tags (max 5 per Node, lowercase alphanumeric)
+- Sort by member count, newest, or alphabetical
+- Grid and list view toggle in directory browser
+- Node preview modal with channel list and one-click join
+- Ban check when joining from directory
+- Discovery tab in Node Settings (list/delist, category, tags)
+- Auto-refresh listings every 24 hours via `useDirectoryRefresh` hook
+- Stale listing detection (dimmed >7 days, hidden >30 days)
+- Compass icon in sidebar for Explore page
+- Member list real-time polling (5s interval) for join/leave detection
+
+### Fixed
+- Toast API calls in DiscoveryTab (changed from object to positional args)
+- Dropdown styling (white text on white background in dark mode)
+- Members not appearing until app restart after joining
+- Other users' member lists not updating when someone joins/leaves
+- Presence status being wiped when member list refreshes
+
+### Changed
+- `getMembers` timeout increased (1.5s→2.5s, 3s→5s max) for Gun sync
+- Directory refresh initial delay increased to 10s
+- Member subscription uses polling instead of Gun's `.on()` for reliability
+
 ## [0.5.0-alpha] - 2026-02-16
 
 ### Added

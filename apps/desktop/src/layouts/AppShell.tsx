@@ -7,6 +7,7 @@ import { useSocialStore } from "../stores/social-store";
 import { useVoiceStore } from "../stores/voice-store";
 import { useSearchStore } from "../stores/search-store";
 import { useNodeSubscriptions } from "../hooks/useNodeSubscriptions";
+import { useMemberSubscription } from "../hooks/useMemberSubscription";
 import { useRoleSubscriptions } from "../hooks/useRoleSubscriptions";
 import { useDMSubscriptions } from "../hooks/useDMSubscriptions";
 import { usePresenceSubscriptions } from "../hooks/usePresenceSubscriptions";
@@ -14,6 +15,7 @@ import { usePresenceStatus } from "../hooks/usePresenceStatus";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useGracefulShutdown } from "../hooks/useGracefulShutdown";
 import { useModerationEvents } from "../hooks/useModerationEvents";
+import { useDirectoryRefresh } from "../hooks/useDirectoryRefresh";
 import { useTransport } from "../providers/TransportProvider";
 import { NodeSidebar } from "./NodeSidebar";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -26,6 +28,7 @@ import { ProfilePopup } from "../components/profile";
 import { SettingsPage } from "../components/settings";
 import { EditProfileModal } from "../components/modals";
 import { SearchOverlay } from "../components/search";
+import { DiscoveryPage } from "../components/discovery";
 import type { DMConversation } from "@nodes/core";
 
 /**
@@ -113,6 +116,9 @@ export function AppShell() {
   // Subscribe to all channels in the active Node for unread tracking
   useNodeSubscriptions();
 
+  // Subscribe to member changes for the active Node
+  useMemberSubscription();
+
   // Subscribe to roles for the active Node
   useRoleSubscriptions();
 
@@ -130,6 +136,9 @@ export function AppShell() {
 
   // Handle graceful shutdown (set offline, cleanup)
   useGracefulShutdown();
+
+  // Refresh directory listings for owned Nodes periodically
+  useDirectoryRefresh();
 
   // Load user's Nodes, DM conversations, and social data on mount
   useEffect(() => {
@@ -179,6 +188,7 @@ export function AppShell() {
         {viewMode === "node" && <ChannelSidebar />}
         {viewMode === "dm" && <DMSidebar onUserClick={openUserProfile} />}
         {viewMode === "friends" && <RequestsPanel onUserClick={openUserProfile} />}
+        {/* Discovery mode has no secondary sidebar */}
 
         {/* Main content area - changes based on view mode */}
         {viewMode === "node" && (
@@ -201,6 +211,7 @@ export function AppShell() {
           </div>
         )}
         {viewMode === "friends" && <FriendsEmptyState />}
+        {viewMode === "discovery" && <DiscoveryPage />}
 
         {/* Member sidebar - always mounted to preserve state, hidden when not in node view */}
         <div className={viewMode === "node" && showMembers ? "" : "hidden"}>

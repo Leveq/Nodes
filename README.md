@@ -12,8 +12,9 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v0.5.0-alpha)
+## What Works Today (v0.7.0-alpha)
 
+- **Node Discovery** — Browse and join public communities from a decentralized directory, no invite link needed
 - **Full-text search** — Global search overlay (Ctrl+K), search across all messages and DMs with filters
 - **Self-sovereign identity** — Keypair-based identity with encrypted local keystore and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management

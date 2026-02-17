@@ -454,3 +454,80 @@ export interface SearchResult {
   score: number;            // MiniSearch relevance score
   matches: string[];        // Which terms matched
 }
+
+// ── Discovery Types (Milestone 3.2) ──
+
+export const NODE_CATEGORIES = [
+  "gaming",
+  "technology",
+  "music",
+  "art-creative",
+  "education",
+  "science",
+  "crypto-web3",
+  "sports",
+  "entertainment",
+  "social",
+  "programming",
+  "other",
+] as const;
+
+export type NodeCategory = typeof NODE_CATEGORIES[number];
+
+export const CATEGORY_LABELS: Record<NodeCategory, string> = {
+  "gaming": "Gaming",
+  "technology": "Technology",
+  "music": "Music",
+  "art-creative": "Art & Creative",
+  "education": "Education",
+  "science": "Science",
+  "crypto-web3": "Crypto & Web3",
+  "sports": "Sports",
+  "entertainment": "Entertainment",
+  "social": "Social",
+  "programming": "Programming",
+  "other": "Other",
+};
+
+export const CATEGORY_ICONS: Record<NodeCategory, string> = {
+  "gaming": "🎮",
+  "technology": "💻",
+  "music": "🎵",
+  "art-creative": "🎨",
+  "education": "📚",
+  "science": "🔬",
+  "crypto-web3": "⛓️",
+  "sports": "⚽",
+  "entertainment": "🎬",
+  "social": "💬",
+  "programming": "👨‍💻",
+  "other": "📌",
+};
+
+export interface DirectoryListing {
+  nodeId: string;
+  name: string;
+  shortDescription: string;   // Max 150 chars, optimized for directory card
+  description: string;        // Full description shown in preview
+  icon: string;               // IPFS CID or emoji
+  category: NodeCategory;
+  tags: string[];
+  memberCount: number;
+  channelCount: number;
+  channelNames: string[];     // For preview
+  ownerKey: string;
+  ownerName: string;
+  inviteKey: string;          // For direct join from directory
+  createdAt: number;
+  listedAt: number;           // When first listed in directory
+  lastRefreshed: number;      // Last time the listing was updated
+}
+
+export type DirectorySortBy = "members" | "newest" | "alphabetical";
+
+export interface DirectoryFilters {
+  search?: string;
+  category?: NodeCategory;
+  tags?: string[];
+  sortBy: DirectorySortBy;
+}

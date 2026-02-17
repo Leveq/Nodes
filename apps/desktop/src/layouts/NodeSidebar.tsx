@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Compass } from "lucide-react";
 import { useNodeStore } from "../stores/node-store";
 import { useNavigationStore } from "../stores/navigation-store";
 import { useDMStore } from "../stores/dm-store";
@@ -42,6 +43,12 @@ export function NodeSidebar() {
     useDMStore.getState().setActiveConversation(null);
   };
 
+  const handleExploreClick = () => {
+    setViewMode("discovery");
+    // Clear active DM when leaving DM view
+    useDMStore.getState().setActiveConversation(null);
+  };
+
   return (
     <div className="w-[72px] bg-depth-tertiary flex flex-col items-center py-3 gap-2 shrink-0">
       {/* DM icon */}
@@ -74,6 +81,19 @@ export function NodeSidebar() {
 
       {/* Separator before action buttons */}
       <div className="w-8 h-[2px] bg-nodes-border rounded-full my-1" />
+
+      {/* Explore button */}
+      <button
+        onClick={handleExploreClick}
+        className={`w-12 h-12 rounded-full transition-all duration-200 flex items-center justify-center ${
+          viewMode === "discovery"
+            ? "bg-nodes-accent text-white rounded-2xl"
+            : "bg-nodes-surface text-nodes-accent hover:bg-nodes-accent hover:text-white hover:rounded-2xl"
+        }`}
+        title="Explore Public Nodes"
+      >
+        <Compass className="w-5 h-5" />
+      </button>
 
       {/* Create Node button */}
       <button

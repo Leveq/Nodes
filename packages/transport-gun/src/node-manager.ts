@@ -189,6 +189,18 @@ export class NodeManager {
   }
 
   /**
+   * Join a Node directly using nodeId and inviteKey.
+   * Convenience method for joining from the directory without constructing a NodeInvite.
+   */
+  async joinNodeDirect(
+    nodeId: string,
+    inviteKey: string,
+    publicKey: string
+  ): Promise<NodeServer> {
+    return this.joinNode({ nodeId, inviteKey }, publicKey);
+  }
+
+  /**
    * Check if a user is banned from a Node.
    */
   async isUserBanned(nodeId: string, publicKey: string): Promise<boolean> {
@@ -349,12 +361,13 @@ export class NodeManager {
       const members: NodeMember[] = [];
       let resolved = false;
 
+      // Max timeout - resolve with whatever we have
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
           resolve(members);
         }
-      }, 3000);
+      }, 5000);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       gun.get("nodes").get(nodeId).get("members").map().once((data: any) => {
@@ -388,13 +401,14 @@ export class NodeManager {
         });
       });
 
+      // Early resolve after reasonable wait for Gun sync
       setTimeout(() => {
         if (!resolved) {
           clearTimeout(timeout);
           resolved = true;
           resolve(members);
         }
-      }, 1500);
+      }, 2500);
     });
   }
 

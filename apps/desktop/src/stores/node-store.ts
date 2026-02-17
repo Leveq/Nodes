@@ -52,6 +52,7 @@ interface NodeState {
   generateInvite: (nodeId: string) => Promise<string>;
   getActiveNode: () => NodeServer | null;
   getActiveChannel: () => NodeChannel | null;
+  refreshMembers: (nodeId: string) => Promise<void>; // Force reload members ignoring cache
   
   // Display name cache actions
   getDisplayName: (publicKey: string) => string | undefined;
@@ -278,6 +279,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load members: ${message}`);
+    }
+  },
+
+  // Force reload members regardless of cache (used after joining)
+  refreshMembers: async (nodeId) => {
+    try {
+      const members = await nodeManager.getMembers(nodeId);
+      set((state) => ({
+        members: { ...state.members, [nodeId]: members },
+      }));
+    } catch (err: unknown) {
+      // Silent fail for refresh - don't spam user with errors
+      console.error("Failed to refresh members:", err);
     }
   },
 

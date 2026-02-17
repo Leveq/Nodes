@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import type { Unsubscribe, PresenceInfo } from "@nodes/transport";
 import type { UserStatus } from "@nodes/core";
 import { useTransport } from "../providers/TransportProvider";
@@ -20,6 +20,13 @@ export function usePresenceSubscriptions() {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const members = useNodeStore((s) => s.members);
   const friends = useSocialStore((s) => s.friends);
+
+  // Memoize the member keys for the active node to avoid unnecessary re-renders
+  const activeMemberKeys = useMemo(() => {
+    if (!activeNodeId) return [];
+    const nodeMembers = members[activeNodeId] || [];
+    return nodeMembers.map(m => m.publicKey);
+  }, [activeNodeId, members]);
 
   // Store presence subscription for cleanup
   const subscriptionRef = useRef<Unsubscribe | null>(null);
@@ -62,16 +69,17 @@ export function usePresenceSubscriptions() {
       clearInterval(stalenessIntervalRef.current);
       stalenessIntervalRef.current = null;
     }
+    // Clear lastSeen when node changes
+    lastSeenRef.current.clear();
 
     if (!transport) return;
 
     // Collect public keys: node members + friends
     const publicKeySet = new Set<string>();
 
-    // Add members from active node
-    if (activeNodeId) {
-      const nodeMembers = members[activeNodeId] || [];
-      nodeMembers.forEach((m) => publicKeySet.add(m.publicKey));
+    // Add members from active node (using memoized keys)
+    for (const key of activeMemberKeys) {
+      publicKeySet.add(key);
     }
 
     // Add all friends (they're always presence-visible)
@@ -114,5 +122,5 @@ export function usePresenceSubscriptions() {
         stalenessIntervalRef.current = null;
       }
     };
-  }, [transport, activeNodeId, members, friends, updateMemberStatus]);
+  }, [transport, activeNodeId, activeMemberKeys, friends, updateMemberStatus]);
 }

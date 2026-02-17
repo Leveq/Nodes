@@ -19,6 +19,7 @@ export { IPFSPeerAdvertiser, getIPFSPeerAdvertiser } from "./ipfs-peer-advertise
 export { NodeManager } from "./node-manager";
 export { RoleManager, roleManager } from "./role-manager";
 export { ModerationManager, getModerationManager } from "./moderation-manager";
+export { DirectoryManager, directoryManager } from "./directory-manager";
 
 // Direct Messages
 export { DMManager } from "./dm-manager";

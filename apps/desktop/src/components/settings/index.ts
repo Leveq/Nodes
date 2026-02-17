@@ -8,3 +8,4 @@ export { AboutSettings } from './AboutSettings';
 export { RolesTab } from './RolesTab';
 export { RoleEditor } from './RoleEditor';
 export { ModerationTab } from './ModerationTab';
+export { DiscoveryTab } from './DiscoveryTab';
