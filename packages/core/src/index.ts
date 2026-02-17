@@ -419,3 +419,38 @@ export function createDefaultRoles(creatorKey: string): Role[] {
     },
   ];
 }
+
+// ── Search Types (Milestone 3.1) ──
+
+export type SearchScope = "current-channel" | "current-node" | "all-nodes" | "dms";
+
+export interface SearchQuery {
+  raw: string;              // Original user input
+  terms: string[];          // Parsed search terms (non-filter tokens)
+  filters: SearchFilters;   // Parsed filter values
+}
+
+export interface SearchFilters {
+  from?: string;            // publicKey to filter by author
+  in?: string;              // channelId to filter by channel
+  before?: Date;            // Messages before this date
+  after?: Date;             // Messages after this date
+  has?: "file" | "image" | "link";  // Content type filter
+}
+
+export interface SearchResult {
+  id: string;               // Message ID or document ID
+  type: "message" | "dm";   // Result type
+  content: string;          // Original message content
+  contentSnippet: string;   // Highlighted snippet with matched terms
+  authorKey: string;        // Author's public key
+  authorName?: string;      // Resolved display name (may be cached)
+  timestamp: number;
+  channelId?: string;       // For messages
+  channelName?: string;     // Resolved channel name
+  nodeId?: string;          // For messages
+  nodeName?: string;        // Resolved node name
+  conversationId?: string;  // For DMs
+  score: number;            // MiniSearch relevance score
+  matches: string[];        // Which terms matched
+}

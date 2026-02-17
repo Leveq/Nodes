@@ -4,6 +4,7 @@ import { useTransport } from "../providers/TransportProvider";
 import { useNodeStore } from "../stores/node-store";
 import { useMessageStore } from "../stores/message-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { getSearchIndex } from "../services/search-index";
 
 /**
  * Hook that subscribes to all channels in the active Node for unread tracking.
@@ -55,6 +56,7 @@ export function useNodeSubscriptions() {
     const flushPending = () => {
       rafIdRef.current = null;
       const { addMessage, incrementUnread, messages } = useMessageStore.getState();
+      const searchIndex = getSearchIndex();
       
       for (const [channelId, pendingMsgs] of pendingMessagesRef.current) {
         const channelMessages = messages[channelId] || [];
@@ -64,6 +66,21 @@ export function useNodeSubscriptions() {
           if (channelMessages.some((m) => m.id === message.id)) continue;
           
           addMessage(channelId, message);
+          
+          // Index message for search (if index is ready)
+          if (activeNodeId && message.type !== "system") {
+            searchIndex.addMessage(
+              {
+                id: message.id,
+                content: message.content,
+                timestamp: message.timestamp,
+                authorKey: message.authorKey,
+                channelId: channelId,
+                type: message.type as "text" | "system" | "file",
+              },
+              activeNodeId
+            );
+          }
 
           // Only increment unread for real-time messages (after initial load)
           // and only if the message is from someone else

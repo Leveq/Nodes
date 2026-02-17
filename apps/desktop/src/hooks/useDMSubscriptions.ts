@@ -4,6 +4,7 @@ import { useDMStore } from "../stores/dm-store";
 import { useIdentityStore } from "../stores/identity-store";
 import { DMManager } from "@nodes/transport-gun";
 import type { KeyPair } from "@nodes/crypto";
+import { getSearchIndex } from "../services/search-index";
 
 const dmManager = new DMManager();
 
@@ -50,6 +51,22 @@ export function useDMSubscriptions() {
 
     // Add message to store
     currentState.addMessage(conversationId, message);
+    
+    // Index DM message for search (content is already decrypted)
+    if (message.type !== "system") {
+      const searchIndex = getSearchIndex();
+      searchIndex.addDM(
+        {
+          id: message.id,
+          encrypted: "", // Not stored
+          timestamp: message.timestamp,
+          authorKey: message.authorKey,
+          conversationId: conversationId,
+          type: message.type as "text" | "system" | "file",
+        },
+        message.content // Pass decrypted content
+      );
+    }
 
     const isFromOther = message.authorKey !== myPublicKey;
     const isNotViewing = currentState.activeConversationId !== conversationId;

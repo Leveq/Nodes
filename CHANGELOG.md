@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-alpha] - 2026-02-16
+
 ### Added
+
+**Milestone 3.1 — Full-Text Search**
+- Global search overlay (Ctrl+K / Cmd+K)
+- Full-text search across messages and DMs using MiniSearch
+- Search filters: `from:@user`, `in:#channel`, `before:date`, `after:date`, `has:file/image/link`
+- Scope selector: Current Channel, Current Node, All Nodes, Direct Messages
+- Highlighted search result snippets
+- Click-to-navigate: jump to message in context with highlight
+- Persistent search index using IndexedDB
 
 **Milestone 2.5 — Moderation Tools**
 - Slow mode for channels (configurable delay between messages)

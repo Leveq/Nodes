@@ -67,7 +67,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
 export const KEYBOARD_SHORTCUTS = [
   { key: 'Ctrl + ,', action: 'Open Settings', mac: '⌘ + ,' },
   { key: 'Escape', action: 'Close modal/popup', mac: 'Escape' },
-  { key: 'Ctrl + K', action: 'Quick switcher', mac: '⌘ + K' },
+  { key: 'Ctrl + K', action: 'Search messages', mac: '⌘ + K' },
   { key: 'Ctrl + Shift + M', action: 'Toggle mute', mac: '⌘ + Shift + M' },
   { key: 'Ctrl + Shift + D', action: 'Toggle deafen', mac: '⌘ + Shift + D' },
 ];

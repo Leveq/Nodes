@@ -12,8 +12,9 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v0.4.0-alpha)
+## What Works Today (v0.5.0-alpha)
 
+- **Full-text search** — Global search overlay (Ctrl+K), search across all messages and DMs with filters
 - **Self-sovereign identity** — Keypair-based identity with encrypted local keystore and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management
 - **Real-time messaging** — P2P text chat with message grouping, timestamps, history, and typing indicators
@@ -29,7 +30,7 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 - **Message editing** — Edit your own messages with "(edited)" indicator and history
 - **Message deletion** — Soft-delete your own messages, displays "[Message deleted]"
 - **Roles & permissions** — Customizable roles with colors, hierarchy, and granular permissions
-- **Moderation tools** — Kick/ban members, slow mode for channels, moderation audit in settings
+- **Moderation tools** — Kick/ban members, slow mode for channels, moderation audit log in settings
 - **Voice channels** — P2P WebRTC voice chat with speaking indicators, mute/deafen controls
 - **Desktop app** — Native Tauri binary with system tray (~15MB, ~80MB RAM)
 
@@ -114,7 +115,7 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Roles & permissions — Milestone 2.3
 - ✅ Voice channels (P2P WebRTC) — Milestone 2.4
 - ✅ Moderation tools (kick, ban, slow mode) — Milestone 2.5
-- Search — Upcoming
+- ✅ Full-text search — Milestone 3.1
 
 ### Phase 3 — Platform Expansion
 Web client (PWA), plugin/bot system, Node discovery, notifications, theming.

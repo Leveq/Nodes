@@ -4,7 +4,9 @@ import { useTransport } from "../../providers/TransportProvider";
 import { useMessageStore } from "../../stores/message-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useReactionStore } from "../../stores/reaction-store";
+import { useNodeStore } from "../../stores/node-store";
 import { createMessageBatcher } from "../../utils/message-batcher";
+import { getSearchIndex } from "../../services/search-index";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { TypingIndicator } from "./TypingIndicator";
@@ -35,6 +37,7 @@ export function ChannelView({
 }: ChannelViewProps) {
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
+
   const [droppedAttachments, setDroppedAttachments] = useState<PendingAttachment[]>([]);
   
   // Reactions state - use stable empty object to prevent infinite re-renders
@@ -143,11 +146,33 @@ export function ChannelView({
     }
 
     // Load message history
+    const nodeId = useNodeStore.getState().activeNodeId;
+    const searchIndex = getSearchIndex();
+    
     transport.message
       .getHistory(channelId, { limit: 50 })
       .then((history: TransportMessage[]) => {
         setMessages(channelId, history);
         setLoading(channelId, false);
+        
+        // Index all history messages for search
+        if (nodeId) {
+          for (const msg of history) {
+            if (msg.type !== "system") {
+              searchIndex.addMessage(
+                {
+                  id: msg.id,
+                  content: msg.content,
+                  timestamp: msg.timestamp,
+                  authorKey: msg.authorKey,
+                  channelId: channelId,
+                  type: msg.type as "text" | "system" | "file",
+                },
+                nodeId
+              );
+            }
+          }
+        }
       })
       .catch((err: Error) => {
         console.error("Failed to load message history:", err);
@@ -157,6 +182,21 @@ export function ChannelView({
     // Subscribe to new messages (batched to avoid flooding React)
     const messageUnsub = transport.message.subscribe(channelId, (message: TransportMessage) => {
       batcher.add(channelId, message);
+      
+      // Index message for search
+      if (nodeId && message.type !== "system") {
+        searchIndex.addMessage(
+          {
+            id: message.id,
+            content: message.content,
+            timestamp: message.timestamp,
+            authorKey: message.authorKey,
+            channelId: channelId,
+            type: message.type as "text" | "system" | "file",
+          },
+          nodeId
+        );
+      }
     });
     setSubscription(messageUnsub);
 

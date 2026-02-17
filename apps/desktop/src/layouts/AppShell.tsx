@@ -5,6 +5,7 @@ import { useNavigationStore } from "../stores/navigation-store";
 import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
 import { useVoiceStore } from "../stores/voice-store";
+import { useSearchStore } from "../stores/search-store";
 import { useNodeSubscriptions } from "../hooks/useNodeSubscriptions";
 import { useRoleSubscriptions } from "../hooks/useRoleSubscriptions";
 import { useDMSubscriptions } from "../hooks/useDMSubscriptions";
@@ -24,6 +25,7 @@ import { RequestsPanel } from "../components/social";
 import { ProfilePopup } from "../components/profile";
 import { SettingsPage } from "../components/settings";
 import { EditProfileModal } from "../components/modals";
+import { SearchOverlay } from "../components/search";
 import type { DMConversation } from "@nodes/core";
 
 /**
@@ -49,6 +51,9 @@ export function AppShell() {
   // Voice state for keyboard shortcuts
   const { voice } = useTransport();
   const voiceState = useVoiceStore((s) => s.state);
+  
+  // Search state
+  const toggleSearch = useSearchStore((s) => s.toggle);
   
   // UI state for settings and profile
   const [showSettings, setShowSettings] = useState(false);
@@ -89,6 +94,7 @@ export function AppShell() {
   useKeyboardShortcuts({
     onOpenSettings: handleOpenSettings,
     onCloseModal: handleCloseModal,
+    onQuickSwitcher: toggleSearch,
     onToggleMute: handleToggleMute,
     onToggleDeafen: handleToggleDeafen,
   });
@@ -217,6 +223,9 @@ export function AppShell() {
       {showEditProfile && (
         <EditProfileModal onClose={() => setShowEditProfile(false)} />
       )}
+
+      {/* Search overlay */}
+      <SearchOverlay />
 
       {/* Profile popup for viewing other users */}
       {showProfile && profileUserId && (

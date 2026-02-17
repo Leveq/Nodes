@@ -6,6 +6,7 @@ export { useAvatar } from "./useAvatar";
 export { useVoiceChannelParticipants } from "./useVoiceChannelParticipants";
 export { useModerationEvents } from "./useModerationEvents";
 export { useSlowMode } from "./useSlowMode";
+export { useSearch, useSearchIndex } from "./useSearch";
 export {
   usePermissions,
   useMyRoles,

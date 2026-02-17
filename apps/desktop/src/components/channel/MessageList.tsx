@@ -91,6 +91,36 @@ export function MessageList({
     }
   }, []);
 
+  // Listen for scroll-to-message events from search
+  useEffect(() => {
+    const handleScrollToMessage = (event: CustomEvent<{ messageId: string; channelId: string; highlight?: boolean }>) => {
+      const { messageId, channelId: targetChannelId, highlight } = event.detail;
+      
+      // Only handle if this is the target channel
+      if (targetChannelId !== channelId) return;
+      
+      // Wait a bit for the channel view to render if we just navigated
+      setTimeout(() => {
+        const container = scrollRef.current;
+        if (!container) return;
+        
+        const messageEl = container.querySelector(`[data-message-id="${messageId}"]`);
+        if (messageEl) {
+          messageEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (highlight) {
+            setHighlightedMessageId(messageId);
+            setTimeout(() => setHighlightedMessageId(null), 2000);
+          }
+        }
+      }, 100);
+    };
+
+    window.addEventListener("scroll-to-message", handleScrollToMessage as EventListener);
+    return () => {
+      window.removeEventListener("scroll-to-message", handleScrollToMessage as EventListener);
+    };
+  }, [channelId]);
+
   // Handle scroll events
   const handleScroll = useCallback(() => {
     const atBottom = checkIsAtBottom();
