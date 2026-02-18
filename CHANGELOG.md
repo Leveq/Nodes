@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0-alpha] - 2026-02-18
+
+### Added
+
+**Milestone 3.3 — Notification System**
+- @Mention system with tokens (`<@publicKey>`, `<@&roleId>`, `<@everyone>`, `<@here>`)
+- Mention autocomplete dropdown triggered by `@` in message input
+- Highlighted clickable mention rendering in messages (click opens profile)
+- Role mentions with role color styling
+- Notification center dropdown (bell icon in header)
+- Desktop notifications via Tauri notification plugin
+- Programmatic notification sound with 2-second debounce
+- Per-Node notification settings (All / Only @Mentions / Muted)
+- Per-Channel notification settings (Default / All / Mentions / Muted)
+- Global notification preferences (Desktop, Sound, DMs, Do Not Disturb)
+- Suppress @everyone toggle per-Node
+- Unread badges on channels (bold name + dot)
+- Mention count badges on channels (red with count)
+- DM unread badges with hot pink (#FF006E) pulse glow animation
+- Friends badge with neon green (#00ff88)
+- Notification persistence via IndexedDB (max 200, auto-prune)
+- Mark all as read / Clear all in notification center
+- Click notification to navigate to message
+- "Mark as Read" in channel/Node context menus
+- Mute icon (🔇) on muted channels/Nodes
+
+### Fixed
+- DM unreads not incrementing when viewing servers (now checks `viewMode`)
+- DM discovery — recipients can now see DMs sent to them (added `dm-inbox` public graph)
+- New channels not appearing for other users until server switch (added `subscribeChannelChanges`)
+- DM badge persistence — badges no longer reappear after restart (fixed `lastReadAt` being overwritten)
+
+### Changed
+- DM inbox subscription now preserves existing `lastReadAt` values
+- `markAsRead` uses Gun callback confirmation
+- Badge colors: Mentions (#ff2d55 neon red), Friends (#00ff88 neon green), DMs (#FF006E hot pink with pulse)
+
 ## [0.7.0-alpha] - 2026-02-17
 
 ### Added
@@ -183,7 +220,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[unreleased]: https://github.com/Leveq/Nodes/compare/v0.4.0-alpha...HEAD
+[unreleased]: https://github.com/Leveq/Nodes/compare/v0.8.0-alpha...HEAD
+[0.8.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.7.0-alpha...v0.8.0-alpha
+[0.7.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.5.0-alpha...v0.7.0-alpha
+[0.5.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.4.0-alpha...v0.5.0-alpha
 [0.4.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.2.0-alpha...v0.4.0-alpha
 [0.2.0-alpha]: https://github.com/Leveq/Nodes/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/Leveq/Nodes/releases/tag/v0.1.0-alpha
