@@ -1,14 +1,87 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Components } from "react-markdown";
+import { MentionRenderer } from "./MentionRenderer";
 
 // Import a dark theme for syntax highlighting
 import "highlight.js/styles/github-dark.css";
 
 interface MarkdownRendererProps {
   content: string;
+}
+
+// Pattern strings - NO /g flag for .test() calls (which maintain lastIndex state)
+// Note: Hyphen at end of character class is treated as literal
+const MENTION_PATTERN = /<@[a-zA-Z0-9_.+-]+>|<@&[a-zA-Z0-9_.+-]+>|<@everyone>|<@here>/;
+
+// Escaped mention pattern (after HTML entity encoding)
+const ESCAPED_MENTION_PATTERN = /&lt;@[a-zA-Z0-9_.+-]+&gt;|&lt;@&amp;[a-zA-Z0-9_.+-]+&gt;|&lt;@everyone&gt;|&lt;@here&gt;/;
+
+// Regex to detect markdown syntax (common patterns)
+const MARKDOWN_SYNTAX_REGEX = /(\*\*|__|\*|_|~~|```|`|^#{1,6}\s|^\s*[-*+]\s|^\s*\d+\.\s|^>\s|\[.*\]\(.*\)|!\[.*\]\(.*\))/m;
+
+/**
+ * Check if content has markdown formatting
+ */
+function hasMarkdownSyntax(content: string): boolean {
+  return MARKDOWN_SYNTAX_REGEX.test(content);
+}
+
+/**
+ * Check if content contains @mentions (raw or escaped)
+ */
+function hasMentions(content: string): boolean {
+  return MENTION_PATTERN.test(content) || ESCAPED_MENTION_PATTERN.test(content);
+}
+
+/**
+ * Unescape HTML entities back to mention tokens for MentionRenderer
+ */
+function unescapeMentions(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * Process React children to detect and render mentions in text
+ */
+function processTextWithMentions(children: React.ReactNode): React.ReactNode {
+  if (!children) return children;
+
+  // Process each child
+  const processChild = (child: React.ReactNode): React.ReactNode => {
+    // Only process string children
+    if (typeof child === "string") {
+      // Check for escaped or raw mentions
+      if (hasMentions(child)) {
+        // Unescape HTML entities and render with MentionRenderer
+        const unescaped = unescapeMentions(child);
+        return <MentionRenderer content={unescaped} />;
+      }
+      return child;
+    }
+
+    // For arrays, process each element
+    if (Array.isArray(child)) {
+      return child.map((c, i) => <span key={i}>{processChild(c)}</span>);
+    }
+
+    // Return non-string children as-is
+    return child;
+  };
+
+  // Handle array of children or single child
+  if (Array.isArray(children)) {
+    return children.map((child, index) => (
+      <span key={index}>{processChild(child)}</span>
+    ));
+  }
+
+  return processChild(children);
 }
 
 /**
@@ -27,10 +100,26 @@ interface MarkdownRendererProps {
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
 }: MarkdownRendererProps) {
-  // Don't render empty content
-  if (!content || !content.trim()) {
-    return null;
-  }
+  // Compute these BEFORE any returns (hooks must be called unconditionally)
+  const contentHasMentions = content ? hasMentions(content) : false;
+  const contentHasMarkdown = content ? hasMarkdownSyntax(content) : false;
+  
+  // If content has BOTH markdown and mentions, we need to escape mentions
+  // so markdown doesn't mangle them. We'll use HTML entities.
+  const processedContent = useMemo(() => {
+    if (!content || !contentHasMentions) return content || "";
+    
+    // Create fresh regex with global flag for replacement
+    const mentionRegex = new RegExp(MENTION_PATTERN.source, 'g');
+    
+    // Replace < and > in mention tokens with HTML entities
+    // This prevents markdown from interpreting them as HTML
+    return content.replace(mentionRegex, (match) => {
+      return match
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    });
+  }, [content, contentHasMentions]);
 
   // Handle link clicks - open in external browser
   const handleLinkClick = useCallback(
@@ -131,7 +220,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 
     // Paragraphs - preserve whitespace handling
     p: ({ children }) => (
-      <p className="wrap-break-word whitespace-pre-wrap my-0.5">{children}</p>
+      <p className="wrap-break-word whitespace-pre-wrap my-0.5">{processTextWithMentions(children)}</p>
     ),
 
     // Lists
@@ -141,7 +230,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     ol: ({ children }) => (
       <ol className="list-decimal list-inside my-1 space-y-0.5">{children}</ol>
     ),
-    li: ({ children }) => <li className="text-nodes-text">{children}</li>,
+    li: ({ children }) => <li className="text-nodes-text">{processTextWithMentions(children)}</li>,
 
     // Strong (bold)
     strong: ({ children }) => (
@@ -192,6 +281,24 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     ),
   };
 
+  // Early returns AFTER all hooks are defined
+  // Don't render empty content
+  if (!content || !content.trim()) {
+    return null;
+  }
+
+  // Fast path: If content has mentions but NO markdown syntax, 
+  // render directly with MentionRenderer (avoids markdown mangling mentions)
+  if (contentHasMentions && !contentHasMarkdown) {
+    return (
+      <div className="markdown-content text-nodes-text">
+        <p className="wrap-break-word whitespace-pre-wrap my-0.5">
+          <MentionRenderer content={content} />
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="markdown-content text-nodes-text">
       <ReactMarkdown
@@ -199,7 +306,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         rehypePlugins={[rehypeHighlight]}
         components={components}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );

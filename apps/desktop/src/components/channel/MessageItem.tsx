@@ -1,6 +1,7 @@
 import { memo, useState, useMemo, useCallback } from "react";
 import type { TransportMessage, ReactionData } from "@nodes/transport";
 import type { FileAttachment } from "@nodes/core";
+import { mentionsUser } from "@nodes/core";
 import { useDisplayName } from "../../hooks/useDisplayName";
 import { useLinkPreview } from "../../hooks/useLinkPreview";
 import { usePermissions, useMemberRoleColor } from "../../hooks/usePermissions";
@@ -92,6 +93,15 @@ export const MessageItem = memo(function MessageItem({
 
   // Check if current user owns this message
   const isOwnMessage = publicKey === message.authorKey;
+  
+  // Check if this message mentions the current user (or @everyone/@here)
+  const isMentioned = useMemo(() => {
+    if (!publicKey || !message.content || message.deleted) return false;
+    // Check for direct user mention
+    if (mentionsUser(message.content, publicKey)) return true;
+    // Check for @everyone or @here
+    return message.content.includes('<@everyone>') || message.content.includes('<@here>');
+  }, [publicKey, message.content, message.deleted]);
   
   // Can delete if own message or has deleteAnyMessage permission
   const canDelete = isOwnMessage || canDeleteAnyMessage;
@@ -206,7 +216,7 @@ export const MessageItem = memo(function MessageItem({
           data-message-id={message.id}
           className={`group relative flex items-start px-4 py-0.5 hover:bg-nodes-surface/50 ${
             isDeleted ? "opacity-60" : ""
-          }`}
+          } ${isMentioned ? "bg-accent-primary/10 border-l-2 border-accent-primary" : ""}`}
         >
           {/* Context menu */}
           {!isDeleted && (
@@ -345,7 +355,7 @@ export const MessageItem = memo(function MessageItem({
         data-message-id={message.id}
         className={`group relative flex items-start px-4 py-2 hover:bg-nodes-surface/50 ${
           isDeleted ? "opacity-60" : ""
-        }`}
+        } ${isMentioned ? "bg-accent-primary/10 border-l-2 border-accent-primary" : ""}`}
       >
         {/* Context menu */}
         {!isDeleted && (

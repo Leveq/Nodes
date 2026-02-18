@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import type { Unsubscribe, TransportMessage } from "@nodes/transport";
 import { useDMStore } from "../stores/dm-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { useNavigationStore } from "../stores/navigation-store";
 import { DMManager } from "@nodes/transport-gun";
 import type { KeyPair } from "@nodes/crypto";
 import { getSearchIndex } from "../services/search-index";
@@ -69,10 +70,17 @@ export function useDMSubscriptions() {
     }
 
     const isFromOther = message.authorKey !== myPublicKey;
-    const isNotViewing = currentState.activeConversationId !== conversationId;
+    
+    // User is "not viewing" if they're not in DM mode at all, OR they're viewing a different conversation
+    const viewMode = useNavigationStore.getState().viewMode;
+    const isInDMView = viewMode === "dm";
+    const isViewingThisConversation = isInDMView && currentState.activeConversationId === conversationId;
+    const isNotViewing = !isViewingThisConversation;
+    
+    const initialLoadDone = initialLoadDoneRef.current.has(conversationId);
 
     // During initial load: count unread messages (after lastReadAt)
-    if (!initialLoadDoneRef.current.has(conversationId)) {
+    if (!initialLoadDone) {
       if (isFromOther) {
         const lastReadAt = lastReadAtRef.current.get(conversationId) || 0;
         if (message.timestamp > lastReadAt) {
@@ -201,7 +209,11 @@ export function useDMSubscriptions() {
             if (unreadCount > 0) {
               // Only set if not currently viewing this conversation
               const currentState = useDMStore.getState();
-              if (currentState.activeConversationId !== convId) {
+              const viewMode = useNavigationStore.getState().viewMode;
+              const isInDMView = viewMode === "dm";
+              const isViewingThisConversation = isInDMView && currentState.activeConversationId === convId;
+              
+              if (!isViewingThisConversation) {
                 // Set the unread count directly (not increment)
                 useDMStore.setState((s) => ({
                   unreadCounts: {
@@ -232,6 +244,45 @@ export function useDMSubscriptions() {
       }
     }
   }, [conversations, activeConversationId, keypair, publicKey, handleMessage]);
+
+  // Subscribe to new incoming DMs (from inbox)
+  useEffect(() => {
+    if (!keypair || !publicKey) return;
+
+    const unsub = dmManager.subscribeConversations((newConv) => {
+      // Check if we already have this conversation
+      const existingConvs = useDMStore.getState().conversations;
+      if (!existingConvs.some((c) => c.id === newConv.id)) {
+        useDMStore.getState().updateConversation(newConv);
+      }
+    }, publicKey);
+
+    return () => {
+      unsub();
+    };
+  }, [keypair, publicKey]);
+
+  // Periodic poll for new conversations (fallback for Gun subscription issues)
+  useEffect(() => {
+    if (!keypair || !publicKey) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const serverConversations = await dmManager.getConversations();
+        const localConversations = useDMStore.getState().conversations;
+        
+        for (const serverConv of serverConversations) {
+          if (!localConversations.some((c) => c.id === serverConv.id)) {
+            useDMStore.getState().updateConversation(serverConv);
+          }
+        }
+      } catch (err) {
+        console.error("[useDMSubscriptions] Poll error:", err);
+      }
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [keypair, publicKey]);
 
   // Cleanup on unmount
   useEffect(() => {

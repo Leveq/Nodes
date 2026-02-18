@@ -17,6 +17,7 @@ import { useGracefulShutdown } from "../hooks/useGracefulShutdown";
 import { useModerationEvents } from "../hooks/useModerationEvents";
 import { useDirectoryRefresh } from "../hooks/useDirectoryRefresh";
 import { useTransport } from "../providers/TransportProvider";
+import { initNotificationManager } from "../services/notification-manager";
 import { NodeSidebar } from "./NodeSidebar";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { MainContent } from "./MainContent";
@@ -147,6 +148,7 @@ export function AppShell() {
         useNodeStore.getState().loadUserNodes(),
         useDMStore.getState().loadConversations(),
         initializeSocial(publicKey),
+        initNotificationManager(),
       ]).finally(() => {
         setInitialLoadComplete(true);
       });

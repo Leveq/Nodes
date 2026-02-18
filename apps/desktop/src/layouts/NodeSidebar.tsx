@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Compass } from "lucide-react";
+import type { Channel } from "@nodes/core";
 import { useNodeStore } from "../stores/node-store";
 import { useNavigationStore } from "../stores/navigation-store";
 import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
+import { useNotificationStore } from "../stores/notification-store";
 import { CreateNodeModal } from "../components/modals/CreateNodeModal";
 import { JoinNodeModal } from "../components/modals/JoinNodeModal";
 
@@ -72,6 +74,7 @@ export function NodeSidebar() {
       {nodes.map((node) => (
         <NodeIcon
           key={node.id}
+          nodeId={node.id}
           icon={node.icon}
           name={node.name}
           isActive={viewMode === "node" && node.id === activeNodeId}
@@ -137,13 +140,29 @@ export function NodeSidebar() {
 }
 
 interface NodeIconProps {
+  nodeId: string;
   icon: string;
   name: string;
   isActive: boolean;
   onClick: () => void;
 }
 
-function NodeIcon({ icon, name, isActive, onClick }: NodeIconProps) {
+// Empty array constant to prevent re-renders from new array references
+const EMPTY_CHANNELS: Channel[] = [];
+
+function NodeIcon({ nodeId, icon, name, isActive, onClick }: NodeIconProps) {
+  // Get channels for this node to sum mention counts
+  const channelsMap = useNodeStore((s) => s.channels);
+  const channels = channelsMap[nodeId] ?? EMPTY_CHANNELS;
+  const mentionCounts = useNotificationStore((s) => s.mentionCounts);
+  
+  // Calculate total mentions across all channels in this node
+  const totalMentions = channels.reduce((sum, channel) => {
+    return sum + (mentionCounts[channel.id] || 0);
+  }, 0);
+  
+  console.log("[NodeIcon] Rendering", name, "totalMentions:", totalMentions, "mentionCounts:", mentionCounts, "channels:", channels.map(c => c.id));
+  
   // Generate a consistent color from the node name
   const colors = [
     "bg-purple-500",
@@ -178,6 +197,16 @@ function NodeIcon({ icon, name, isActive, onClick }: NodeIconProps) {
       >
         {icon.length === 1 ? icon : icon.charAt(0)}
       </button>
+      
+      {/* Mention badge */}
+      {totalMentions > 0 && (
+        <span 
+          className="absolute -top-1 -right-1 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+          style={{ backgroundColor: '#ff2d55' }}
+        >
+          {totalMentions > 99 ? "99+" : totalMentions}
+        </span>
+      )}
     </div>
   );
 }
@@ -216,7 +245,10 @@ function DMIcon({ isActive, onClick, unreadCount }: DMIconProps) {
 
       {/* Unread badge */}
       {unreadCount > 0 && (
-        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+        <span 
+          className="absolute -top-1 -right-1 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center pulse-glow-dm"
+          style={{ backgroundColor: '#FF006E' }}
+        >
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       )}
@@ -258,7 +290,10 @@ function FriendsIcon({ isActive, onClick, requestCount }: FriendsIconProps) {
 
       {/* Request badge */}
       {requestCount > 0 && (
-        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+        <span 
+          className="absolute -top-1 -right-1 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+          style={{ backgroundColor: '#00ff88' }}
+        >
           {requestCount > 99 ? "99+" : requestCount}
         </span>
       )}

@@ -46,6 +46,7 @@
   --color-success: #34d399;
   --color-warning: #fbbf24;
   --color-danger: #f87171;
+  --color-error: #ff2d55;
   --color-info: #60a5fa;
   --color-online: #22c55e;
   --color-idle: #facc15;
@@ -467,7 +468,7 @@ code, pre, .font-mono {
 /* ── Unread Badge ── */
 
 .unread-badge {
-  background: var(--color-danger);
+  background: var(--color-error);
   color: white;
   font-size: 11px;
   font-weight: 600;

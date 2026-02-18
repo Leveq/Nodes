@@ -4,6 +4,9 @@
 // Export permission resolver
 export { PermissionResolver, createPermissionResolver } from "./permissions";
 
+// Export mention utilities
+export * from "./mentions";
+
 export interface User {
   publicKey: string;
   displayName: string;
@@ -531,3 +534,71 @@ export interface DirectoryFilters {
   tags?: string[];
   sortBy: DirectorySortBy;
 }
+
+// ── Notification Types ──
+
+export type NotificationType = "mention" | "dm" | "reply" | "role_mention" | "everyone" | "here";
+export type ChannelNotificationLevel = "default" | "all" | "mentions" | "nothing";
+export type NodeNotificationLevel = "all" | "mentions" | "nothing";
+
+export interface GlobalNotificationSettings {
+  desktop: boolean;
+  sound: boolean;
+  dmNotifications: boolean;
+  dnd: boolean;
+  soundChoice: string;
+}
+
+export interface NodeNotificationSetting {
+  level: NodeNotificationLevel;
+  suppressEveryone: boolean;
+}
+
+export interface ChannelNotificationSetting {
+  level: ChannelNotificationLevel;
+}
+
+export interface NotificationSettings {
+  global: GlobalNotificationSettings;
+  nodes: Record<string, NodeNotificationSetting>;
+  channels: Record<string, ChannelNotificationSetting>;
+}
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  nodeId?: string;
+  nodeName?: string;
+  channelId?: string;
+  channelName?: string;
+  senderKey: string;
+  senderName: string;
+  messageId: string;
+  messagePreview: string;
+  timestamp: number;
+  read: boolean;
+}
+
+export type MentionType = "user" | "role" | "everyone" | "here";
+
+export interface ParsedMention {
+  type: MentionType;
+  id: string;
+  raw: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+export const MENTION_PATTERNS = {
+  USER: /<@([a-zA-Z0-9_.-]+)>/g,
+  ROLE: /<@&([a-zA-Z0-9_.-]+)>/g,
+  EVERYONE: /<@everyone>/g,
+  HERE: /<@here>/g,
+} as const;
+
+export type MessageSegment =
+  | { type: "text"; content: string }
+  | { type: "user_mention"; publicKey: string }
+  | { type: "role_mention"; roleId: string }
+  | { type: "everyone" }
+  | { type: "here" };

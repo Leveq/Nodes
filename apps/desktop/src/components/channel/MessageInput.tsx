@@ -9,6 +9,7 @@ import { useSlowMode } from "../../hooks/useSlowMode";
 import { FileAttachmentButton, type PendingAttachment } from "./FileAttachmentButton";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ReplyPreview } from "./ReplyPreview";
+import { MentionAutocomplete } from "./MentionAutocomplete";
 import type { FileAttachment } from "@nodes/core";
 import { useDisplayName } from "../../hooks/useDisplayName";
 import { generateMessageId } from "@nodes/transport-gun";
@@ -323,8 +324,21 @@ export function MessageInput({
     };
   }, []);
 
+  // Handle mention autocomplete selection
+  const handleMentionSelect = useCallback((newContent: string) => {
+    setContent(newContent);
+    handleTyping();
+  }, [handleTyping]);
+
   return (
     <div className="border-t border-surface-border bg-depth-primary">
+      {/* Mention autocomplete popup */}
+      <MentionAutocomplete
+        inputRef={textareaRef}
+        onMentionSelect={handleMentionSelect}
+        isEnabled={canSendMessages}
+      />
+
       {/* Reply preview */}
       {replyTarget && (
         <ReplyPreview

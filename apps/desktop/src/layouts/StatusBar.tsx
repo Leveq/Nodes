@@ -1,6 +1,7 @@
 import { useIdentityStore } from "../stores/identity-store";
 import { ConnectionStatus, Badge } from "../components/ui";
 import { CopyablePublicKey } from "../components/ui/CopyablePublicKey";
+import { NotificationCenter } from "../components/notifications";
 import { getStatusColor } from "../utils/status";
 import type { UserStatus } from "@nodes/core";
 
@@ -44,6 +45,7 @@ export function StatusBar({ onOpenSettings, onOpenProfile }: StatusBarProps) {
         {profile?.data.visibility && (
           <Badge variant={profile.data.visibility} size="sm" />
         )}
+        <NotificationCenter />
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}

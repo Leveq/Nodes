@@ -17,6 +17,9 @@ import { DoorOpen, Gavel } from "lucide-react";
 
 const profileManager = new ProfileManager();
 
+// Empty arrays for stable references
+const EMPTY_MEMBERS: NodeMember[] = [];
+
 // Default roles to use as fallback when node roles haven't loaded
 const DEFAULT_FALLBACK_ROLES = createDefaultRoles("fallback");
 
@@ -37,9 +40,9 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   // Cache previous valid members to prevent empty state during transitions
   const prevMembersRef = useRef<{ nodeId: string | null; members: NodeMember[] }>({ nodeId: null, members: [] });
   
-  // Get current members for this node
+  // Get current members for this node - use constant for empty to avoid new refs
   const currentMembers = useMemo(
-    () => (activeNodeId ? members[activeNodeId] || [] : []),
+    () => (activeNodeId && members[activeNodeId]) || EMPTY_MEMBERS,
     [activeNodeId, members]
   );
   

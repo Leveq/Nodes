@@ -42,7 +42,7 @@ export function useDisplayName(publicKey: string | undefined): {
       return;
     }
 
-    // Check cache first
+    // Check local cache first
     if (displayNameCache.has(publicKey)) {
       setDisplayName(displayNameCache.get(publicKey)!);
       setIsLoading(false);
@@ -53,6 +53,15 @@ export function useDisplayName(publicKey: string | undefined): {
     if (publicKey === identityPublicKey && identityDisplayName) {
       displayNameCache.set(publicKey, identityDisplayName);
       setDisplayName(identityDisplayName);
+      setIsLoading(false);
+      return;
+    }
+
+    // Check global displayNameCache from node store (resolved by MemberSidebar)
+    const nodeStoreCache = useNodeStore.getState().displayNameCache;
+    if (nodeStoreCache[publicKey]?.name) {
+      displayNameCache.set(publicKey, nodeStoreCache[publicKey].name);
+      setDisplayName(nodeStoreCache[publicKey].name);
       setIsLoading(false);
       return;
     }

@@ -23,3 +23,7 @@ export { ReplyPreview } from "./ReplyPreview";
 export { QuotedMessage } from "./QuotedMessage";
 export { MessageEditor } from "./MessageEditor";
 export { MessageContextMenu } from "./MessageContextMenu";
+
+// Mentions (Milestone 3.3)
+export { MentionAutocomplete } from "./MentionAutocomplete";
+export { MentionRenderer } from "./MentionRenderer";

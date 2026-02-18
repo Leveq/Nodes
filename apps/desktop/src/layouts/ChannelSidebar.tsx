@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useNodeStore } from "../stores/node-store";
 import { useMessageStore } from "../stores/message-store";
 import { useVoiceStore } from "../stores/voice-store";
+import { useNotificationStore } from "../stores/notification-store";
 import { CreateChannelModal, NodeSettingsModal, ChannelSettingsModal } from "../components/modals";
 import { ChannelListSkeleton } from "../components/ui";
 import { VoiceChannelEntry, VoiceConnectionBar } from "../components/voice";
@@ -143,6 +144,7 @@ export function ChannelSidebar() {
                   <ChannelItem
                     key={channel.id}
                     channelId={channel.id}
+                    nodeId={activeNodeId}
                     name={channel.name}
                     isActive={channel.id === activeChannelId}
                     onClick={() => setActiveChannel(channel.id)}
@@ -245,30 +247,47 @@ export function ChannelSidebar() {
 
 interface ChannelItemProps {
   channelId: string;
+  nodeId: string;
   name: string;
   isActive: boolean;
   onClick: () => void;
   onOpenSettings?: () => void;
 }
 
-function ChannelItem({ channelId, name, isActive, onClick, onOpenSettings }: ChannelItemProps) {
+function ChannelItem({ channelId, nodeId, name, isActive, onClick, onOpenSettings }: ChannelItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   
   const unreadCount = useMessageStore((s) => s.unreadCounts[channelId] || 0);
   const clearUnread = useMessageStore((s) => s.clearUnread);
+  const mentionCount = useNotificationStore((s) => s.mentionCounts[channelId] || 0);
+  const clearMentionCount = useNotificationStore((s) => s.clearMentionCount);
+  // Compute muted status directly in selector to avoid function reference issues
+  const isMuted = useNotificationStore((s) => {
+    const channelSettings = s.settings.channels[channelId];
+    if (channelSettings && channelSettings.level !== "default") {
+      return channelSettings.level === "nothing";
+    }
+    const nodeSettings = s.settings.nodes[nodeId];
+    if (nodeSettings) {
+      return nodeSettings.level === "nothing";
+    }
+    return false;
+  });
   const { canEditChannelSettings, canManageChannels } = usePermissions();
   const canOpenSettings = canEditChannelSettings || canManageChannels;
 
   const handleClick = () => {
     onClick();
     clearUnread(channelId);
+    clearMentionCount(channelId);
   };
   
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (canOpenSettings && onOpenSettings) {
+    // Show context menu if user can mark as read or edit settings
+    if (hasUnread || hasMentions || (canOpenSettings && onOpenSettings)) {
       setMenuPos({ x: e.clientX, y: e.clientY });
       setShowMenu(true);
     }
@@ -287,7 +306,10 @@ function ChannelItem({ channelId, name, isActive, onClick, onOpenSettings }: Cha
   }, [showMenu]);
 
   const hasUnread = unreadCount > 0;
-  const displayCount = unreadCount > 99 ? "99+" : unreadCount;
+  const hasMentions = mentionCount > 0;
+  const displayCount = mentionCount > 0 
+    ? (mentionCount > 99 ? "99+" : mentionCount)
+    : (unreadCount > 99 ? "99+" : unreadCount);
 
   return (
     <>
@@ -297,17 +319,30 @@ function ChannelItem({ channelId, name, isActive, onClick, onOpenSettings }: Cha
         className={`channel-item w-full flex items-center gap-1.5 text-left ${
           isActive
             ? "channel-item-active"
-            : hasUnread
+            : hasUnread || hasMentions
             ? "text-text-primary"
             : ""
-        }`}
+        } ${isMuted ? "opacity-60" : ""}`}
       >
         <span className="text-lg leading-none">#</span>
-        <span className={`truncate flex-1 ${hasUnread ? "font-semibold" : ""}`}>
+        <span className={`truncate flex-1 ${hasUnread || hasMentions ? "font-semibold" : ""}`}>
           {name}
         </span>
-        {hasUnread && !isActive && (
-          <span className="bg-accent-primary text-white text-xs rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center">
+        {/* Muted icon */}
+        {isMuted && (
+          <span className="text-text-muted" title="Muted">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+            </svg>
+          </span>
+        )}
+        {/* Unread/mention badge */}
+        {(hasUnread || hasMentions) && !isActive && !isMuted && (
+          <span 
+            className="text-white text-xs font-semibold rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center"
+            style={{ backgroundColor: hasMentions ? '#ff2d55' : 'var(--color-accent-primary)' }}
+          >
             {displayCount}
           </span>
         )}
@@ -320,19 +355,37 @@ function ChannelItem({ channelId, name, isActive, onClick, onOpenSettings }: Cha
           className="fixed z-50 bg-bg-float border border-nodes-border rounded-lg shadow-lg py-1 min-w-44"
           style={{ top: menuPos.y, left: menuPos.x }}
         >
-          <button
-            onClick={() => {
-              setShowMenu(false);
-              onOpenSettings?.();
-            }}
-            className="w-full px-3 py-2 text-left text-sm text-nodes-text hover:bg-nodes-bg transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Edit Channel
-          </button>
+          {/* Mark as Read - only show if there are unread messages */}
+          {(hasUnread || hasMentions) && (
+            <button
+              onClick={() => {
+                setShowMenu(false);
+                clearUnread(channelId);
+                clearMentionCount(channelId);
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-nodes-text hover:bg-nodes-bg transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Mark as Read
+            </button>
+          )}
+          {canOpenSettings && (
+            <button
+              onClick={() => {
+                setShowMenu(false);
+                onOpenSettings?.();
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-nodes-text hover:bg-nodes-bg transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Edit Channel
+            </button>
+          )}
         </div>
       )}
     </>

@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { NodeManager } from "@nodes/transport-gun";
 import type { NodeServer, NodeMember, NodeChannel } from "@nodes/core";
 import { useToastStore } from "./toast-store";
+import { useNotificationStore } from "./notification-store";
+import { useMessageStore } from "./message-store";
 
 // TTL for cached display names (5 minutes)
 const DISPLAY_NAME_CACHE_TTL = 5 * 60 * 1000;
@@ -82,6 +84,12 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       // If we have nodes but no active one, select the first
       if (nodes.length > 0 && !get().activeNodeId) {
         get().setActiveNode(nodes[0].id);
+      }
+      
+      // Load channels for ALL nodes in background (needed for notifications)
+      // This ensures useNodeSubscriptions can subscribe to all channels
+      for (const node of nodes) {
+        get().loadChannels(node.id);
       }
     } catch (err: unknown) {
       set({ isLoading: false });
@@ -225,6 +233,14 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     // Set active node and channel immediately
     set({ activeNodeId: nodeId, activeChannelId: firstChannelId });
 
+    // Clear mention counts for all channels in this node
+    if (nodeId && cachedChannels) {
+      const notificationStore = useNotificationStore.getState();
+      cachedChannels.forEach((channel) => {
+        notificationStore.clearMentionCount(channel.id);
+      });
+    }
+
     if (nodeId) {
       // Only load channels if not cached
       if (!cachedChannels || cachedChannels.length === 0) {
@@ -238,7 +254,15 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   setActiveChannel: (channelId) => {
+    console.log("[NodeStore] setActiveChannel called with:", channelId);
     set({ activeChannelId: channelId });
+    
+    // Clear mention count and unread count when viewing a channel
+    if (channelId) {
+      console.log("[NodeStore] Clearing mention count and unread for channel:", channelId);
+      useNotificationStore.getState().clearMentionCount(channelId);
+      useMessageStore.getState().clearUnread(channelId);
+    }
   },
 
   loadChannels: async (nodeId) => {

@@ -59,17 +59,27 @@ export class DMManager {
       lastReadAt: now,
     });
 
+    // Also notify the recipient via their public inbox
+    // This allows them to discover conversations they've been added to
+    gun.get("dm-inbox").get(recipientKey).get(conversationId).put({
+      conversationId,
+      senderKey: myKeypair.pub,
+      startedAt: now,
+    });
+
     return conversationId;
   }
 
   /**
    * Send an encrypted DM.
+   * @param recipientKey - The recipient's public key (for inbox notification)
    */
   async sendMessage(
     conversationId: string,
     content: string,
     recipientEpub: string,
-    myKeypair: KeyPair
+    myKeypair: KeyPair,
+    recipientKey?: string
   ): Promise<TransportMessage> {
     const gun = GunInstanceManager.get();
 
@@ -117,6 +127,16 @@ export class DMManager {
           gun.get("dms").get(conversationId).get("meta").put({
             lastMessageAt: timestamp,
           });
+
+          // Also notify recipient via inbox (so they know about this conversation)
+          if (recipientKey) {
+            gun.get("dm-inbox").get(recipientKey).get(conversationId).put({
+              conversationId,
+              senderKey: myKeypair.pub,
+              startedAt: timestamp,
+              lastMessageAt: timestamp,
+            });
+          }
 
           // Return decrypted version for local display
           resolve({
@@ -271,26 +291,30 @@ export class DMManager {
 
   /**
    * Get the user's DM conversation list.
+   * Checks both the user's own DM list and their public inbox for incoming DMs.
    */
   async getConversations(): Promise<DMConversation[]> {
     const user = GunInstanceManager.user();
+    const gun = GunInstanceManager.get();
+    const myPublicKey = user.is?.pub;
 
     return new Promise((resolve) => {
-      const conversations: DMConversation[] = [];
+      const conversationsMap = new Map<string, DMConversation>();
       let resolved = false;
 
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          resolve(conversations);
+          resolve(Array.from(conversationsMap.values()));
         }
       }, 3000);
 
+      // 1. Load from user's own DM list
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       user.get("dms").map().once((data: any) => {
         if (!data || !data.conversationId) return;
 
-        conversations.push({
+        conversationsMap.set(data.conversationId, {
           id: data.conversationId,
           recipientKey: data.recipientKey || "",
           startedAt: data.startedAt || 0,
@@ -301,11 +325,46 @@ export class DMManager {
         });
       });
 
+      // 2. Also check public inbox for incoming DMs from others
+      if (myPublicKey) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        gun.get("dm-inbox").get(myPublicKey).map().once((data: any) => {
+          if (!data || !data.conversationId) return;
+          
+          // Only add if we don't already have it
+          if (!conversationsMap.has(data.conversationId)) {
+            conversationsMap.set(data.conversationId, {
+              id: data.conversationId,
+              recipientKey: data.senderKey || "",
+              startedAt: data.startedAt || 0,
+              lastMessageAt: data.startedAt || 0,
+              lastMessagePreview: "",
+              unreadCount: 0,
+              lastReadAt: 0, // Not read yet
+            });
+            
+            // Also add to our own DM list so we don't need to check inbox again
+            // IMPORTANT: Check if it already exists to avoid overwriting lastReadAt
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            user.get("dms").get(data.conversationId).once((existing: any) => {
+              if (!existing || !existing.conversationId) {
+                user.get("dms").get(data.conversationId).put({
+                  conversationId: data.conversationId,
+                  recipientKey: data.senderKey,
+                  startedAt: data.startedAt || Date.now(),
+                  lastReadAt: 0,
+                });
+              }
+            });
+          }
+        });
+      }
+
       setTimeout(() => {
         if (!resolved) {
           clearTimeout(timeout);
           resolved = true;
-          resolve(conversations);
+          resolve(Array.from(conversationsMap.values()));
         }
       }, 1500);
     });
@@ -313,12 +372,16 @@ export class DMManager {
 
   /**
    * Subscribe to changes in the DM conversation list.
-   * Useful for detecting new incoming DMs from other users.
+   * Listens to both user's own DM list and public inbox for incoming DMs.
    */
   subscribeConversations(
-    handler: (conversation: DMConversation) => void
+    handler: (conversation: DMConversation) => void,
+    myPublicKey?: string
   ): Unsubscribe {
     const user = GunInstanceManager.user();
+    const gun = GunInstanceManager.get();
+    const pubKey = myPublicKey || user.is?.pub;
+    const seenConversations = new Set<string>();
     
     // Throttle: collect conversations and flush periodically
     let pendingConversations: DMConversation[] = [];
@@ -329,12 +392,16 @@ export class DMManager {
       const toProcess = pendingConversations;
       pendingConversations = [];
       for (const conv of toProcess) {
+        // Dedupe
+        if (seenConversations.has(conv.id)) continue;
+        seenConversations.add(conv.id);
         handler(conv);
       }
     };
 
+    // 1. Listen to user's own DM list
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ref = user.get("dms").map().on((data: any) => {
+    const ref1 = user.get("dms").map().on((data: any) => {
       if (!data || !data.conversationId) return;
 
       const conversation: DMConversation = {
@@ -354,9 +421,57 @@ export class DMManager {
       }
     });
 
+    // 2. Also listen to public inbox for incoming DMs
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let ref2: any = null;
+    if (pubKey) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref2 = gun.get("dm-inbox").get(pubKey).map().on((data: any) => {
+        if (!data || !data.conversationId) return;
+
+        // Check if we already know about this conversation to avoid overwriting lastReadAt
+        if (seenConversations.has(data.conversationId)) return;
+        seenConversations.add(data.conversationId);
+
+        const conversation: DMConversation = {
+          id: data.conversationId,
+          recipientKey: data.senderKey || "",
+          startedAt: data.startedAt || 0,
+          lastMessageAt: data.startedAt || 0,
+          lastMessagePreview: "",
+          unreadCount: 0,
+          lastReadAt: 0,
+        };
+
+        // Also add to our own DM list so it persists
+        // IMPORTANT: Use put() with conditional to avoid overwriting existing lastReadAt
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        user.get("dms").get(data.conversationId).once((existing: any) => {
+          if (!existing || !existing.conversationId) {
+            // Only write if conversation doesn't exist yet
+            user.get("dms").get(data.conversationId).put({
+              conversationId: data.conversationId,
+              recipientKey: data.senderKey,
+              startedAt: data.startedAt || Date.now(),
+              lastReadAt: 0,
+            });
+          }
+        });
+
+        // Queue and schedule flush
+        pendingConversations.push(conversation);
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flush, 16);
+        }
+      });
+    } else {
+      console.warn("[DMManager] No public key available for inbox subscription!");
+    }
+
     return () => {
       if (flushTimer) clearTimeout(flushTimer);
-      ref.off();
+      ref1.off();
+      if (ref2) ref2.off();
     };
   }
 
@@ -399,8 +514,17 @@ export class DMManager {
    */
   async markAsRead(conversationId: string): Promise<void> {
     const user = GunInstanceManager.user();
-    user.get("dms").get(conversationId).put({
-      lastReadAt: Date.now(),
+    const now = Date.now();
+    
+    return new Promise((resolve) => {
+      user.get("dms").get(conversationId).put({
+        lastReadAt: now,
+      }, (ack: { err?: string }) => {
+        if (ack.err) {
+          console.error("[DMManager] markAsRead - write failed:", ack.err);
+        }
+        resolve();
+      });
     });
   }
 

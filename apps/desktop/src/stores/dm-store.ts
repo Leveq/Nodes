@@ -6,6 +6,8 @@ import type { DMConversation } from "@nodes/core";
 import type { TransportMessage, Unsubscribe } from "@nodes/transport";
 import { useToastStore } from "./toast-store";
 import { useSocialStore } from "./social-store";
+import { useIdentityStore } from "./identity-store";
+import { useNavigationStore } from "./navigation-store";
 
 interface DMState {
   // State
@@ -168,16 +170,44 @@ export const useDMStore = create<DMState>((set, get) => ({
         epub,
         keypair,
         (message) => {
-          get().addMessage(conversationId, message);
+          const currentState = get();
+          
+          // Check if message already exists
+          const convMessages = currentState.messages[conversationId] || [];
+          if (convMessages.some((m) => m.id === message.id)) return;
+          
+          currentState.addMessage(conversationId, message);
+          
+          // Track unread if message is from other user AND we're not actively viewing this conversation
+          const myPublicKey = useIdentityStore.getState().publicKey;
+          const isFromOther = message.authorKey !== myPublicKey;
+          
+          // User is "not viewing" if they're not in DM mode at all, OR they're viewing a different conversation
+          const viewMode = useNavigationStore.getState().viewMode;
+          const isInDMView = viewMode === "dm";
+          const isViewingThisConversation = isInDMView && currentState.activeConversationId === conversationId;
+          const isNotViewing = !isViewingThisConversation;
+          
+          if (isFromOther && isNotViewing) {
+            currentState.incrementUnread(conversationId);
+          }
         }
       );
 
       set({ activeMessageSub: messageSub });
 
-      // Clear unread
+      // Clear unread count and update lastReadAt
       get().clearUnread(conversationId);
+      const now = Date.now();
       await dmManager.markAsRead(conversationId);
+      
+      // Also update local conversation's lastReadAt so subsequent subscriptions use correct value
+      const currentConv = get().conversations.find((c) => c.id === conversationId);
+      if (currentConv) {
+        get().updateConversation({ ...currentConv, lastReadAt: now });
+      }
     } catch (err: unknown) {
+      console.error("[DMStore] Error in setActiveConversation:", err);
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load DM: ${message}`);
       set({ isLoading: false });
@@ -195,7 +225,8 @@ export const useDMStore = create<DMState>((set, get) => ({
         activeConversationId,
         content,
         epub,
-        keypair
+        keypair,
+        recipientKey // Pass recipient key for inbox notification
       );
 
       // Add to local messages (already decrypted)
