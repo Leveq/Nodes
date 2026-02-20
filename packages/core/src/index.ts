@@ -1,6 +1,8 @@
 // Core types for the Nodes platform
 // These will be expanded in subsequent milestones
 
+export type JsonStringified<T> = string & { readonly __type?: T };
+
 // Export permission resolver
 export { PermissionResolver, createPermissionResolver } from "./permissions";
 
@@ -78,7 +80,7 @@ export interface Message {
   authorKey: string; // publicKey
   channelId: string;
   type: "text" | "system" | "file";
-  attachments?: string; // JSON-stringified FileAttachment[]
+  attachments?: JsonStringified<FileAttachment[]>; // JSON-stringified FileAttachment[]
 }
 
 // ── Direct Message Types ──
@@ -102,7 +104,7 @@ export interface DMMessage {
   conversationId: string;
   type: "text" | "system" | "file";
   signature?: string;
-  attachments?: string; // JSON-stringified FileAttachment[] (encrypted)
+  attachments?: JsonStringified<FileAttachment[]>; // JSON-stringified FileAttachment[] (encrypted)
 }
 
 // ── Social / Friend Types ──
@@ -345,7 +347,7 @@ export interface AuditLogEntry {
   channelId?: string;       // Channel context (if applicable)
   channelName?: string;     // Channel name snapshot
   reason?: string;          // Optional reason provided by moderator
-  metadata?: string;        // JSON string for action-specific data
+  metadata?: JsonStringified<Record<string, unknown>>;        // JSON string for action-specific data
   timestamp: number;
 }
 
