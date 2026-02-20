@@ -74,7 +74,7 @@ interface VoiceParticipantItemProps {
 }
 
 function VoiceParticipantItem({ participant, displayName }: VoiceParticipantItemProps) {
-  const { publicKey, muted, deafened, speaking, serverMuted, roleColor } = participant;
+  const { publicKey, selfMuted, deafened, speaking, serverMuted, roleColor } = participant;
 
   return (
     <div
@@ -101,7 +101,7 @@ function VoiceParticipantItem({ participant, displayName }: VoiceParticipantItem
 
       {/* Status icons */}
       <div className="flex items-center gap-0.5">
-        {(muted || serverMuted) && (
+        {(selfMuted || serverMuted) && (
           <MicOff className="w-3 h-3 text-accent-error" />
         )}
         {deafened && (

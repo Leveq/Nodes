@@ -13,11 +13,11 @@ export function parseMentions(content: string): ParsedMention[] {
   const mentions: ParsedMention[] = [];
   
   console.log("[Mentions] Parsing content:", content.slice(0, 100));
-  console.log("[Mentions] USER pattern source:", MENTION_PATTERNS.USER.source);
+  console.log("[Mentions] USER pattern source:", MENTION_PATTERNS.USER().source);
 
   // User mentions: <@publicKey>
   // Note: Skip "everyone" and "here" as they have their own patterns
-  const userRegex = new RegExp(MENTION_PATTERNS.USER.source, "g");
+  const userRegex = MENTION_PATTERNS.USER();
   let match: RegExpExecArray | null;
 
   while ((match = userRegex.exec(content)) !== null) {
@@ -37,7 +37,7 @@ export function parseMentions(content: string): ParsedMention[] {
   }
 
   // Role mentions: <@&roleId>
-  const roleRegex = new RegExp(MENTION_PATTERNS.ROLE.source, "g");
+  const roleRegex = MENTION_PATTERNS.ROLE();
   while ((match = roleRegex.exec(content)) !== null) {
     mentions.push({
       type: "role",
@@ -49,7 +49,7 @@ export function parseMentions(content: string): ParsedMention[] {
   }
 
   // @everyone mentions
-  const everyoneRegex = new RegExp(MENTION_PATTERNS.EVERYONE.source, "g");
+  const everyoneRegex = MENTION_PATTERNS.EVERYONE();
   while ((match = everyoneRegex.exec(content)) !== null) {
     mentions.push({
       type: "everyone",
@@ -61,7 +61,7 @@ export function parseMentions(content: string): ParsedMention[] {
   }
 
   // @here mentions
-  const hereRegex = new RegExp(MENTION_PATTERNS.HERE.source, "g");
+  const hereRegex = MENTION_PATTERNS.HERE();
   while ((match = hereRegex.exec(content)) !== null) {
     mentions.push({
       type: "here",
@@ -225,10 +225,10 @@ export function isMessageRelevantToUser(
  */
 export function stripMentions(content: string): string {
   return content
-    .replace(MENTION_PATTERNS.USER, "")
-    .replace(MENTION_PATTERNS.ROLE, "")
-    .replace(MENTION_PATTERNS.EVERYONE, "@everyone")
-    .replace(MENTION_PATTERNS.HERE, "@here")
+    .replace(MENTION_PATTERNS.USER(), "")
+    .replace(MENTION_PATTERNS.ROLE(), "")
+    .replace(MENTION_PATTERNS.EVERYONE(), "@everyone")
+    .replace(MENTION_PATTERNS.HERE(), "@here")
     .replace(/\s+/g, " ")
     .trim();
 }
