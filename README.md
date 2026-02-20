@@ -12,7 +12,7 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v0.8.0-alpha)
+## What Works Today (v0.10.0-alpha)
 
 - **@Mentions & Notifications** — @user, @role, @everyone, @here with autocomplete, desktop notifications, per-channel/Node settings
 - **Node Discovery** — Browse and join public communities from a decentralized directory, no invite link needed
@@ -124,7 +124,7 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Full-text search — Milestone 3.1
 - ✅ Node Discovery — Milestone 3.2
 - ✅ Notifications & @Mentions — Milestone 3.3
-- 🔲 Theming — Milestone 3.4
+- ✅ Theming — Milestone 3.4
 - ✅ Media polish (GIFs, emoji picker, clipboard paste) — Milestone 3.5a
 - 🔲 Web client (PWA) — Milestone 3.5b
 - 🔲 Plugin/bot system — Milestone 3.6
