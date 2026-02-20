@@ -2,7 +2,7 @@
  * About settings section: version, links, philosophy.
  */
 export function AboutSettings() {
-  const version = "0.4.0-alpha";
+  const version = "0.10.0-alpha";
 
   return (
     <div className="space-y-8">
