@@ -435,7 +435,6 @@ function MemberGroup({
             displayName={resolvedNames[member.publicKey]}
             isNameLoading={!resolvedNames[member.publicKey]}
             status={member.status}
-            role={member.role}
             roleColor={memberRole?.color}
             memberRoles={member.roles || []}
             allRoles={roles}
@@ -463,7 +462,6 @@ interface MemberItemProps {
   displayName?: string;
   isNameLoading: boolean;
   status?: string;
-  role?: "owner" | "admin" | "member";
   roleColor?: string;
   memberRoles: string[];
   allRoles: Role[];
@@ -486,7 +484,6 @@ function MemberItem({
   displayName, 
   isNameLoading,
   status, 
-  role,
   roleColor,
   memberRoles,
   allRoles,
@@ -670,7 +667,7 @@ function MemberItem({
             <NameSkeleton width="w-20" />
           ) : (
             <>
-              {role === "owner" && <span title="Node Owner">👑</span>}
+              {memberRoles.includes(BUILT_IN_ROLE_IDS.OWNER) && <span title="Node Owner">👑</span>}
               <span style={{ color: roleColor || 'var(--nodes-text)' }}>{displayName}</span>
               {isMe && <span className="text-nodes-text-muted ml-1">(you)</span>}
               {!isMe && isFriend && (

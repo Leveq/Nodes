@@ -54,9 +54,6 @@ export interface NodeMember {
   joinedAt: number;
   roles: string[];        // Array of role IDs (e.g., ["role_moderator", "role_custom_xyz"])
   status?: UserStatus;
-  // Legacy field - kept for backwards compatibility, derived from roles
-  /** @deprecated Use `roles` array instead. Derived field kept for backwards compat. */
-  readonly role?: "owner" | "admin" | "moderator" | "member";
 }
 
 export interface NodeChannel {
