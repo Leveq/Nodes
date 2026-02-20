@@ -55,7 +55,7 @@ export function useVoiceChannelParticipants(channelId: string) {
         const participant: VoiceParticipant = {
           publicKey: key,
           displayName: key.slice(0, 8),
-          muted: data.muted ?? false,
+          selfMuted: data.muted ?? false,
           deafened: data.deafened ?? false,
           speaking: data.speaking ?? false,
           serverMuted: false,

@@ -103,7 +103,7 @@ export class MeshVoiceTransport {
       this.participants.set(this.publicKey, {
         publicKey: this.publicKey,
         displayName: this.publicKey.slice(0, 8),
-        muted: this.state.muted,
+        selfMuted: this.state.muted,
         deafened: this.state.deafened,
         speaking: false,
         serverMuted: false,
@@ -161,7 +161,7 @@ export class MeshVoiceTransport {
           this.participants.set(key, {
             publicKey: key,
             displayName: key.slice(0, 8),
-            muted: data.muted ?? false,
+            selfMuted: data.muted ?? false,
             deafened: data.deafened ?? false,
             speaking: data.speaking ?? false,
             serverMuted: data.serverMuted ?? false,
@@ -305,7 +305,7 @@ export class MeshVoiceTransport {
                 this.participants.set(key, {
                   publicKey: key,
                   displayName: key.slice(0, 8),
-                  muted: pData.muted ?? false,
+                  selfMuted: pData.muted ?? false,
                   deafened: pData.deafened ?? false,
                   speaking: pData.speaking ?? false,
                   serverMuted: pData.serverMuted ?? false,
@@ -805,7 +805,7 @@ export class MeshVoiceTransport {
     // Update local self-participant
     const self = this.participants.get(this.publicKey);
     if (self) {
-      self.muted = muted;
+      self.selfMuted = muted;
       this.emitParticipants();
     }
 
@@ -893,7 +893,7 @@ export class MeshVoiceTransport {
   private updatePeerState(key: string, data: any): void {
     const existing = this.participants.get(key);
     if (existing) {
-      existing.muted = data.muted ?? existing.muted;
+      existing.selfMuted = data.muted ?? existing.selfMuted;
       existing.deafened = data.deafened ?? existing.deafened;
       existing.speaking = data.speaking ?? existing.speaking;
       existing.serverMuted = data.serverMuted ?? existing.serverMuted;

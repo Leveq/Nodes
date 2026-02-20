@@ -338,17 +338,11 @@ export class NodeManager {
           else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
         }
 
-        // Derive legacy role field
-        let legacyRole: "owner" | "admin" | "member" = "member";
-        if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) legacyRole = "owner";
-        else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) legacyRole = "admin";
-
         resolve({
           publicKey: data.publicKey,
           displayName: "", // Resolved separately via profile lookup
           joinedAt: data.joinedAt || 0,
           roles,
-          role: legacyRole,
         });
       });
     });
@@ -387,17 +381,11 @@ export class NodeManager {
           else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
         }
 
-        // Derive legacy role field
-        let legacyRole: "owner" | "admin" | "member" = "member";
-        if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) legacyRole = "owner";
-        else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) legacyRole = "admin";
-
         members.push({
           publicKey: data.publicKey,
           displayName: "",
           joinedAt: data.joinedAt || 0,
           roles,
-          role: legacyRole,
         });
       });
 
@@ -612,17 +600,11 @@ export class NodeManager {
         else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
       }
 
-      // Derive legacy role field
-      let legacyRole: "owner" | "admin" | "member" = "member";
-      if (roles.includes(BUILT_IN_ROLE_IDS.OWNER)) legacyRole = "owner";
-      else if (roles.includes(BUILT_IN_ROLE_IDS.ADMIN)) legacyRole = "admin";
-
       const member: NodeMember = {
         publicKey: data.publicKey,
         displayName: "",
         joinedAt: data.joinedAt || 0,
         roles,
-        role: legacyRole,
       };
 
       // Queue and schedule flush

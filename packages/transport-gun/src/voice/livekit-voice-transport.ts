@@ -260,7 +260,7 @@ export class LiveKitVoiceTransport {
       participants.push({
         publicKey: participant.identity,
         displayName: participant.name || participant.identity.slice(0, 8),
-        muted: isMuted,
+        selfMuted: isMuted,
         deafened: false, // LiveKit doesn't track deafen state
         speaking: participant.isSpeaking,
         serverMuted: false,
