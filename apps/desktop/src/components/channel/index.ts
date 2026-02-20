@@ -27,3 +27,7 @@ export { MessageContextMenu } from "./MessageContextMenu";
 // Mentions (Milestone 3.3)
 export { MentionAutocomplete } from "./MentionAutocomplete";
 export { MentionRenderer } from "./MentionRenderer";
+
+// GIF Integration (Milestone 3.5a)
+export { default as GifPicker } from "./GifPicker";
+export { GifButton } from "./GifButton";

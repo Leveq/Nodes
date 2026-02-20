@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useSocialStore } from "../../stores/social-store";
 import { useToastStore } from "../../stores/toast-store";
 import { ProfileManager } from "@nodes/transport-gun";
-import { NameSkeleton } from "../ui";
+import { NameSkeleton, Avatar } from "../ui";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 
 const profileManager = new ProfileManager();
 
@@ -44,6 +45,10 @@ export function SocialSettings() {
           try {
             const profile = await profileManager.getPublicProfile(key);
             names[key] = profile?.displayName || key.slice(0, 8);
+            // Cache avatar CID for use by Avatar components
+            if (profile?.avatar) {
+              setCachedAvatarCid(key, profile.avatar);
+            }
           } catch {
             names[key] = key.slice(0, 8);
           }
@@ -115,20 +120,17 @@ export function SocialSettings() {
             {friends.map((friend) => {
               const name = getName(friend.publicKey);
               const loading = isNameLoading(friend.publicKey);
-              const initial = name?.[0]?.toUpperCase() || "?";
 
               return (
                 <div
                   key={friend.publicKey}
                   className="flex items-center gap-3 px-3 py-2 bg-nodes-bg rounded-lg"
                 >
-                  <div className="w-10 h-10 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0">
-                    {loading ? (
-                      <span className="w-4 h-4 animate-pulse rounded bg-nodes-primary/30" />
-                    ) : (
-                      <span className="text-nodes-primary font-medium">{initial}</span>
-                    )}
-                  </div>
+                  <Avatar
+                    publicKey={friend.publicKey}
+                    displayName={name}
+                    size="md"
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="text-nodes-text font-medium truncate">
                       {loading ? <NameSkeleton width="w-24" /> : name}

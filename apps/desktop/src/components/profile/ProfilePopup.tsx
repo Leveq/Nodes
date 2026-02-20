@@ -5,6 +5,7 @@ import { useNodeStore } from "../../stores/node-store";
 import { useDMStore } from "../../stores/dm-store";
 import { useNavigationStore } from "../../stores/navigation-store";
 import { useToastStore } from "../../stores/toast-store";
+import { Avatar } from "../ui";
 import { getStatusColor } from "../../utils/status";
 import type { ProfileData } from "@nodes/transport-gun";
 import type { KeyPair } from "@nodes/crypto";
@@ -91,7 +92,6 @@ export function ProfilePopup({ publicKey, onClose, onEditProfile, position }: Pr
   const bio = profile?.bio || "";
   const status = (profile?.status as string) || "offline";
   const visibility = profile?.visibility || "public";
-  const initial = displayName[0]?.toUpperCase() || "?";
 
   const handleSendMessage = async () => {
     if (!keypair) return;
@@ -186,9 +186,11 @@ export function ProfilePopup({ publicKey, onClose, onEditProfile, position }: Pr
         <>
           {/* Header */}
           <div className="bg-nodes-bg/50 p-4 flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0">
-              <span className="text-nodes-primary font-bold text-xl">{initial}</span>
-            </div>
+            <Avatar
+              publicKey={publicKey}
+              displayName={displayName}
+              size="lg"
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-nodes-text truncate">{displayName}</span>

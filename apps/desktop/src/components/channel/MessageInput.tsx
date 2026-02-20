@@ -10,10 +10,14 @@ import { FileAttachmentButton, type PendingAttachment } from "./FileAttachmentBu
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ReplyPreview } from "./ReplyPreview";
 import { MentionAutocomplete } from "./MentionAutocomplete";
+import { GifButton } from "./GifButton";
+import { EmojiPicker } from "./EmojiPicker";
 import type { FileAttachment } from "@nodes/core";
+import { FILE_LIMITS } from "@nodes/core";
 import { useDisplayName } from "../../hooks/useDisplayName";
 import { generateMessageId } from "@nodes/transport-gun";
-import { Clock } from "lucide-react";
+import { Clock, Smile } from "lucide-react";
+import { processFilesToAttachments } from "../../utils/file-processing";
 
 interface MessageInputProps {
   channelId: string;
@@ -44,8 +48,10 @@ export function MessageInput({
   const [content, setContent] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
   const { ipfsReady, ...transport } = useTransport();
   const transportRef = useRef(transport);
@@ -78,6 +84,23 @@ export function MessageInput({
       setPendingAttachments((prev) => [...prev, ...externalAttachments]);
     }
   }, [externalAttachments]);
+
+  // Track previous channel to detect channel switches
+  const prevChannelRef = useRef<string>(channelId);
+  
+  // Clear pending attachments when switching channels (not on initial mount)
+  useEffect(() => {
+    if (prevChannelRef.current !== channelId) {
+      // Cleanup preview URLs for any pending attachments from previous channel
+      setPendingAttachments((prev) => {
+        prev.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+        return [];
+      });
+      setContent("");
+      setShowEmojiPicker(false);
+      prevChannelRef.current = channelId;
+    }
+  }, [channelId]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -317,6 +340,100 @@ export function MessageInput({
     });
   }, []);
 
+  // Handle paste - detect images in clipboard
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items || !canSendFiles) return;
+
+    // Extract image files from clipboard
+    const imageFiles: File[] = [];
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
+        }
+      }
+    }
+
+    // If we found images, process them as attachments
+    if (imageFiles.length > 0) {
+      e.preventDefault(); // Prevent pasting image data as text
+      
+      const processed = await processFilesToAttachments(
+        imageFiles,
+        FILE_LIMITS.MAX_FILES_PER_MESSAGE,
+        pendingAttachments.length
+      );
+      
+      if (processed.length > 0) {
+        setPendingAttachments((prev) => [...prev, ...processed]);
+        addToast("info", `${processed.length} image${processed.length > 1 ? "s" : ""} added`);
+      }
+    }
+    // If no images, let the default paste behavior handle text
+  }, [canSendFiles, pendingAttachments.length, addToast]);
+
+  // Handle GIF selection - sends the GIF URL as a message
+  const handleGifSelect = useCallback(async (gifUrl: string) => {
+    if (!publicKey || !transport || !canSendMessages) return;
+
+    // Check slow mode
+    if (!slowModeCanSend) {
+      addToast("warning", `Slow mode is active. Please wait ${remainingSeconds} seconds.`);
+      return;
+    }
+
+    // Mark as sent for slow mode tracking
+    markSent();
+
+    // Generate message ID and timestamp
+    const messageId = generateMessageId();
+    const timestamp = Date.now();
+
+    // Add optimistic message for snappy UX
+    useMessageStore.getState().addMessage(channelId, {
+      id: messageId,
+      content: gifUrl,
+      timestamp,
+      authorKey: publicKey,
+      channelId,
+      type: "text",
+      signature: "",
+    });
+
+    // Send to Gun
+    transport.message.send(channelId, {
+      content: gifUrl,
+      authorKey: publicKey,
+      type: "text",
+    } as any, messageId).catch(() => {
+      addToast("error", "Failed to send GIF. Please try again.");
+    });
+  }, [publicKey, transport, canSendMessages, slowModeCanSend, remainingSeconds, markSent, channelId, addToast]);
+
+  // Handle emoji selection - insert at cursor position
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    if (!textareaRef.current) return;
+    
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    // Insert emoji at cursor position
+    const newContent = content.slice(0, start) + emoji + content.slice(end);
+    setContent(newContent);
+    
+    // Close picker and refocus textarea
+    setShowEmojiPicker(false);
+    
+    // Set cursor position after the inserted emoji
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+    }, 0);
+  }, [content]);
+
   // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => {
@@ -376,11 +493,54 @@ export function MessageInput({
             />
           )}
 
+          {/* GIF button */}
+          <GifButton
+            onGifSelect={handleGifSelect}
+            disabled={isSending || !canSendMessages || !slowModeCanSend}
+          />
+
+          {/* Emoji picker button */}
+          <div className="relative">
+            <button
+              ref={emojiButtonRef}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              disabled={isSending || !canSendMessages || !slowModeCanSend}
+              className={`p-2 rounded-lg transition-colors ${
+                isSending || !canSendMessages || !slowModeCanSend
+                  ? "text-nodes-text-muted/50 cursor-not-allowed"
+                  : showEmojiPicker
+                    ? "text-nodes-primary bg-nodes-primary/10"
+                    : "text-nodes-text-muted hover:text-nodes-text hover:bg-nodes-bg"
+              }`}
+              title="Add emoji"
+            >
+              <Smile className="w-5 h-5" />
+            </button>
+
+            {showEmojiPicker && (
+              <>
+                {/* Backdrop */}
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowEmojiPicker(false)}
+                />
+                {/* Picker positioned above button */}
+                <div className="absolute bottom-full left-0 mb-2 z-50">
+                  <EmojiPicker
+                    onSelect={handleEmojiSelect}
+                    onClose={() => setShowEmojiPicker(false)}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
           <textarea
             ref={textareaRef}
             value={content}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               !canSendMessages 
                 ? "You don't have permission to send messages"

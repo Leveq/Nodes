@@ -120,6 +120,30 @@ export async function processAvatar(
 }
 
 /**
+ * Process an avatar from an already-cropped Blob.
+ * Used after the crop modal to resize to final dimensions.
+ */
+export async function processAvatarFromBlob(
+  blob: Blob
+): Promise<{ full: Uint8Array; small: Uint8Array }> {
+  // Convert Blob to File for resizeImage compatibility
+  const file = new File([blob], "avatar.png", { type: blob.type || "image/png" });
+
+  const full = await resizeImage(
+    file,
+    FILE_LIMITS.AVATAR_FULL_SIZE,
+    FILE_LIMITS.AVATAR_FULL_SIZE
+  );
+  const small = await resizeImage(
+    file,
+    FILE_LIMITS.AVATAR_SMALL_SIZE,
+    FILE_LIMITS.AVATAR_SMALL_SIZE
+  );
+
+  return { full, small };
+}
+
+/**
  * Generate a thumbnail for an image attachment.
  * Returns the thumbnail as Uint8Array.
  */

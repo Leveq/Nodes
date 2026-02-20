@@ -188,14 +188,10 @@ function ImageAttachment({
     return () => observer.disconnect();
   }, [cid, ipfsReady, loadImage]);
 
-  // Cleanup object URL on unmount
-  useEffect(() => {
-    return () => {
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
-      }
-    };
-  }, [imageUrl]);
+  // NOTE: We intentionally do NOT revoke blob URLs on unmount.
+  // They're stored in module-level loadedImageCache for reuse across
+  // tab switches and scroll virtualization. The browser will clean
+  // them up when the page unloads.
 
   const handleClick = async () => {
     if (!onImageClick) return;

@@ -9,6 +9,8 @@ import { SystemMessage } from "../channel/SystemMessage";
 import { DateSeparator } from "../channel/DateSeparator";
 import { NewMessagesBanner } from "../channel/NewMessagesBanner";
 import { DMMessageInput } from "./DMMessageInput";
+import { Avatar } from "../ui";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 
 const profileManager = new ProfileManager();
 
@@ -41,6 +43,10 @@ export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProp
       try {
         const profile = await profileManager.getPublicProfile(recipientKey);
         setRecipientName(profile?.displayName || recipientKey.slice(0, 8));
+        // Cache avatar CID for use by Avatar components
+        if (profile?.avatar) {
+          setCachedAvatarCid(recipientKey, profile.avatar);
+        }
       } catch {
         setRecipientName(recipientKey.slice(0, 8));
       }
@@ -123,10 +129,12 @@ export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProp
           onUserClick={() => onUserClick?.(recipientKey)}
         />
         <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-          <div className="w-20 h-20 rounded-full bg-nodes-surface flex items-center justify-center mb-4">
-            <span className="text-3xl font-bold text-nodes-primary">
-              {recipientName[0]?.toUpperCase() || "?"}
-            </span>
+          <div className="mb-4">
+            <Avatar
+              publicKey={recipientKey}
+              displayName={recipientName}
+              size="xl"
+            />
           </div>
           <h2 className="text-xl font-semibold text-nodes-text mb-2">
             {recipientName}
@@ -164,10 +172,12 @@ export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProp
       >
         {/* Beginning of conversation notice */}
         <div className="text-center py-8">
-          <div className="w-16 h-16 rounded-full bg-nodes-surface flex items-center justify-center mx-auto mb-3">
-            <span className="text-2xl font-bold text-nodes-primary">
-              {recipientName[0]?.toUpperCase() || "?"}
-            </span>
+          <div className="mx-auto mb-3">
+            <Avatar
+              publicKey={recipientKey}
+              displayName={recipientName}
+              size="lg"
+            />
           </div>
           <h3 className="text-lg font-semibold text-nodes-text mb-1">
             {recipientName}
@@ -230,17 +240,19 @@ interface DMHeaderProps {
   onUserClick?: () => void;
 }
 
-function DMHeader({ recipientName, recipientKey: _recipientKey, onUserClick }: DMHeaderProps) {
+function DMHeader({ recipientName, recipientKey, onUserClick }: DMHeaderProps) {
   return (
     <div className="h-12 px-4 flex items-center gap-3 border-b border-nodes-border shrink-0">
       <button
         onClick={onUserClick}
-        className="w-8 h-8 rounded-full bg-nodes-primary/20 flex items-center justify-center hover:ring-2 hover:ring-nodes-primary/50 transition-all"
+        className="hover:ring-2 hover:ring-nodes-primary/50 rounded-full transition-all"
         title="View Profile"
       >
-        <span className="text-nodes-primary font-medium">
-          {recipientName[0]?.toUpperCase() || "?"}
-        </span>
+        <Avatar
+          publicKey={recipientKey}
+          displayName={recipientName}
+          size="sm"
+        />
       </button>
       <div>
         <button 

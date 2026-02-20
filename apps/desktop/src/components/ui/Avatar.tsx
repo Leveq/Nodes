@@ -26,6 +26,10 @@ interface AvatarProps {
   presenceStatus?: UserStatus;
   /** Additional CSS classes */
   className?: string;
+  /** Version number to trigger re-fetch (e.g., after avatar upload) */
+  avatarVersion?: number;
+  /** Direct avatar CID - if provided, skips Gun lookup */
+  avatarCid?: string;
 }
 
 /**
@@ -43,8 +47,15 @@ export const Avatar = memo(function Avatar({
   showPresence = false,
   presenceStatus = "offline",
   className = "",
+  avatarVersion = 0,
+  avatarCid,
 }: AvatarProps) {
-  const { avatarUrl, isLoading } = useAvatar(publicKey, size === "xl" ? "full" : "small");
+  const { avatarUrl, isLoading } = useAvatar(
+    publicKey,
+    size === "xl" ? "full" : "small",
+    avatarVersion,
+    avatarCid
+  );
 
   const pixelSize = SIZES[size];
   const letter = displayName.charAt(0).toUpperCase() || "?";

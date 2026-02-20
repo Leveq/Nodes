@@ -3,8 +3,9 @@ import { useDMStore } from "../../stores/dm-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import { ProfileManager } from "@nodes/transport-gun";
 import { formatRelativeTime } from "../../utils/time";
-import { MemberListSkeleton, NameSkeleton } from "../ui";
+import { MemberListSkeleton, NameSkeleton, Avatar } from "../ui";
 import { NewDMModal } from "./NewDMModal";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import type { DMConversation } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
 
@@ -44,6 +45,10 @@ export function DMSidebar({ onUserClick }: { onUserClick?: (userId: string) => v
           try {
             const profile = await profileManager.getPublicProfile(conv.recipientKey);
             names[conv.recipientKey] = profile?.displayName || conv.recipientKey.slice(0, 8);
+            // Cache avatar CID for use by Avatar components
+            if (profile?.avatar) {
+              setCachedAvatarCid(conv.recipientKey, profile.avatar);
+            }
           } catch {
             names[conv.recipientKey] = conv.recipientKey.slice(0, 8);
           }
@@ -163,8 +168,6 @@ function ConversationItem({
   onClick,
   onAvatarClick,
 }: ConversationItemProps) {
-  const initial = isNameLoading ? "" : (displayName?.[0]?.toUpperCase() || "?");
-
   const handleAvatarClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onAvatarClick?.();
@@ -180,13 +183,13 @@ function ConversationItem({
       {/* Avatar - clickable for profile */}
       <div 
         onClick={handleAvatarClick}
-        className="w-10 h-10 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0 hover:ring-2 hover:ring-nodes-primary/50 cursor-pointer transition-all"
+        className="shrink-0 cursor-pointer hover:ring-2 hover:ring-nodes-primary/50 rounded-full transition-all"
       >
-        {isNameLoading ? (
-          <div className="w-4 h-4 animate-pulse rounded bg-nodes-border/50" />
-        ) : (
-          <span className="text-nodes-primary font-medium">{initial}</span>
-        )}
+        <Avatar
+          publicKey={conversation.recipientKey}
+          displayName={displayName}
+          size="md"
+        />
       </div>
 
       {/* Content */}

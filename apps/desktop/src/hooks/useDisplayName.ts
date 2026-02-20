@@ -6,6 +6,9 @@ import { useIdentityStore } from "../stores/identity-store";
 // Module-level cache to avoid repeated lookups
 const displayNameCache = new Map<string, string>();
 
+// Module-level cache for avatar CIDs (populated when profile is fetched)
+const avatarCidCache = new Map<string, string>();
+
 const profileManager = new ProfileManager();
 
 /**
@@ -89,6 +92,11 @@ export function useDisplayName(publicKey: string | undefined): {
           profile?.displayName || `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
         displayNameCache.set(publicKey, name);
         setDisplayName(name);
+        
+        // Also cache avatar CID if present
+        if (profile?.avatar) {
+          avatarCidCache.set(publicKey, profile.avatar);
+        }
       })
       .catch(() => {
         const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
@@ -102,8 +110,23 @@ export function useDisplayName(publicKey: string | undefined): {
 }
 
 /**
- * Clear the display name cache (e.g., on Node switch).
+ * Get a cached avatar CID for a public key (populated by useDisplayName or setCachedAvatarCid).
+ */
+export function getCachedAvatarCid(publicKey: string): string | undefined {
+  return avatarCidCache.get(publicKey);
+}
+
+/**
+ * Set a cached avatar CID for a public key.
+ */
+export function setCachedAvatarCid(publicKey: string, cid: string): void {
+  avatarCidCache.set(publicKey, cid);
+}
+
+/**
+ * Clear the display name and avatar CID caches (e.g., on Node switch).
  */
 export function clearDisplayNameCache(): void {
   displayNameCache.clear();
+  avatarCidCache.clear();
 }

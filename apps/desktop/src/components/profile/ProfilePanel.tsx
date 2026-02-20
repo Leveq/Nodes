@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
 import { Input, Avatar } from "../ui";
-import { processAvatar } from "../../utils/image-processing";
+import { processAvatarFromBlob } from "../../utils/image-processing";
 import { avatarManager } from "@nodes/transport-gun";
+import { AvatarCropModal } from "./AvatarCropModal";
 
 interface ProfilePanelProps {
   onClose: () => void;
@@ -20,6 +21,9 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
   const profile = useIdentityStore((s) => s.profile);
   const publicKey = useIdentityStore((s) => s.publicKey);
   const updateProfile = useIdentityStore((s) => s.updateProfile);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
+  const incrementAvatarVersion = useIdentityStore((s) => s.incrementAvatarVersion);
+  const setAvatarCid = useIdentityStore((s) => s.setAvatarCid);
   const addToast = useToastStore((s) => s.addToast);
 
   const [displayName, setDisplayName] = useState(profile?.data?.displayName || "");
@@ -27,7 +31,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
   const [statusMessage, setStatusMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [avatarKey, setAvatarKey] = useState(0); // Force re-render after upload
+  const [cropImageUrl, setCropImageUrl] = useState<string | null>(null); // For crop modal
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,16 +77,44 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
     // Reset input for re-selection
     e.target.value = "";
 
+    // Validate file type
+    const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      addToast("error", "Invalid image type. Use PNG, JPG, GIF, or WebP.");
+      return;
+    }
+
+    // Validate file size (5MB max before crop)
+    if (file.size > 5 * 1024 * 1024) {
+      addToast("error", "Image too large. Maximum size is 5MB.");
+      return;
+    }
+
+    // Create object URL and show crop modal
+    const url = URL.createObjectURL(file);
+    setCropImageUrl(url);
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    // Cleanup crop modal
+    if (cropImageUrl) {
+      URL.revokeObjectURL(cropImageUrl);
+      setCropImageUrl(null);
+    }
+
     setIsUploadingAvatar(true);
     try {
-      // Process and resize avatar
-      const { full, small } = await processAvatar(file);
+      // Process the cropped blob (resize to full + small)
+      const { full, small } = await processAvatarFromBlob(croppedBlob);
 
       // Upload to IPFS
-      await avatarManager.uploadAvatar(full, small);
+      const { full: fullCid } = await avatarManager.uploadAvatar(full, small);
 
-      // Force avatar re-render
-      setAvatarKey((k) => k + 1);
+      // Update the avatar CID in the store for persistence
+      setAvatarCid(fullCid);
+
+      // Increment avatar version to trigger re-fetch in all Avatar components
+      incrementAvatarVersion();
 
       addToast("success", "Avatar updated!");
     } catch (err) {
@@ -90,6 +122,13 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
       addToast("error", message);
     } finally {
       setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleCropCancel = () => {
+    if (cropImageUrl) {
+      URL.revokeObjectURL(cropImageUrl);
+      setCropImageUrl(null);
     }
   };
 
@@ -121,18 +160,21 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
               className="hidden"
             />
             <button
-              onClick={handleAvatarClick}
-              disabled={isUploadingAvatar}
-              className="relative group"
+              type="button"
+              onClick={isUploadingAvatar ? undefined : handleAvatarClick}
+              className={`relative group rounded-full focus:outline-none focus:ring-2 focus:ring-nodes-primary transition-all ${
+                isUploadingAvatar ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:ring-2 hover:ring-nodes-primary/50'
+              }`}
             >
               <Avatar
-                key={avatarKey}
-                publicKey={publicKey}
+                publicKey={publicKey ?? undefined}
                 displayName={displayName}
                 size="xl"
+                avatarVersion={avatarVersion}
+                avatarCid={profile?.data.avatar}
               />
               {/* Hover overlay */}
-              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
                 {isUploadingAvatar ? (
                   <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -239,6 +281,15 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
           </button>
         </div>
       </div>
+
+      {/* Avatar Crop Modal */}
+      {cropImageUrl && (
+        <AvatarCropModal
+          imageUrl={cropImageUrl}
+          onCrop={handleCropComplete}
+          onCancel={handleCropCancel}
+        />
+      )}
     </div>
   );
 }

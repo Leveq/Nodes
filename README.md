@@ -24,7 +24,9 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 - **Friend system** — Request/accept flow gates all DMs — no unsolicited messages
 - **Presence** — Online/idle/DND/invisible status with heartbeat
 - **Profile system** — Editable profiles with per-field visibility controls (public/friends/nobody)
-- **File sharing** — Drag-and-drop uploads via IPFS, inline image previews, image attachments
+- **File sharing** — Drag-and-drop uploads via IPFS, inline image previews, clipboard paste (Ctrl+V)
+- **GIF picker** — Giphy integration with trending and search, inline GIF rendering
+- **Emoji picker** — Full emoji picker with categories, search, skin tones, and recent emojis
 - **Emoji reactions** — React to messages with any emoji, syncs P2P in real-time
 - **Reply/quote** — Reply to specific messages with clickable quote references
 - **Markdown rendering** — Bold, italic, code, code blocks with syntax highlighting, links, blockquotes, lists
@@ -123,7 +125,8 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Node Discovery — Milestone 3.2
 - ✅ Notifications & @Mentions — Milestone 3.3
 - 🔲 Theming — Milestone 3.4
-- 🔲 Web client (PWA) — Milestone 3.5
+- ✅ Media polish (GIFs, emoji picker, clipboard paste) — Milestone 3.5a
+- 🔲 Web client (PWA) — Milestone 3.5b
 - 🔲 Plugin/bot system — Milestone 3.6
 
 ### Phase 4 — Scale

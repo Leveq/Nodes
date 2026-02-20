@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSocialStore } from "../../stores/social-store";
 import { ProfileManager } from "@nodes/transport-gun";
-import { NameSkeleton } from "../ui";
+import { NameSkeleton, Avatar } from "../ui";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import type { FriendRequest, Friend } from "@nodes/core";
 
 const profileManager = new ProfileManager();
@@ -15,6 +16,7 @@ type TabType = "friends" | "incoming" | "outgoing" | "blocked";
 export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) => void }) {
   const [activeTab, setActiveTab] = useState<TabType>("friends");
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+  const [avatarCids, setAvatarCids] = useState<Record<string, string>>({});
 
   const friends = useSocialStore((s) => s.friends);
   const incomingRequests = useSocialStore((s) => s.incomingRequests);
@@ -45,6 +47,12 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
           try {
             const profile = await profileManager.getPublicProfile(key);
             names[key] = profile?.displayName || key.slice(0, 8);
+            // Cache avatar CID for use by Avatar components
+            const avatarCid = profile?.avatar;
+            if (avatarCid) {
+              setCachedAvatarCid(key, avatarCid);
+              setAvatarCids((prev) => ({ ...prev, [key]: avatarCid }));
+            }
           } catch {
             names[key] = key.slice(0, 8);
           }
@@ -105,6 +113,7 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
             friends={friends}
             getName={getName}
             isNameLoading={isNameLoading}
+            avatarCids={avatarCids}
             onRemove={removeFriend}
             onUserClick={onUserClick}
           />
@@ -114,6 +123,7 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
             requests={incomingRequests}
             getName={getName}
             isNameLoading={isNameLoading}
+            avatarCids={avatarCids}
             onAccept={acceptRequest}
             onDecline={declineRequest}
             onUserClick={onUserClick}
@@ -124,6 +134,7 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
             requests={outgoingRequests}
             getName={getName}
             isNameLoading={isNameLoading}
+            avatarCids={avatarCids}
             onCancel={cancelRequest}
             onUserClick={onUserClick}
           />
@@ -133,6 +144,7 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
             blockedUsers={blockedUsers}
             getName={getName}
             isNameLoading={isNameLoading}
+            avatarCids={avatarCids}
             onUnblock={unblockUser}
             onUserClick={onUserClick}
           />
@@ -174,11 +186,12 @@ interface FriendsListProps {
   friends: Friend[];
   getName: (key: string) => string | undefined;
   isNameLoading: (key: string) => boolean;
+  avatarCids: Record<string, string>;
   onRemove: (publicKey: string) => Promise<void>;
   onUserClick?: (userId: string) => void;
 }
 
-function FriendsList({ friends, getName, isNameLoading, onRemove, onUserClick }: FriendsListProps) {
+function FriendsList({ friends, getName, isNameLoading, avatarCids, onRemove, onUserClick }: FriendsListProps) {
   if (friends.length === 0) {
     return (
       <EmptyState
@@ -201,9 +214,11 @@ function FriendsList({ friends, getName, isNameLoading, onRemove, onUserClick }:
           className="flex items-center gap-3 p-2 rounded hover:bg-nodes-bg group"
         >
           <Avatar 
-            name={getName(friend.publicKey)} 
-            isLoading={isNameLoading(friend.publicKey)} 
-            onClick={() => onUserClick?.(friend.publicKey)}
+            publicKey={friend.publicKey}
+            displayName={getName(friend.publicKey)}
+            avatarCid={avatarCids[friend.publicKey]}
+            size="sm"
+            className={onUserClick ? "cursor-pointer" : ""}
           />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-nodes-text truncate">
@@ -232,12 +247,13 @@ interface IncomingRequestsProps {
   requests: FriendRequest[];
   getName: (key: string) => string | undefined;
   isNameLoading: (key: string) => boolean;
+  avatarCids: Record<string, string>;
   onAccept: (requestId: string) => Promise<void>;
   onDecline: (requestId: string) => Promise<void>;
   onUserClick?: (userId: string) => void;
 }
 
-function IncomingRequests({ requests, getName, isNameLoading, onAccept, onDecline, onUserClick }: IncomingRequestsProps) {
+function IncomingRequests({ requests, getName, isNameLoading, avatarCids, onAccept, onDecline, onUserClick }: IncomingRequestsProps) {
   if (requests.length === 0) {
     return (
       <EmptyState
@@ -261,9 +277,11 @@ function IncomingRequests({ requests, getName, isNameLoading, onAccept, onDeclin
         >
           <div className="flex items-center gap-3 mb-2">
             <Avatar 
-              name={getName(request.fromKey)} 
-              isLoading={isNameLoading(request.fromKey)} 
-              onClick={() => onUserClick?.(request.fromKey)}
+              publicKey={request.fromKey}
+              displayName={getName(request.fromKey)}
+              avatarCid={avatarCids[request.fromKey]}
+              size="sm"
+              className={onUserClick ? "cursor-pointer" : ""}
             />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-nodes-text truncate">
@@ -300,11 +318,12 @@ interface OutgoingRequestsProps {
   requests: FriendRequest[];
   getName: (key: string) => string | undefined;
   isNameLoading: (key: string) => boolean;
+  avatarCids: Record<string, string>;
   onCancel: (requestId: string) => Promise<void>;
   onUserClick?: (userId: string) => void;
 }
 
-function OutgoingRequests({ requests, getName, isNameLoading, onCancel, onUserClick }: OutgoingRequestsProps) {
+function OutgoingRequests({ requests, getName, isNameLoading, avatarCids, onCancel, onUserClick }: OutgoingRequestsProps) {
   if (requests.length === 0) {
     return (
       <EmptyState
@@ -328,9 +347,11 @@ function OutgoingRequests({ requests, getName, isNameLoading, onCancel, onUserCl
         >
           <div className="flex items-center gap-3">
             <Avatar 
-              name={getName(request.toKey)} 
-              isLoading={isNameLoading(request.toKey)} 
-              onClick={() => onUserClick?.(request.toKey)}
+              publicKey={request.toKey}
+              displayName={getName(request.toKey)}
+              avatarCid={avatarCids[request.toKey]}
+              size="sm"
+              className={onUserClick ? "cursor-pointer" : ""}
             />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-nodes-text truncate">
@@ -355,11 +376,12 @@ interface BlockedListProps {
   blockedUsers: { publicKey: string; blockedAt: number }[];
   getName: (key: string) => string | undefined;
   isNameLoading: (key: string) => boolean;
+  avatarCids: Record<string, string>;
   onUnblock: (publicKey: string) => Promise<void>;
   onUserClick?: (userId: string) => void;
 }
 
-function BlockedList({ blockedUsers, getName, isNameLoading, onUnblock, onUserClick }: BlockedListProps) {
+function BlockedList({ blockedUsers, getName, isNameLoading, avatarCids, onUnblock, onUserClick }: BlockedListProps) {
   if (blockedUsers.length === 0) {
     return (
       <EmptyState
@@ -382,10 +404,11 @@ function BlockedList({ blockedUsers, getName, isNameLoading, onUnblock, onUserCl
           className="flex items-center gap-3 p-2 rounded hover:bg-nodes-bg"
         >
           <Avatar 
-            name={getName(blocked.publicKey)} 
-            isLoading={isNameLoading(blocked.publicKey)} 
-            muted 
-            onClick={() => onUserClick?.(blocked.publicKey)}
+            publicKey={blocked.publicKey}
+            displayName={getName(blocked.publicKey)}
+            avatarCid={avatarCids[blocked.publicKey]}
+            size="sm"
+            className={onUserClick ? "cursor-pointer opacity-50" : "opacity-50"}
           />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-nodes-text-muted truncate">
@@ -400,36 +423,6 @@ function BlockedList({ blockedUsers, getName, isNameLoading, onUnblock, onUserCl
           </button>
         </div>
       ))}
-    </div>
-  );
-}
-
-interface AvatarProps {
-  name?: string;
-  isLoading?: boolean;
-  muted?: boolean;
-  onClick?: () => void;
-}
-
-function Avatar({ name, isLoading, muted, onClick }: AvatarProps) {
-  return (
-    <div
-      onClick={onClick}
-      className={`w-8 h-8 rounded-full flex items-center justify-center ${
-        muted ? "bg-nodes-bg" : "bg-nodes-primary/20"
-      } ${onClick ? "cursor-pointer hover:ring-2 hover:ring-nodes-primary/50 transition-all" : ""}`}
-    >
-      {isLoading ? (
-        <div className="w-3 h-3 animate-pulse rounded bg-nodes-border/50" />
-      ) : (
-        <span
-          className={`text-sm font-medium ${
-            muted ? "text-nodes-text-muted" : "text-nodes-primary"
-          }`}
-        >
-          {name?.[0]?.toUpperCase() || "?"}
-        </span>
-      )}
     </div>
   );
 }

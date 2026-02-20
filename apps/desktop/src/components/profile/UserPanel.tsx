@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useIdentityStore } from "../../stores/identity-store";
+import { Avatar } from "../ui";
 import { StatusSelector } from "./StatusSelector";
 import type { UserStatus } from "@nodes/core";
 
@@ -15,23 +16,29 @@ interface UserPanelProps {
 export function UserPanel({ onOpenProfile, onOpenSettings }: UserPanelProps) {
   const profile = useIdentityStore((s) => s.profile);
   const publicKey = useIdentityStore((s) => s.publicKey);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
   const [currentStatus, setCurrentStatus] = useState<UserStatus>(
     (profile?.data?.status as UserStatus) || "online"
   );
 
   const displayName = profile?.data?.displayName || publicKey?.slice(0, 8) || "User";
   const statusMessage = profile?.data?.bio?.slice(0, 40) || "";
-  const initial = displayName[0]?.toUpperCase() || "?";
 
   return (
     <div className="h-14 px-2 bg-[#1a1a28] border-t border-nodes-border flex items-center gap-2">
       {/* Avatar (clickable) */}
       <button
         onClick={onOpenProfile}
-        className="w-8 h-8 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0 hover:bg-nodes-primary/30 transition-colors"
+        className="shrink-0 hover:opacity-80 transition-opacity"
         title="Edit Profile"
       >
-        <span className="text-nodes-primary font-medium text-sm">{initial}</span>
+        <Avatar
+          publicKey={publicKey || ""}
+          displayName={displayName}
+          size="sm"
+          avatarVersion={avatarVersion}
+          avatarCid={profile?.data?.avatar}
+        />
       </button>
 
       {/* Name and status */}

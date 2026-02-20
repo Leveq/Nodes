@@ -7,8 +7,9 @@ import { useNavigationStore } from "../stores/navigation-store";
 import { useNodeRoles, usePermissions, useMyRoles, useCanModifyMember, useHasPermission } from "../hooks/usePermissions";
 import { useRoleStore } from "../stores/role-store";
 import { useToastStore } from "../stores/toast-store";
+import { setCachedAvatarCid } from "../hooks/useDisplayName";
 import { ProfileManager, roleManager, getModerationManager } from "@nodes/transport-gun";
-import { MemberListSkeleton, NameSkeleton } from "../components/ui";
+import { MemberListSkeleton, NameSkeleton, Avatar } from "../components/ui";
 import { KickDialog, BanDialog } from "../components/modals";
 import type { NodeMember, Role } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
@@ -67,6 +68,9 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
     ? members[activeNodeId] === undefined && nodeMembers.length === 0
     : false;
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Track avatar CIDs for all members (reactive via profile subscriptions)
+  const [memberAvatarCids, setMemberAvatarCids] = useState<Record<string, string>>({});
 
   // Derive resolved names from global cache (with fallback to truncated pubkey)
   const resolvedNames = useMemo(() => {
@@ -85,7 +89,44 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   const myPublicKey = useIdentityStore((s) => s.publicKey);
   const myProfile = useIdentityStore((s) => s.profile);
   const profileVersion = useIdentityStore((s) => s.profileVersion);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
   const setViewMode = useNavigationStore((s) => s.setViewMode);
+
+  // Subscribe to profile changes for all node members
+  // This enables real-time avatar updates when someone changes their avatar
+  useEffect(() => {
+    if (nodeMembers.length === 0) return;
+    
+    const unsubscribes: (() => void)[] = [];
+    
+    for (const member of nodeMembers) {
+      // Don't subscribe to own profile (already handled via myProfile)
+      if (member.publicKey === myPublicKey) continue;
+      
+      const unsubscribe = profileManager.subscribeToProfile(
+        member.publicKey,
+        (profile) => {
+          const avatarCid = profile?.avatar;
+          if (avatarCid) {
+            setMemberAvatarCids((prev) => {
+              // Only update if CID actually changed
+              if (prev[member.publicKey] === avatarCid) return prev;
+              console.log(`[MemberSidebar] Avatar CID updated for ${member.publicKey.slice(0, 8)}: ${avatarCid}`);
+              setCachedAvatarCid(member.publicKey, avatarCid);
+              return { ...prev, [member.publicKey]: avatarCid };
+            });
+          }
+        }
+      );
+      unsubscribes.push(unsubscribe);
+    }
+    
+    return () => {
+      for (const unsub of unsubscribes) {
+        unsub();
+      }
+    };
+  }, [nodeMembers, myPublicKey]);
 
   // Social functionality
   const friends = useSocialStore((s) => s.friends);
@@ -127,6 +168,10 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
       try {
         const profile = await profileManager.getPublicProfile(member.publicKey);
         names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
+        // Cache avatar CID for use by Avatar components
+        if (profile?.avatar) {
+          setCachedAvatarCid(member.publicKey, profile.avatar);
+        }
       } catch {
         names[member.publicKey] = member.publicKey.slice(0, 8);
       }
@@ -152,6 +197,10 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
         try {
           const profile = await profileManager.getPublicProfile(member.publicKey);
           names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
+          // Cache avatar CID for use by Avatar components
+          if (profile?.avatar) {
+            setCachedAvatarCid(member.publicKey, profile.avatar);
+          }
         } catch {
           names[member.publicKey] = member.publicKey.slice(0, 8);
         }
@@ -273,6 +322,9 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
                 hasPendingRequest={hasPendingRequest}
                 onUserClick={onUserClick}
                 roles={roles}
+                avatarVersion={avatarVersion}
+                myAvatarCid={myProfile?.data.avatar}
+                memberAvatarCids={memberAvatarCids}
               />
             ))}
 
@@ -293,6 +345,9 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
                 hasPendingRequest={hasPendingRequest}
                 onUserClick={onUserClick}
                 roles={roles}
+                avatarVersion={avatarVersion}
+                myAvatarCid={myProfile?.data.avatar}
+                memberAvatarCids={memberAvatarCids}
               />
             )}
 
@@ -324,6 +379,9 @@ interface MemberGroupProps {
   hasPendingRequest: (toKey: string) => boolean;
   onUserClick?: (userId: string) => void;
   roles?: Role[];
+  avatarVersion: number;
+  myAvatarCid?: string;
+  memberAvatarCids?: Record<string, string>;
 }
 
 function MemberGroup({ 
@@ -342,6 +400,9 @@ function MemberGroup({
   hasPendingRequest,
   onUserClick,
   roles = [],
+  avatarVersion,
+  myAvatarCid,
+  memberAvatarCids = {},
 }: MemberGroupProps) {
   // Helper to get member's highest role for display color
   const getMemberHighestRole = (member: NodeMember): Role | undefined => {
@@ -366,6 +427,7 @@ function MemberGroup({
       </h4>
       {members.map((member) => {
         const memberRole = getMemberHighestRole(member);
+        const isMe = member.publicKey === myPublicKey;
         return (
           <MemberItem
             key={member.publicKey}
@@ -377,7 +439,7 @@ function MemberGroup({
             roleColor={memberRole?.color}
             memberRoles={member.roles || []}
             allRoles={roles}
-            isMe={member.publicKey === myPublicKey}
+            isMe={isMe}
             isFriend={isFriend(member.publicKey)}
             hasPending={hasPendingRequest(member.publicKey)}
             nodeId={nodeId}
@@ -387,6 +449,8 @@ function MemberGroup({
             onRemoveFriend={() => onRemoveFriend(member.publicKey)}
             onBlockUser={() => onBlockUser(member.publicKey)}
             onViewProfile={onUserClick ? () => onUserClick(member.publicKey) : undefined}
+            avatarVersion={isMe ? avatarVersion : 0}
+            avatarCid={isMe ? myAvatarCid : memberAvatarCids[member.publicKey]}
           />
         );
       })}
@@ -413,6 +477,8 @@ interface MemberItemProps {
   onViewProfile?: () => void;
   nodeId: string | null;
   myDisplayName: string;
+  avatarVersion: number;
+  avatarCid?: string;
 }
 
 function MemberItem({ 
@@ -434,6 +500,8 @@ function MemberItem({
   onViewProfile,
   nodeId,
   myDisplayName,
+  avatarVersion,
+  avatarCid,
 }: MemberItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showRolesSubmenu, setShowRolesSubmenu] = useState(false);
@@ -582,15 +650,15 @@ function MemberItem({
         onClick={handleClick}
         className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-nodes-bg/50 transition-colors cursor-pointer"
       >
-        {/* Avatar placeholder with status dot */}
+        {/* Avatar with status dot */}
         <div className="relative">
-          <div className="w-8 h-8 rounded-full bg-nodes-accent/20 flex items-center justify-center text-nodes-text text-sm font-medium">
-            {isNameLoading ? (
-              <div className="w-3 h-3 animate-pulse rounded bg-nodes-border/50" />
-            ) : (
-              displayName?.charAt(0).toUpperCase() || "?"
-            )}
-          </div>
+          <Avatar
+            publicKey={publicKey}
+            displayName={displayName}
+            size="sm"
+            avatarVersion={avatarVersion}
+            avatarCid={avatarCid}
+          />
           <div
             className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-nodes-surface ${statusColor}`}
           />

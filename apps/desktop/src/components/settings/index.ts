@@ -10,3 +10,6 @@ export { RolesTab } from './RolesTab';
 export { RoleEditor } from './RoleEditor';
 export { ModerationTab } from './ModerationTab';
 export { DiscoveryTab } from './DiscoveryTab';
+export { ThemePreviewSwatch } from './ThemePreviewSwatch';
+export { ThemeCreator } from './ThemeCreator';
+export { NodeAppearanceTab } from './NodeAppearanceTab';

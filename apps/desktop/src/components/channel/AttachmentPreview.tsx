@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { FILE_LIMITS } from "@nodes/core";
 import type { PendingAttachment } from "./FileAttachmentButton";
 
@@ -72,12 +73,26 @@ function AttachmentPreviewItem({
 }
 
 function ImagePreview({ attachment }: { attachment: PendingAttachment }) {
+  const [hasError, setHasError] = useState(false);
+  
+  if (hasError) {
+    // Fallback to file preview style if image fails to load
+    return (
+      <div className="w-20 h-20 rounded-lg overflow-hidden border border-surface-border bg-depth-primary flex items-center justify-center">
+        <div className="text-text-muted text-xs text-center p-1">
+          {attachment.file.name.slice(0, 10)}...
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className="w-20 h-20 rounded-lg overflow-hidden border border-surface-border bg-depth-primary">
       <img
         src={attachment.previewUrl}
         alt={attachment.file.name}
         className="w-full h-full object-cover"
+        onError={() => setHasError(true)}
       />
     </div>
   );

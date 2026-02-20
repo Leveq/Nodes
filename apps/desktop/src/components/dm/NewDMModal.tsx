@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { Modal } from "../modals/Modal";
-import { Input } from "../ui";
+import { Input, Avatar } from "../ui";
 import { useDMStore } from "../../stores/dm-store";
 import { useSocialStore } from "../../stores/social-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useNavigationStore } from "../../stores/navigation-store";
 import { ProfileManager } from "@nodes/transport-gun";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import type { KeyPair } from "@nodes/crypto";
 
 const profileManager = new ProfileManager();
@@ -41,6 +42,10 @@ export function NewDMModal({ onClose }: NewDMModalProps) {
           try {
             const profile = await profileManager.getPublicProfile(friend.publicKey);
             names[friend.publicKey] = profile?.displayName || friend.publicKey.slice(0, 8);
+            // Cache avatar CID for use by Avatar components
+            if (profile?.avatar) {
+              setCachedAvatarCid(friend.publicKey, profile.avatar);
+            }
           } catch {
             names[friend.publicKey] = friend.publicKey.slice(0, 8);
           }
@@ -110,11 +115,11 @@ export function NewDMModal({ onClose }: NewDMModalProps) {
                 disabled={isSubmitting}
                 className="w-full px-3 py-2 flex items-center gap-3 rounded hover:bg-nodes-bg transition-colors disabled:opacity-50"
               >
-                <div className="w-8 h-8 rounded-full bg-nodes-primary/20 flex items-center justify-center">
-                  <span className="text-nodes-primary text-sm font-medium">
-                    {(resolvedNames[friend.publicKey] || "?")[0].toUpperCase()}
-                  </span>
-                </div>
+                <Avatar
+                  publicKey={friend.publicKey}
+                  displayName={resolvedNames[friend.publicKey]}
+                  size="sm"
+                />
                 <div className="flex-1 text-left">
                   <p className="text-nodes-text text-sm font-medium">
                     {resolvedNames[friend.publicKey] || friend.publicKey.slice(0, 8)}

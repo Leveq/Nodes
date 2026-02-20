@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useDMStore } from "../../stores/dm-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import type { KeyPair } from "@nodes/crypto";
+import { GifButton } from "../channel/GifButton";
+import { EmojiPicker } from "../channel/EmojiPicker";
+import { Smile } from "lucide-react";
 
 interface DMMessageInputProps {
   recipientKey: string;
@@ -18,6 +21,7 @@ export function DMMessageInput({
 }: DMMessageInputProps) {
   const [content, setContent] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const sendMessage = useDMStore((s) => s.sendMessage);
@@ -69,9 +73,86 @@ export function DMMessageInput({
     }
   };
 
+  // Handle GIF selection - sends the GIF URL as a message
+  const handleGifSelect = useCallback(async (gifUrl: string) => {
+    if (!keypair || isSending) return;
+
+    setIsSending(true);
+    try {
+      await sendMessage(gifUrl, recipientKey, keypair as KeyPair);
+    } catch {
+      // Error shown via toast in store
+    } finally {
+      setIsSending(false);
+    }
+  }, [keypair, isSending, sendMessage, recipientKey]);
+
+  // Handle emoji selection - insert at cursor position
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    if (!textareaRef.current) return;
+    
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    // Insert emoji at cursor position
+    const newContent = content.slice(0, start) + emoji + content.slice(end);
+    setContent(newContent);
+    
+    // Close picker and refocus textarea
+    setShowEmojiPicker(false);
+    
+    // Set cursor position after the inserted emoji
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+    }, 0);
+  }, [content]);
+
   return (
     <div className="px-4 py-3 border-t border-nodes-border shrink-0">
-      <div className="message-input-container relative flex items-center bg-nodes-bg rounded-lg border border-nodes-border transition-all duration-300 focus-within:scale-[1.005]">
+      <div className="message-input-container relative flex items-center gap-1 bg-nodes-bg rounded-lg border border-nodes-border transition-all duration-300 focus-within:scale-[1.005] px-2">
+        {/* GIF button */}
+        <GifButton
+          onGifSelect={handleGifSelect}
+          disabled={isSending}
+        />
+
+        {/* Emoji picker button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            disabled={isSending}
+            className={`p-2 rounded-lg transition-colors ${
+              isSending
+                ? "text-nodes-text-muted/50 cursor-not-allowed"
+                : showEmojiPicker
+                  ? "text-nodes-primary bg-nodes-primary/10"
+                  : "text-nodes-text-muted hover:text-nodes-text hover:bg-nodes-bg"
+            }`}
+            title="Add emoji"
+          >
+            <Smile className="w-5 h-5" />
+          </button>
+
+          {showEmojiPicker && (
+            <>
+              {/* Backdrop */}
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setShowEmojiPicker(false)}
+              />
+              {/* Picker positioned above button */}
+              <div className="absolute bottom-full left-0 mb-2 z-50">
+                <EmojiPicker
+                  onSelect={handleEmojiSelect}
+                  onClose={() => setShowEmojiPicker(false)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
         <textarea
           ref={textareaRef}
           value={content}
@@ -80,7 +161,7 @@ export function DMMessageInput({
           placeholder={`Message ${recipientName}`}
           disabled={isSending}
           rows={1}
-          className="flex-1 bg-transparent px-4 py-3 pr-12 text-nodes-text placeholder-nodes-text-muted resize-none focus:outline-none disabled:opacity-50"
+          className="flex-1 bg-transparent py-3 text-nodes-text placeholder-nodes-text-muted resize-none focus:outline-none disabled:opacity-50"
           style={{ maxHeight: "200px" }}
         />
 
@@ -88,7 +169,7 @@ export function DMMessageInput({
         <button
           onClick={handleSend}
           disabled={!content.trim() || isSending}
-          className="absolute right-2 bottom-2 p-2 rounded-lg text-nodes-text-muted hover:text-nodes-primary hover:bg-nodes-primary/10 transition-colors disabled:opacity-50 disabled:hover:text-nodes-text-muted disabled:hover:bg-transparent"
+          className="p-2 rounded-lg text-nodes-text-muted hover:text-nodes-primary hover:bg-nodes-primary/10 transition-colors disabled:opacity-50 disabled:hover:text-nodes-text-muted disabled:hover:bg-transparent"
           title="Send message (Enter)"
         >
           {isSending ? (

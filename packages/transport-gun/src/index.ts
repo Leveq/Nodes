@@ -12,7 +12,7 @@ export { LocalFileTransport } from "./file-transport";
 // IPFS (Milestone 2.1)
 export { IPFSService } from "./ipfs-service";
 export { IPFSFileTransport } from "./ipfs-file-transport";
-export { AvatarManager, avatarManager } from "./avatar-manager";
+export { AvatarManager, avatarManager, configureAvatarManager } from "./avatar-manager";
 export { IPFSPeerAdvertiser, getIPFSPeerAdvertiser } from "./ipfs-peer-advertiser";
 
 // Node management

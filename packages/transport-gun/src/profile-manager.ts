@@ -220,4 +220,60 @@ export class ProfileManager {
     user.get("profile").get("_visibility").get(field).put(visibility);
     user.get("profile").get("_updatedAt").put(Date.now());
   }
+
+  /**
+   * Subscribe to another user's profile changes in real-time.
+   * Useful for detecting avatar updates without polling.
+   * 
+   * @param publicKey - The user's public key to subscribe to
+   * @param callback - Called with profile data whenever it changes
+   * @returns Unsubscribe function
+   */
+  subscribeToProfile(
+    publicKey: string,
+    callback: (profile: Partial<ProfileData> | null) => void
+  ): () => void {
+    const gun = GunInstanceManager.get();
+    
+    const ref = gun.user(publicKey).get("profile");
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = async (data: any) => {
+      if (!data) {
+        callback(null);
+        return;
+      }
+
+      const fields: (keyof ProfileData)[] = [
+        "displayName",
+        "bio",
+        "avatar",
+        "banner",
+        "status",
+        "visibility",
+      ];
+
+      const profileData: Record<string, string> = {};
+      const accountType = (data._accountType as string) || "public";
+
+      for (const field of fields) {
+        const rawValue = data[field] as string | undefined;
+        const visibilityData = data._visibility as Record<string, string> | undefined;
+        const vis = visibilityData?.[field] || "public";
+
+        if (vis === "public" && rawValue) {
+          profileData[field] = rawValue;
+        }
+      }
+
+      profileData.visibility = accountType;
+      callback(profileData as unknown as Partial<ProfileData>);
+    };
+
+    ref.on(handler);
+
+    return () => {
+      ref.off();
+    };
+  }
 }

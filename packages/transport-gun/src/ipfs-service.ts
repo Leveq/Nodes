@@ -221,6 +221,21 @@ export class IPFSService {
         const protocols = heliaInstance.libp2p.getProtocols();
         console.log("[IPFS] Registered protocols:", protocols);
 
+        // Log connection events for debugging
+        heliaInstance.libp2p.addEventListener('peer:connect', (evt) => {
+          console.log("[IPFS] Peer connected:", evt.detail.toString().slice(0, 20) + "...");
+        });
+        heliaInstance.libp2p.addEventListener('peer:disconnect', (evt) => {
+          console.log("[IPFS] Peer disconnected:", evt.detail.toString().slice(0, 20) + "...");
+        });
+
+        // Log current connections
+        const connections = heliaInstance.libp2p.getConnections();
+        console.log("[IPFS] Initial connections:", connections.length);
+        for (const conn of connections) {
+          console.log("[IPFS]   Peer:", conn.remotePeer.toString().slice(0, 16), "| Addr:", conn.remoteAddr.toString().slice(0, 50));
+        }
+
         // Expose for console debugging
         // @ts-expect-error - intentionally adding to window for debugging
         if (typeof window !== 'undefined') window.IPFSService = IPFSService;
@@ -576,6 +591,18 @@ export class IPFSService {
 
     console.log("[IPFS] Downloading CID:", cidString);
     console.log("[IPFS] Connected peers:", IPFSService.getConnectedPeers());
+    
+    // Log detailed peer info for debugging
+    if (heliaInstance) {
+      const connections = heliaInstance.libp2p.getConnections();
+      console.log("[IPFS] Detailed peer connections:");
+      for (const conn of connections) {
+        console.log("[IPFS]   ", conn.remotePeer.toString().slice(0, 16), 
+                    "| streams:", conn.streams.length,
+                    "| direction:", conn.direction,
+                    "| addr:", conn.remoteAddr.toString().slice(-40));
+      }
+    }
 
     const chunks: Uint8Array[] = [];
 

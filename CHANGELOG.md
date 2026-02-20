@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Milestone 3.5a — Media & Attachments**
+- Giphy GIF picker with trending and search functionality
+- "Powered by GIPHY" attribution badge in picker
+- GIF button in message input (film icon)
+- Inline GIF rendering for Giphy URLs (max 300x200px)
+- Clipboard image paste (Ctrl+V) to attach images
+- Emoji picker button in message input (smile icon)
+- Dynamic emoji picker theming (light/dark based on app theme)
+- GIF and emoji buttons added to DM input
+
+### Fixed
+- Images breaking when switching tabs (removed premature blob URL revocation)
+- Pending attachments persisting across channel switches (now cleared on switch)
+- Broken image fallback in attachment preview (added error handling)
+
 ## [0.8.0-alpha] - 2026-02-18
 
 ### Added

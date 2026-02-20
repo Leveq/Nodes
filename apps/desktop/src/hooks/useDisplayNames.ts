@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ProfileManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../stores/node-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { setCachedAvatarCid } from "./useDisplayName";
 
 // Module-level cache
 const displayNameCache = new Map<string, string>();
@@ -80,6 +81,10 @@ export function useDisplayNames(publicKeys: string[]): {
             `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
           displayNameCache.set(publicKey, name);
           result[publicKey] = name;
+          // Cache avatar CID for use by Avatar components
+          if (profile?.avatar) {
+            setCachedAvatarCid(publicKey, profile.avatar);
+          }
         } catch {
           const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
           displayNameCache.set(publicKey, fallback);

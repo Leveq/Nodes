@@ -4,6 +4,7 @@ import type { NodeServer, NodeMember, NodeChannel } from "@nodes/core";
 import { useToastStore } from "./toast-store";
 import { useNotificationStore } from "./notification-store";
 import { useMessageStore } from "./message-store";
+import { useThemeStore } from "./theme-store";
 
 // TTL for cached display names (5 minutes)
 const DISPLAY_NAME_CACHE_TTL = 5 * 60 * 1000;
@@ -38,7 +39,7 @@ interface NodeState {
   deleteNode: (nodeId: string) => Promise<void>;
   updateNode: (
     nodeId: string,
-    updates: Partial<Pick<NodeServer, "name" | "description" | "icon">>
+    updates: Partial<Pick<NodeServer, "name" | "description" | "icon" | "theme">>
   ) => Promise<void>;
   setActiveNode: (nodeId: string | null) => void;
   setActiveChannel: (channelId: string | null) => void;
@@ -229,9 +230,20 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     const cachedChannels = nodeId ? get().channels[nodeId] : null;
     const cachedMembers = nodeId ? get().members[nodeId] : null;
     const firstChannelId = cachedChannels?.[0]?.id ?? null;
+    
+    // Get the node to check for theme
+    const node = nodeId ? get().nodes.find((n) => n.id === nodeId) : null;
 
     // Set active node and channel immediately
     set({ activeNodeId: nodeId, activeChannelId: firstChannelId });
+    
+    // Apply or clear Node theme
+    const themeStore = useThemeStore.getState();
+    if (node?.theme) {
+      themeStore.applyNodeTheme(node.theme);
+    } else {
+      themeStore.clearNodeTheme();
+    }
 
     // Clear mention counts for all channels in this node
     if (nodeId && cachedChannels) {

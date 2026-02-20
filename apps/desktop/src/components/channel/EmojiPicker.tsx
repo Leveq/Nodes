@@ -1,11 +1,26 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
+import { useThemeStore } from "../../stores/theme-store";
 
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void;
   onClose: () => void;
   position?: { x: number; y: number };
+}
+
+/**
+ * Determine if a hex color is "light" (luminance > 0.5)
+ */
+function isLightColor(hex: string): boolean {
+  // Remove # if present
+  const color = hex.replace("#", "");
+  const r = parseInt(color.substring(0, 2), 16);
+  const g = parseInt(color.substring(2, 4), 16);
+  const b = parseInt(color.substring(4, 6), 16);
+  // Calculate relative luminance
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5;
 }
 
 /**
@@ -19,6 +34,14 @@ interface EmojiPickerProps {
  */
 export function EmojiPicker({ onSelect, onClose, position }: EmojiPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const getActiveTheme = useThemeStore((s) => s.getActiveTheme);
+  
+  // Determine emoji-mart theme based on app theme
+  const emojiTheme = useMemo(() => {
+    const theme = getActiveTheme();
+    // Check if the background color is light
+    return isLightColor(theme.colors.bgPrimary) ? "light" : "dark";
+  }, [getActiveTheme]);
 
   // Close on Escape key only - click outside is handled by parent backdrop
   useEffect(() => {
@@ -62,7 +85,7 @@ export function EmojiPicker({ onSelect, onClose, position }: EmojiPickerProps) {
       <Picker
         data={data}
         onEmojiSelect={handleEmojiSelect}
-        theme="dark"
+        theme={emojiTheme}
         previewPosition="none"
         skinTonePosition="search"
         maxFrequentRows={2}

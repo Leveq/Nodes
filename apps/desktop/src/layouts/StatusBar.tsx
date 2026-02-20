@@ -1,5 +1,5 @@
 import { useIdentityStore } from "../stores/identity-store";
-import { ConnectionStatus, Badge } from "../components/ui";
+import { ConnectionStatus, Badge, Avatar } from "../components/ui";
 import { CopyablePublicKey } from "../components/ui/CopyablePublicKey";
 import { NotificationCenter } from "../components/notifications";
 import { getStatusColor } from "../utils/status";
@@ -17,11 +17,11 @@ interface StatusBarProps {
 export function StatusBar({ onOpenSettings, onOpenProfile }: StatusBarProps) {
   const publicKey = useIdentityStore((s) => s.publicKey);
   const profile = useIdentityStore((s) => s.profile);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
 
   if (!publicKey) return null;
 
   const status = (profile?.data.status as UserStatus) || "online";
-  const initial = profile?.data.displayName?.[0]?.toUpperCase() || "?";
 
   return (
     <div className="h-8 bg-nodes-surface border-t border-nodes-border flex items-center justify-between px-4 text-xs shrink-0">
@@ -34,9 +34,13 @@ export function StatusBar({ onOpenSettings, onOpenProfile }: StatusBarProps) {
           title="Edit Profile"
         >
           <div className="relative">
-            <div className="w-5 h-5 rounded-full bg-nodes-primary/20 flex items-center justify-center">
-              <span className="text-nodes-primary font-medium text-[10px]">{initial}</span>
-            </div>
+            <Avatar
+              publicKey={publicKey}
+              displayName={profile?.data.displayName}
+              size="xs"
+              avatarVersion={avatarVersion}
+              avatarCid={profile?.data.avatar}
+            />
             <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-nodes-surface ${getStatusColor(status)}`} />
           </div>
           <span className="text-nodes-text">{profile?.data.displayName}</span>

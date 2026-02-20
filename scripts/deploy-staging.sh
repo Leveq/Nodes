@@ -6,6 +6,8 @@ REMOTE_DIR="/opt/nodes-staging"
 
 echo "🔨 Building web client..."
 cd apps/desktop
+VITE_IPFS_GATEWAY_URL=https://nodesipfs.leveq.dev \
+VITE_IPFS_API_URL=https://nodesipfs.leveq.dev \
 VITE_GUN_RELAY_URL=wss://nodesrelay.leveq.dev/gun \
 VITE_LIVEKIT_URL=wss://nodesvoice.leveq.dev \
 VITE_LIVEKIT_API_KEY=nodes-stg-key \

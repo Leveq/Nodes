@@ -8,7 +8,7 @@ import { usePermissions, useMemberRoleColor } from "../../hooks/usePermissions";
 import { useIdentityStore } from "../../stores/identity-store";
 import { formatMessageTime, formatFullTimestamp } from "../../utils/time";
 import { getFirstPreviewableUrl } from "../../utils/url-detection";
-import { NameSkeleton } from "../ui";
+import { NameSkeleton, Avatar } from "../ui";
 import { MessageAttachment } from "./MessageAttachment";
 import { ImageLightbox } from "./ImageLightbox";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -22,6 +22,7 @@ import { useEditStore } from "../../stores/edit-store";
 import { useReplyStore } from "../../stores/reply-store";
 import { useTransport } from "../../providers/TransportProvider";
 import { useToastStore } from "../../stores/toast-store";
+import { isGiphyUrl } from "../../services/giphy-service";
 
 // Type for emoji → reactions array mapping
 type ReactionMap = Record<string, ReactionData[]>;
@@ -66,6 +67,8 @@ export const MessageItem = memo(function MessageItem({
   const [previewDismissed, setPreviewDismissed] = useState(false);
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
+  const myProfile = useIdentityStore((s) => s.profile);
   const addToast = useToastStore((s) => s.addToast);
   
   // Permission checks
@@ -102,6 +105,15 @@ export const MessageItem = memo(function MessageItem({
     // Check for @everyone or @here
     return message.content.includes('<@everyone>') || message.content.includes('<@here>');
   }, [publicKey, message.content, message.deleted]);
+  
+  // Check if message is purely a Giphy URL (for inline rendering)
+  const giphyUrl = useMemo(() => {
+    if (!message.content || message.deleted) return null;
+    const trimmed = message.content.trim();
+    // Only treat as GIF if the entire message is just the URL
+    if (isGiphyUrl(trimmed)) return trimmed;
+    return null;
+  }, [message.content, message.deleted]);
   
   // Can delete if own message or has deleteAnyMessage permission
   const canDelete = isOwnMessage || canDeleteAnyMessage;
@@ -181,9 +193,6 @@ export const MessageItem = memo(function MessageItem({
       return [];
     }
   }, [message.attachments]);
-
-  // Get first letter for avatar placeholder
-  const avatarLetter = isLoading ? "" : displayName.charAt(0).toUpperCase();
 
   const handleImageClick = (attachment: FileAttachment, imageUrl: string) => {
     setLightboxImage({ attachment, imageUrl });
@@ -272,7 +281,14 @@ export const MessageItem = memo(function MessageItem({
                   />
                 ) : (
                   <>
-                    {message.content && (
+                    {giphyUrl ? (
+                      <img
+                        src={giphyUrl}
+                        alt="GIF"
+                        className="rounded-md max-w-[300px] max-h-[200px] object-contain"
+                        loading="lazy"
+                      />
+                    ) : message.content && (
                       <MarkdownRenderer content={message.content} />
                     )}
                     
@@ -375,12 +391,14 @@ export const MessageItem = memo(function MessageItem({
         )}
 
         {/* Avatar */}
-        <div className="w-10 h-10 rounded-full bg-nodes-primary/20 flex items-center justify-center shrink-0 mr-3 text-nodes-primary font-medium">
-          {isLoading ? (
-            <div className="w-4 h-4 animate-pulse rounded bg-nodes-border/50" />
-          ) : (
-            avatarLetter
-          )}
+        <div className="shrink-0 mr-3">
+          <Avatar
+            publicKey={message.authorKey}
+            displayName={displayName}
+            size="md"
+            avatarVersion={isOwnMessage ? avatarVersion : 0}
+            avatarCid={isOwnMessage ? myProfile?.data.avatar : undefined}
+          />
         </div>
 
         {/* Content area */}
@@ -430,7 +448,16 @@ export const MessageItem = memo(function MessageItem({
                 </div>
               ) : (
                 <>
-                  {message.content && (
+                  {giphyUrl ? (
+                    <div className="mt-0.5">
+                      <img
+                        src={giphyUrl}
+                        alt="GIF"
+                        className="rounded-md max-w-[300px] max-h-[200px] object-contain"
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : message.content && (
                     <div className="mt-0.5">
                       <MarkdownRenderer content={message.content} />
                       {/* Edited indicator */}

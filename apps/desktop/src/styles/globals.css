@@ -6,6 +6,54 @@
    Premium "leveq.dev" inspired dark theme with depth and glassmorphism
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* ── Dynamic Theme Variables (changed by ThemeEngine) ── */
+:root {
+  /* Backgrounds */
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-tertiary: #313244;
+  --bg-input: #1e1e2e;
+  --bg-hover: #2a2a3c;
+
+  /* Text */
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #585b70;
+
+  /* Accent */
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-muted: rgba(124, 58, 237, 0.15);
+  --accent-text: #ffffff;
+
+  /* Status */
+  --danger: #f38ba8;
+  --danger-hover: #e06688;
+  --success: #a6e3a1;
+  --warning: #f9e2af;
+  --info: #89b4fa;
+
+  /* Borders */
+  --border: #313244;
+  --border-strong: #45475a;
+
+  /* Specific UI */
+  --mention-bg: rgba(124, 58, 237, 0.3);
+  --mention-text: #cba6f7;
+  --code-bg: #11111b;
+  --link-color: #89b4fa;
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+
+  /* Layout (changed by compact mode) */
+  --font-size-base: 14px;
+  --message-spacing: 8px;
+  --avatar-size: 40px;
+  --padding-message: 8px 16px;
+}
+
 /* ── Tailwind Theme Tokens ── */
 @theme {
   /* Typography */
@@ -13,51 +61,51 @@
   --font-family-body: 'IBM Plex Sans', system-ui, sans-serif;
   --font-family-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  /* Layered Depth Backgrounds (darkest → lighter) */
-  --color-bg-base: #0a0a12;       /* Deepest background - behind everything */
-  --color-bg-primary: #0f0f1a;    /* Main content background */
-  --color-bg-secondary: #141422;  /* Sidebars, panels */
-  --color-bg-tertiary: #1a1a2e;   /* Nested panels, cards */
-  --color-bg-elevated: #1f1f36;   /* Elevated elements (buttons, inputs) */
-  --color-bg-float: #262640;      /* Floating elements (dropdowns, tooltips) */
+  /* Layered Depth Backgrounds - mapped to theme variables */
+  --color-bg-base: color-mix(in srgb, var(--bg-primary) 90%, black);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-elevated: var(--bg-input);
+  --color-bg-float: var(--bg-tertiary);
 
-  /* Surface Colors */
-  --color-surface-glass: rgba(255, 255, 255, 0.03);
-  --color-surface-hover: rgba(255, 255, 255, 0.06);
-  --color-surface-active: rgba(255, 255, 255, 0.10);
-  --color-surface-border: rgba(255, 255, 255, 0.08);
-  --color-surface-focus: rgba(124, 91, 240, 0.3);
+  /* Surface Colors - adapted for theming */
+  --color-surface-glass: var(--accent-muted);
+  --color-surface-hover: var(--bg-hover);
+  --color-surface-active: var(--accent-muted);
+  --color-surface-border: var(--border);
+  --color-surface-focus: var(--accent-muted);
 
-  /* Accent Colors */
-  --color-accent-primary: #7c5bf0;
-  --color-accent-secondary: #5b8cf0;
-  --color-accent-primary-dim: rgba(124, 91, 240, 0.6);
-  --color-accent-primary-glow: rgba(124, 91, 240, 0.15);
-  --color-accent-gradient: linear-gradient(135deg, #7c5bf0 0%, #5b8cf0 100%);
+  /* Accent Colors - mapped to theme */
+  --color-accent-primary: var(--accent);
+  --color-accent-secondary: var(--accent-hover);
+  --color-accent-primary-dim: var(--accent-muted);
+  --color-accent-primary-glow: var(--accent-muted);
+  --color-accent-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
 
-  /* Text Colors */
-  --color-text-primary: #f4f4f6;
-  --color-text-secondary: #a8a8b3;
-  --color-text-muted: #6b6b7a;
-  --color-text-link: #7c9dff;
-  --color-text-link-hover: #a3baff;
+  /* Text Colors - mapped to theme */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-link: var(--link-color);
+  --color-text-link-hover: var(--link-color);
 
-  /* Semantic Colors */
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
-  --color-danger: #f87171;
-  --color-error: #ff2d55;
-  --color-info: #60a5fa;
-  --color-online: #22c55e;
-  --color-idle: #facc15;
-  --color-dnd: #f87171;
+  /* Semantic Colors - mapped to theme */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-error: var(--danger);
+  --color-info: var(--info);
+  --color-online: var(--success);
+  --color-idle: var(--warning);
+  --color-dnd: var(--danger);
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
-  --shadow-glow-accent: 0 0 20px rgba(124, 91, 240, 0.25);
+  --shadow-glow-accent: 0 0 20px var(--accent-muted);
 
   /* Border Radius */
   --radius-sm: 4px;
@@ -71,16 +119,16 @@
   --transition-smooth: 250ms ease;
   --transition-spring: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* Legacy Compatibility (mapped to new system) */
-  --color-nodes-bg: var(--color-bg-primary);
-  --color-nodes-surface: var(--color-bg-secondary);
-  --color-nodes-primary: var(--color-accent-primary);
-  --color-nodes-primary-light: var(--color-accent-secondary);
-  --color-nodes-text: var(--color-text-primary);
-  --color-nodes-text-muted: var(--color-text-muted);
-  --color-nodes-border: var(--color-surface-border);
-  --color-nodes-accent: var(--color-success);
-  --color-nodes-danger: var(--color-danger);
+  /* Legacy Compatibility (mapped to theme system) */
+  --color-nodes-bg: var(--bg-primary);
+  --color-nodes-surface: var(--bg-secondary);
+  --color-nodes-primary: var(--accent);
+  --color-nodes-primary-light: var(--accent-hover);
+  --color-nodes-text: var(--text-primary);
+  --color-nodes-text-muted: var(--text-muted);
+  --color-nodes-border: var(--border);
+  --color-nodes-accent: var(--success);
+  --color-nodes-danger: var(--danger);
 }
 
 /* ── Base Typography ── */
@@ -95,7 +143,7 @@ html {
   font-family: var(--font-family-body);
   color: var(--color-text-primary);
   background: var(--color-bg-base);
-  font-size: 14px;
+  font-size: var(--font-size-base, 14px);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -123,12 +171,12 @@ code, pre, .font-mono {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.1));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover, rgba(255, 255, 255, 0.2));
 }
 
 /* Auto-hide scrollbar */

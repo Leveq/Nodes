@@ -21,6 +21,7 @@ interface IdentityState {
   keypair: KeyPair | null;
   profile: ProfileWithVisibility | null;
   profileVersion: number; // Increments on profile update to signal cache invalidation
+  avatarVersion: number; // Increments on avatar upload to signal re-fetch
   error: string | null;
 
   // Actions
@@ -48,6 +49,8 @@ interface IdentityState {
     newPassphrase: string,
   ) => Promise<void>;
   deleteIdentity: () => Promise<void>;
+  incrementAvatarVersion: () => void;
+  setAvatarCid: (cid: string) => void;
 }
 
 const keyManager = new KeyManager();
@@ -65,6 +68,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
   keypair: null,
   profile: null,
   profileVersion: 0,
+  avatarVersion: 0,
   error: null,
 
   createIdentity: async (displayName, passphrase, accountVisibility) => {
@@ -307,6 +311,21 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       keypair: null,
       profile: null,
       error: null,
+    });
+  },
+
+  incrementAvatarVersion: () => {
+    set((state) => ({ avatarVersion: state.avatarVersion + 1 }));
+  },
+
+  setAvatarCid: (cid: string) => {
+    const { profile } = get();
+    if (!profile) return;
+    set({
+      profile: {
+        ...profile,
+        data: { ...profile.data, avatar: cid },
+      },
     });
   },
 }));

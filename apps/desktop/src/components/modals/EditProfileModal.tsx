@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Modal } from "./Modal";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
 import { useTransport } from "../../providers/TransportProvider";
 import { getStatusColor } from "../../utils/status";
+import { processAvatarFromBlob } from "../../utils/image-processing";
+import { avatarManager } from "@nodes/transport-gun";
+import { Avatar } from "../ui";
+import { AvatarCropModal } from "../profile/AvatarCropModal";
 import type { UserStatus } from "@nodes/core";
 
 interface EditProfileModalProps {
@@ -24,7 +28,11 @@ const STATUS_OPTIONS: { value: UserStatus; label: string }[] = [
  */
 export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
   const profile = useIdentityStore((s) => s.profile);
+  const publicKey = useIdentityStore((s) => s.publicKey);
   const updateProfile = useIdentityStore((s) => s.updateProfile);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
+  const incrementAvatarVersion = useIdentityStore((s) => s.incrementAvatarVersion);
+  const setAvatarCid = useIdentityStore((s) => s.setAvatarCid);
   const addToast = useToastStore((s) => s.addToast);
   const transport = useTransport();
 
@@ -33,8 +41,10 @@ export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
   const initialStatus = (profile?.data.status as UserStatus) || "online";
   const [status, setStatus] = useState<UserStatus>(initialStatus);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
 
-  const initial = displayName[0]?.toUpperCase() || "?";
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = async () => {
     if (!displayName.trim()) {
@@ -66,30 +76,110 @@ export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
     }
   };
 
+  const handleAvatarClick = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = "";
+
+    const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      addToast("error", "Invalid image type. Use PNG, JPG, GIF, or WebP.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      addToast("error", "Image too large. Maximum size is 5MB.");
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    setCropImageUrl(url);
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    if (cropImageUrl) {
+      URL.revokeObjectURL(cropImageUrl);
+      setCropImageUrl(null);
+    }
+
+    setIsUploadingAvatar(true);
+    try {
+      const { full, small } = await processAvatarFromBlob(croppedBlob);
+      const { full: fullCid } = await avatarManager.uploadAvatar(full, small);
+      
+      // Update the avatar CID in the store for persistence
+      setAvatarCid(fullCid);
+      
+      // Increment avatar version to trigger re-fetch in all Avatar components
+      incrementAvatarVersion();
+      addToast("success", "Avatar updated!");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to upload avatar";
+      addToast("error", message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleCropCancel = () => {
+    if (cropImageUrl) {
+      URL.revokeObjectURL(cropImageUrl);
+      setCropImageUrl(null);
+    }
+  };
+
   return (
     <Modal title="Edit Profile" onClose={onClose} width="md">
       <div className="space-y-6">
-        {/* Avatar preview */}
+        {/* Avatar */}
         <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-full bg-nodes-primary/20 flex items-center justify-center">
-              <span className="text-nodes-primary font-bold text-2xl">{initial}</span>
-            </div>
-            {/* Status indicator */}
-            <div
-              className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-nodes-surface ${getStatusColor(status)}`}
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            onChange={handleAvatarChange}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={handleAvatarClick}
+            disabled={isUploadingAvatar}
+            className="relative group cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 rounded-full focus:outline-none focus:ring-2 focus:ring-nodes-primary hover:ring-2 hover:ring-nodes-primary/50 transition-all"
+          >
+            <Avatar
+              publicKey={publicKey ?? undefined}
+              displayName={displayName}
+              size="lg"
+              showPresence
+              presenceStatus={status}
+              avatarVersion={avatarVersion}
+              avatarCid={profile?.data.avatar}
             />
-          </div>
+            {/* Hover overlay */}
+            <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+              {isUploadingAvatar ? (
+                <svg className="w-6 h-6 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              )}
+            </div>
+          </button>
           <div className="flex-1">
-            <p className="text-sm text-nodes-text-muted mb-2">
-              Avatar customization coming soon
+            <p className="text-sm text-nodes-text mb-1">{displayName || "Your Name"}</p>
+            <p className="text-xs text-nodes-text-muted">
+              {isUploadingAvatar ? "Uploading..." : "Click avatar to change"}
             </p>
-            <button
-              disabled
-              className="px-3 py-1.5 text-sm bg-nodes-surface text-nodes-text-muted rounded-lg opacity-50 cursor-not-allowed"
-            >
-              Upload Avatar
-            </button>
           </div>
         </div>
 
@@ -169,6 +259,15 @@ export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
           </button>
         </div>
       </div>
+
+      {/* Avatar Crop Modal */}
+      {cropImageUrl && (
+        <AvatarCropModal
+          imageUrl={cropImageUrl}
+          onCrop={handleCropComplete}
+          onCancel={handleCropCancel}
+        />
+      )}
     </Modal>
   );
 }

@@ -8,6 +8,7 @@ import { usePermissions, useHasPermission } from "../../hooks/usePermissions";
 import { RolesTab } from "../settings/RolesTab";
 import { ModerationTab } from "../settings/ModerationTab";
 import { DiscoveryTab } from "../settings/DiscoveryTab";
+import { NodeAppearanceTab } from "../settings/NodeAppearanceTab";
 
 interface NodeSettingsModalProps {
   onClose: () => void;
@@ -35,7 +36,7 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
   const node = nodes.find((n) => n.id === activeNodeId) || null;
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"general" | "roles" | "moderation" | "discovery">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "roles" | "moderation" | "discovery" | "appearance">("general");
 
   const [name, setName] = useState(node?.name || "");
   const [description, setDescription] = useState(node?.description || "");
@@ -132,6 +133,13 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
             label="Discovery"
             isActive={activeTab === "discovery"}
             onClick={() => setActiveTab("discovery")}
+          />
+        )}
+        {isOwner && (
+          <TabButton
+            label="Appearance"
+            isActive={activeTab === "appearance"}
+            onClick={() => setActiveTab("appearance")}
           />
         )}
       </div>
@@ -259,6 +267,8 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
       {activeTab === "moderation" && <ModerationTab />}
 
       {activeTab === "discovery" && <DiscoveryTab />}
+
+      {activeTab === "appearance" && <NodeAppearanceTab />}
     </Modal>
   );
 }
