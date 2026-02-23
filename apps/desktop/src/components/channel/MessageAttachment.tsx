@@ -1,14 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { FILE_LIMITS, type FileAttachment } from "@nodes/core";
 import { useTransport } from "../../providers/TransportProvider";
-import { getIPFSPeerAdvertiser, IPFSService } from "@nodes/transport-gun";
+import { getIPFSPeerAdvertiser, IPFSService, getCachedDownload, setCachedDownload } from "@nodes/transport-gun";
 
-// Module-level cache for loaded image blob URLs
-// This survives component remounts (tab switches, scrolling, etc.)
+// Gateway URL for fallback (same as avatar-manager)
+const ipfsGatewayUrl = import.meta.env.VITE_IPFS_GATEWAY_URL;
+
+// Detect Tauri desktop (P2P is unreliable in WebView2)
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+
+// Module-level cache for loaded image blob URLs (memory - fast, survives tab switches)
+// This is layer 1 of the 2-layer cache: Memory (instant) → IndexedDB (persistent)
 const loadedImageCache = new Map<string, string>();
 
 // Track in-flight loads to prevent duplicate requests
 const inflightLoads = new Map<string, Promise<string>>();
+
+// Negative cache to prevent retry loops (60s TTL)
+const failedLoads = new Map<string, number>();
+const FAILURE_CACHE_TTL = 60_000;
 
 interface MessageAttachmentProps {
   attachment: FileAttachment;
@@ -82,11 +92,36 @@ function ImageAttachment({
   const cid = attachment.thumbnailCid || attachment.cid;
 
   const loadImage = useCallback(async () => {
-    // Check in-memory cache first (instant)
+    // Layer 1: Check in-memory cache (instant)
     const cached = loadedImageCache.get(cid);
     if (cached) {
       console.log('[MessageAttachment] Memory cache hit for CID:', cid);
       setImageUrl(cached);
+      setIsLoading(false);
+      return;
+    }
+
+    // Layer 2: Check IndexedDB cache (survives restarts)
+    try {
+      const cachedBytes = await getCachedDownload(cid);
+      if (cachedBytes) {
+        console.log('[MessageAttachment] IndexedDB cache hit for CID:', cid, 'Size:', cachedBytes.length);
+        const blob = new Blob([cachedBytes]);
+        const objectUrl = URL.createObjectURL(blob);
+        loadedImageCache.set(cid, objectUrl); // Populate memory cache too
+        setImageUrl(objectUrl);
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.log('[MessageAttachment] IndexedDB cache check failed:', err);
+    }
+
+    // Check negative cache (avoid retry loops)
+    const failedAt = failedLoads.get(cid);
+    if (failedAt && Date.now() - failedAt < FAILURE_CACHE_TTL) {
+      console.log(`[MessageAttachment] Skipping ${cid.slice(0, 12)}... - failed ${Math.round((Date.now() - failedAt) / 1000)}s ago`);
+      setError(true);
       setIsLoading(false);
       return;
     }
@@ -114,40 +149,106 @@ function ImageAttachment({
 
     // Create the load promise and track it
     const loadPromise = (async (): Promise<string> => {
-      // Step 1: Try to connect to the uploader's IPFS node first
-      const advertiser = getIPFSPeerAdvertiser();
-      const peerInfo = await advertiser.resolvePeerInfo(authorKey);
+      let data: Uint8Array | null = null;
 
-      let data: Uint8Array;
-
-      if (peerInfo && peerInfo.multiaddrs.length > 0) {
-        console.log('[MessageAttachment] Using peer hint with', peerInfo.multiaddrs.length, 'addrs');
+      // 1. Try staging gateway FIRST (fast, reliable, has pinned content)
+      if (ipfsGatewayUrl) {
         try {
-          data = await IPFSService.downloadWithPeerHint(
-            cid,
-            peerInfo.multiaddrs,
-            15000 // 15 second timeout
-          );
+          const url = `${ipfsGatewayUrl}/ipfs/${cid}`;
+          console.log('[MessageAttachment] Trying staging gateway:', url);
+          
+          const response = await fetch(url, {
+            signal: AbortSignal.timeout(5000), // 5s timeout
+          });
+
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            
+            // Save to IndexedDB cache for persistence across restarts
+            setCachedDownload(cid, bytes).catch(err => 
+              console.warn('[MessageAttachment] Failed to cache to IndexedDB:', err)
+            );
+            
+            const blob = new Blob([bytes]);
+            const objectUrl = URL.createObjectURL(blob);
+            console.log('[MessageAttachment] Staging gateway succeeded for CID:', cid);
+            loadedImageCache.set(cid, objectUrl);
+            return objectUrl;
+          }
         } catch (err) {
-          console.warn('[MessageAttachment] Peer hint download failed, trying direct:', err);
-          // Fall back to regular download
-          data = await IPFSService.download(cid, 30000);
+          console.log('[MessageAttachment] Staging gateway failed:', err instanceof Error ? err.message : err);
         }
-      } else {
-        console.log('[MessageAttachment] No peer info, trying direct download');
-        // No peer info available - try connecting anyway
-        await advertiser.connectToUser(authorKey);
-        data = await IPFSService.download(cid, 30000);
       }
 
-      console.log('[MessageAttachment] Got data:', data.length, 'bytes');
-      const blob = new Blob([data.buffer as ArrayBuffer]);
-      const url = URL.createObjectURL(blob);
-      
-      // Cache the blob URL
-      loadedImageCache.set(cid, url);
-      
-      return url;
+      // 2. Try P2P (skip on Tauri - WebView2 P2P is unreliable)
+      if (!isTauri) {
+        try {
+          const advertiser = getIPFSPeerAdvertiser();
+          const peerInfo = await advertiser.resolvePeerInfo(authorKey);
+
+          if (peerInfo && peerInfo.multiaddrs.length > 0) {
+            console.log('[MessageAttachment] Using peer hint with', peerInfo.multiaddrs.length, 'addrs');
+            data = await IPFSService.downloadWithPeerHint(
+              cid,
+              peerInfo.multiaddrs,
+              10000 // 10 second timeout (was 15)
+            );
+          } else {
+            console.log('[MessageAttachment] No peer info, trying direct download');
+            await advertiser.connectToUser(authorKey);
+            data = await IPFSService.download(cid, 15000); // 15s (was 30)
+          }
+
+          if (data) {
+            console.log('[MessageAttachment] P2P succeeded, got data:', data.length, 'bytes');
+            const blob = new Blob([data.buffer as ArrayBuffer]);
+            const objectUrl = URL.createObjectURL(blob);
+            loadedImageCache.set(cid, objectUrl);
+            return objectUrl;
+          }
+        } catch (err) {
+          console.log('[MessageAttachment] P2P failed:', err instanceof Error ? err.message : err);
+        }
+      } else {
+        console.log('[MessageAttachment] Skipping P2P (Tauri desktop)');
+      }
+
+      // 3. Try public gateways (last resort)
+      const publicGateways = [
+        `https://ipfs.io/ipfs/${cid}`,
+        `https://dweb.link/ipfs/${cid}`,
+        `https://w3s.link/ipfs/${cid}`,
+      ];
+
+      for (const url of publicGateways) {
+        try {
+          console.log('[MessageAttachment] Trying public gateway:', url);
+          const response = await fetch(url, {
+            signal: AbortSignal.timeout(8000),
+          });
+
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            
+            // Save to IndexedDB cache for persistence across restarts
+            setCachedDownload(cid, bytes).catch(err => 
+              console.warn('[MessageAttachment] Failed to cache to IndexedDB:', err)
+            );
+            
+            const blob = new Blob([bytes]);
+            const objectUrl = URL.createObjectURL(blob);
+            console.log('[MessageAttachment] Public gateway succeeded:', url);
+            loadedImageCache.set(cid, objectUrl);
+            return objectUrl;
+          }
+        } catch {
+          // Try next gateway
+        }
+      }
+
+      throw new Error('All fetch paths failed');
     })();
 
     inflightLoads.set(cid, loadPromise);
@@ -157,6 +258,7 @@ function ImageAttachment({
       setImageUrl(url);
     } catch (err) {
       console.error("[MessageAttachment] Failed to load image:", err);
+      failedLoads.set(cid, Date.now()); // Cache the failure
       setError(true);
     } finally {
       setIsLoading(false);

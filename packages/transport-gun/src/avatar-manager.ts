@@ -7,7 +7,13 @@ import { IPFSService } from "./ipfs-service";
  * Avatars are stored on IPFS with CIDs saved in the user's Gun graph.
  * A local LRU cache prevents re-fetching the same avatar repeatedly.
  * 
- * Dual-pin pattern:
+ * Fetch order (optimized for speed):
+ * 1. Memory cache (instant)
+ * 2. Staging gateway (5s timeout) - fast, reliable, always has pinned content
+ * 3. Helia P2P (10s timeout) - skipped on desktop/Tauri
+ * 4. Public gateways (8s each) - last resort
+ * 
+ * Dual-pin pattern on upload:
  * - Pin locally to Helia for P2P availability
  * - Pin to staging server for HTTP gateway availability (needed for desktop)
  */
@@ -17,6 +23,9 @@ let ipfsApiUrl: string | undefined;
 let ipfsGatewayUrl: string | undefined;
 // Custom fetch function for server pinning (Tauri uses native HTTP)
 let serverPinFetch: typeof fetch | undefined;
+
+// Detect if running in Tauri (desktop) - skip P2P, use gateway only
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
 
 /**
  * Configure IPFS endpoints for avatar pinning and fetching.
@@ -32,7 +41,7 @@ export function configureAvatarManager(config: {
   ipfsApiUrl = config.ipfsApiUrl;
   ipfsGatewayUrl = config.ipfsGatewayUrl;
   serverPinFetch = config.serverPinFetch;
-  console.log("[Avatar] Configured - API:", ipfsApiUrl, "Gateway:", ipfsGatewayUrl, "CustomFetch:", !!serverPinFetch);
+  console.log("[Avatar] Configured - API:", ipfsApiUrl, "Gateway:", ipfsGatewayUrl, "CustomFetch:", !!serverPinFetch, "Tauri:", isTauri);
 }
 
 // Gun acknowledgement type
@@ -43,6 +52,10 @@ interface GunAck {
 
 const AVATAR_CACHE_MAX = 200;
 const AVATAR_RESOLVE_TIMEOUT = 5000;
+const FAILURE_CACHE_TTL = 60000; // 60 seconds before retrying failed fetches
+const GATEWAY_TIMEOUT = 5000; // 5s for staging gateway (fast)
+const P2P_TIMEOUT = 10000; // 10s for Helia P2P
+const PUBLIC_GATEWAY_TIMEOUT = 8000; // 8s for public gateways
 
 interface CachedAvatar {
   objectUrl: string;
@@ -53,8 +66,11 @@ export class AvatarManager {
   // LRU cache: cacheKey → { objectUrl, cid }
   private cache = new Map<string, CachedAvatar>();
 
-  // Pending requests to avoid duplicate fetches
-  private pending = new Map<string, Promise<string | null>>();
+  // In-flight requests to deduplicate concurrent fetches
+  private inFlight = new Map<string, Promise<string | null>>();
+
+  // Negative cache: cacheKey → timestamp of failure (prevents retry loops)
+  private failedCache = new Map<string, number>();
 
   /**
    * Pin image data to the staging IPFS node.
@@ -176,7 +192,7 @@ export class AvatarManager {
 
   /**
    * Get a user's avatar as an object URL for rendering.
-   * Checks cache first, then fetches from IPFS.
+   * Checks cache first, then fetches from gateway/IPFS.
    *
    * @param publicKey - The user's public key
    * @param size - "full" (256px) or "small" (64px)
@@ -190,48 +206,60 @@ export class AvatarManager {
   ): Promise<string | null> {
     const cacheKey = `${publicKey}:${size}`;
 
-    // Check cache
+    // 1. Check memory cache (instant)
     const cached = this.cache.get(cacheKey);
     if (cached) {
-      // If we have a known CID and it doesn't match cached, invalidate cache
+      // If we have a known CID and it doesn't match cached, invalidate
       if (knownCid && cached.cid !== knownCid) {
-        console.log(`[Avatar] CID changed for ${cacheKey}: ${cached.cid} -> ${knownCid}, invalidating cache`);
+        console.log(`[Avatar] CID changed for ${cacheKey}: ${cached.cid} -> ${knownCid}, invalidating`);
         URL.revokeObjectURL(cached.objectUrl);
         this.cache.delete(cacheKey);
+        this.failedCache.delete(cacheKey); // Clear failure cache too
       } else {
-        console.log(`[Avatar] Cache hit for ${cacheKey}`);
-        // Move to end (most recently used)
+        // LRU bump: move to end
         this.cache.delete(cacheKey);
         this.cache.set(cacheKey, cached);
         return cached.objectUrl;
       }
     }
 
-    console.log(`[Avatar] Cache miss for ${cacheKey}, fetching...`);
-
-    // Check if we're already fetching this avatar
-    if (this.pending.has(cacheKey)) {
-      return this.pending.get(cacheKey)!;
+    // 2. Check negative cache (prevent retry loops)
+    const failedAt = this.failedCache.get(cacheKey);
+    if (failedAt && Date.now() - failedAt < FAILURE_CACHE_TTL) {
+      console.log(`[Avatar] Skipping ${cacheKey} - failed ${Math.round((Date.now() - failedAt) / 1000)}s ago`);
+      return null;
     }
 
-    // Start fetching
-    const fetchPromise = this.fetchAvatar(publicKey, size, cacheKey, knownCid);
-    this.pending.set(cacheKey, fetchPromise);
+    // 3. Deduplicate in-flight requests
+    const existing = this.inFlight.get(cacheKey);
+    if (existing) {
+      console.log(`[Avatar] Reusing in-flight request for ${cacheKey}`);
+      return existing;
+    }
+
+    // 4. Start fetch
+    console.log(`[Avatar] Cache miss for ${cacheKey}, fetching...`);
+    const promise = this.fetchAvatar(publicKey, size, cacheKey, knownCid);
+    this.inFlight.set(cacheKey, promise);
 
     try {
-      return await fetchPromise;
+      const result = await promise;
+      if (!result) {
+        // Cache the failure
+        this.failedCache.set(cacheKey, Date.now());
+      }
+      return result;
     } finally {
-      this.pending.delete(cacheKey);
+      this.inFlight.delete(cacheKey);
     }
   }
 
   /**
-   * Fetch an avatar from Gun → IPFS.
-   * Falls back to HTTP gateway if P2P fails (e.g., WebView2 WebRTC issues).
-   * 
-   * NOTE: Gateway fallback only works if avatars are pinned to a public service.
-   * Currently avatars are only on user's local Helia nodes with no DHT announcement,
-   * so gateways can't find them. TODO: Add pinning on upload for cross-platform support.
+   * Fetch an avatar. Order optimized for speed:
+   * 1. Resolve CID from Gun (or use knownCid)
+   * 2. Staging gateway (5s) - fast, reliable, has pinned content
+   * 3. Helia P2P (10s) - skipped on desktop/Tauri
+   * 4. Public gateways (8s each) - last resort
    */
   private async fetchAvatar(
     publicKey: string,
@@ -239,79 +267,85 @@ export class AvatarManager {
     cacheKey: string,
     knownCid?: string
   ): Promise<string | null> {
-    // Use known CID if provided, otherwise resolve from Gun
+    // Resolve CID
     let cid: string | null | undefined = knownCid;
     if (!cid) {
       const cidField = size === "full" ? "avatar" : "avatarSmall";
       cid = await this.resolveAvatarCid(publicKey, cidField);
     }
 
-    if (!cid) return null;
-
-    // Try P2P first (works on web/staging, may fail on desktop due to WebView2)
-    try {
-      // Ensure IPFS is initialized
-      if (!IPFSService.isReady()) {
-        await IPFSService.init();
-      }
-
-      // Fetch from IPFS - use shorter timeout (10s) since WebView2 P2P often fails
-      const data = await IPFSService.download(cid, 10000);
-      const blob = new Blob([data.buffer as ArrayBuffer], { type: "image/png" });
-      const objectUrl = URL.createObjectURL(blob);
-
-      // Add to cache
-      this.addToCache(cacheKey, objectUrl, cid);
-
-      return objectUrl;
-    } catch (err) {
-      console.warn(`[Avatar] P2P fetch failed for ${publicKey}, trying gateway:`, err);
+    if (!cid) {
+      console.log(`[Avatar] No CID found for ${publicKey}`);
+      return null;
     }
 
-    // Gateway fallback - works when P2P fails (e.g., Tauri desktop)
-    try {
-      const objectUrl = await this.fetchFromGateway(cid);
-      if (objectUrl) {
-        this.addToCache(cacheKey, objectUrl, cid);
-        return objectUrl;
-      }
-    } catch (err) {
-      console.error(`[Avatar] Gateway fallback also failed for ${publicKey}:`, err);
-    }
+    console.log(`[Avatar] Fetching CID ${cid.slice(0, 12)}... for ${publicKey.slice(0, 8)}...`);
 
-    return null;
-  }
-
-  /**
-   * Fetch avatar from IPFS HTTP gateway.
-   * Tries staging gateway first, then public gateways.
-   */
-  private async fetchFromGateway(cid: string): Promise<string | null> {
-    // Build gateway list - staging gateway first (has pinned content)
-    const gateways: string[] = [];
-    
+    // 1. Try staging gateway FIRST (fast, reliable)
     if (ipfsGatewayUrl) {
-      gateways.push(`${ipfsGatewayUrl}/ipfs/${cid}`);
-    }
-    
-    // Public gateways as fallback
-    gateways.push(
-      `https://ipfs.io/ipfs/${cid}`,
-      `https://dweb.link/ipfs/${cid}`,
-      `https://w3s.link/ipfs/${cid}`,
-    );
-
-    for (const url of gateways) {
       try {
-        console.log(`[Avatar] Trying gateway: ${url}`);
-        const response = await fetch(url, { 
-          signal: AbortSignal.timeout(8000) 
-        });
+        const url = `${ipfsGatewayUrl}/ipfs/${cid}`;
+        console.log(`[Avatar] Trying staging gateway: ${url}`);
         
+        // Use custom fetch (Tauri) if available, otherwise browser fetch
+        const fetchFn = serverPinFetch || fetch;
+        const response = await fetchFn(url, {
+          signal: AbortSignal.timeout(GATEWAY_TIMEOUT),
+        });
+
         if (response.ok) {
           const blob = await response.blob();
           const objectUrl = URL.createObjectURL(blob);
-          console.log(`[Avatar] Gateway fetch succeeded: ${url}`);
+          console.log(`[Avatar] Staging gateway succeeded for ${cid.slice(0, 12)}...`);
+          this.addToCache(cacheKey, objectUrl, cid);
+          return objectUrl;
+        }
+      } catch (err) {
+        console.log(`[Avatar] Staging gateway failed:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // 2. Try Helia P2P (skip on Tauri - WebView2 P2P is broken)
+    if (!isTauri) {
+      try {
+        if (!IPFSService.isReady()) {
+          await IPFSService.init();
+        }
+
+        console.log(`[Avatar] Trying Helia P2P for ${cid.slice(0, 12)}...`);
+        const data = await IPFSService.download(cid, P2P_TIMEOUT);
+        const blob = new Blob([data.buffer as ArrayBuffer], { type: "image/png" });
+        const objectUrl = URL.createObjectURL(blob);
+        console.log(`[Avatar] Helia P2P succeeded for ${cid.slice(0, 12)}...`);
+        this.addToCache(cacheKey, objectUrl, cid);
+        return objectUrl;
+      } catch (err) {
+        console.log(`[Avatar] Helia P2P failed:`, err instanceof Error ? err.message : err);
+      }
+    } else {
+      console.log(`[Avatar] Skipping Helia P2P (Tauri desktop)`);
+    }
+
+    // 3. Try public gateways (last resort)
+    const publicGateways = [
+      `https://ipfs.io/ipfs/${cid}`,
+      `https://dweb.link/ipfs/${cid}`,
+      `https://w3s.link/ipfs/${cid}`,
+    ];
+
+    for (const url of publicGateways) {
+      try {
+        console.log(`[Avatar] Trying public gateway: ${url}`);
+        const fetchFn = serverPinFetch || fetch;
+        const response = await fetchFn(url, {
+          signal: AbortSignal.timeout(PUBLIC_GATEWAY_TIMEOUT),
+        });
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          console.log(`[Avatar] Public gateway succeeded: ${url}`);
+          this.addToCache(cacheKey, objectUrl, cid);
           return objectUrl;
         }
       } catch {
@@ -319,7 +353,7 @@ export class AvatarManager {
       }
     }
 
-    console.warn(`[Avatar] All gateways failed for CID: ${cid}`);
+    console.warn(`[Avatar] All fetch paths failed for ${cid}`);
     return null;
   }
 
@@ -403,7 +437,8 @@ export class AvatarManager {
       URL.revokeObjectURL(entry.objectUrl);
     }
     this.cache.clear();
-    this.pending.clear();
+    this.inFlight.clear();
+    this.failedCache.clear();
   }
 
   /**

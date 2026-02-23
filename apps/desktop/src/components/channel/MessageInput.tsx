@@ -251,14 +251,16 @@ export function MessageInput({
 
       for (const pending of pendingAttachments) {
         try {
-          // Upload main file
-          const cid = await (transport.file as any).uploadBytes(pending.bytes);
+          // Upload main file (with mime type for server pinning)
+          const cid = await (transport.file as any).uploadBytes(pending.bytes, undefined, pending.file.type);
 
           // Upload thumbnail if exists
           let thumbnailCid: string | undefined;
           if (pending.thumbnail) {
             thumbnailCid = await (transport.file as any).uploadBytes(
-              pending.thumbnail
+              pending.thumbnail,
+              undefined,
+              "image/png" // Thumbnails are always PNG
             );
           }
 

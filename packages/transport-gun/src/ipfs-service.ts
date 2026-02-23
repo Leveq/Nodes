@@ -69,7 +69,11 @@ async function openCacheDb(): Promise<IDBDatabase> {
   });
 }
 
-async function getCachedDownload(cid: string): Promise<Uint8Array | null> {
+/**
+ * Get cached download from IndexedDB.
+ * Exported for use in gateway fallback paths (e.g., MessageAttachment).
+ */
+export async function getCachedDownload(cid: string): Promise<Uint8Array | null> {
   try {
     const db = await openCacheDb();
     return new Promise((resolve, reject) => {
@@ -86,7 +90,11 @@ async function getCachedDownload(cid: string): Promise<Uint8Array | null> {
   }
 }
 
-async function setCachedDownload(cid: string, data: Uint8Array): Promise<void> {
+/**
+ * Save download to IndexedDB cache.
+ * Exported for use in gateway fallback paths (e.g., MessageAttachment).
+ */
+export async function setCachedDownload(cid: string, data: Uint8Array): Promise<void> {
   try {
     const db = await openCacheDb();
     return new Promise((resolve, reject) => {

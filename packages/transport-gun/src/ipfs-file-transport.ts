@@ -7,15 +7,71 @@ import type {
 import { FILE_LIMITS } from "@nodes/core";
 import { IPFSService } from "./ipfs-service";
 
+// Configuration for server pinning (shared with avatar-manager)
+let ipfsApiUrl: string | undefined;
+let serverPinFetch: typeof fetch | undefined;
+
+/**
+ * Configure the IPFS file transport with server pinning settings.
+ * Call this from app initialization with Vite env vars.
+ * 
+ * @param config.ipfsApiUrl - IPFS API endpoint for pinning (e.g., http://localhost:5001)
+ * @param config.serverPinFetch - Custom fetch for server pinning (use Tauri's native HTTP to bypass CORS)
+ */
+export function configureFileTransport(config: {
+  ipfsApiUrl?: string;
+  serverPinFetch?: typeof fetch;
+}) {
+  ipfsApiUrl = config.ipfsApiUrl;
+  serverPinFetch = config.serverPinFetch;
+  console.log("[FileTransport] Configured - API:", ipfsApiUrl, "CustomFetch:", !!serverPinFetch);
+}
+
 /**
  * IPFSFileTransport implements IFileTransport using Helia/IPFS.
  *
  * Replaces the LocalFileTransport stub from Milestone 1.3.
  * Files are stored on IPFS and addressed by their CID.
+ * Dual-pinning: uploads go to both local Helia (P2P) and staging server (gateway).
  */
 export class IPFSFileTransport implements IFileTransport {
   private progressHandlers: Map<string, Set<(p: UploadProgress) => void>> =
     new Map();
+
+  /**
+   * Pin data to the staging IPFS server.
+   * Returns the server's CID (Qm format) which is guaranteed to be on the gateway.
+   */
+  private async pinToServer(data: Uint8Array, mimeType?: string): Promise<string | null> {
+    if (!ipfsApiUrl) {
+      console.log("[FileTransport] No IPFS_API_URL configured, skipping server pin");
+      return null;
+    }
+
+    const fetchFn = serverPinFetch || fetch;
+    
+    const formData = new FormData();
+    formData.append("file", new Blob([data.buffer as ArrayBuffer], { type: mimeType || "application/octet-stream" }));
+
+    try {
+      const res = await fetchFn(`${ipfsApiUrl}/api/v0/add`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        console.warn(`[FileTransport] Server pin failed: ${res.statusText}`);
+        return null;
+      }
+
+      const result = await res.json();
+      console.log("[FileTransport] Server pin successful:", result.Hash);
+      return result.Hash; // CID
+    } catch (err) {
+      console.warn("[FileTransport] Server pin error:", err);
+      return null;
+    }
+  }
 
   /**
    * Upload a file to IPFS.
@@ -42,8 +98,8 @@ export class IPFSFileTransport implements IFileTransport {
     // Generate a temporary ID for progress tracking
     const tempId = `upload_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-    // Upload to IPFS with progress tracking
-    const cid = await IPFSService.upload(data, (percent) => {
+    // 1. Upload to local Helia (P2P)
+    const heliaCid = await IPFSService.upload(data, (percent) => {
       this.emitProgress(tempId, {
         fileId: tempId,
         loaded: Math.floor((percent / 100) * file.size),
@@ -51,6 +107,13 @@ export class IPFSFileTransport implements IFileTransport {
         percentage: percent,
       });
     });
+
+    // 2. Pin to staging server (for gateway access)
+    let cid = heliaCid;
+    const serverCid = await this.pinToServer(data, file.type);
+    if (serverCid) {
+      cid = serverCid; // Use server CID - guaranteed to be on gateway
+    }
 
     // Build metadata
     const fileMetadata: FileMetadata = {
@@ -67,16 +130,26 @@ export class IPFSFileTransport implements IFileTransport {
 
   /**
    * Upload raw bytes to IPFS (for pre-encrypted data or processed images).
+   * Dual-pins to both Helia (P2P) and staging server (gateway).
    *
    * @param data - Raw bytes to upload
    * @param onProgress - Optional progress callback
-   * @returns The CID string
+   * @param mimeType - Optional MIME type for server pinning
+   * @returns The CID string (server CID if available, else Helia CID)
    */
   async uploadBytes(
     data: Uint8Array,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    mimeType?: string
   ): Promise<string> {
-    return IPFSService.upload(data, onProgress);
+    // 1. Upload to local Helia (P2P)
+    const heliaCid = await IPFSService.upload(data, onProgress);
+
+    // 2. Pin to staging server (for gateway access)
+    const serverCid = await this.pinToServer(data, mimeType);
+    
+    // Return server CID if available (guaranteed on gateway), else Helia CID
+    return serverCid || heliaCid;
   }
 
   /**
