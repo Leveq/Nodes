@@ -206,6 +206,15 @@ export class NodeManager {
   async isUserBanned(nodeId: string, publicKey: string): Promise<boolean> {
     const gun = GunInstanceManager.get();
     return new Promise((resolve) => {
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(false); // Assume not banned if can't fetch
+        }
+      }, 2000);
+
       gun
         .get("nodes")
         .get(nodeId)
@@ -213,11 +222,12 @@ export class NodeManager {
         .get(publicKey)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .once((data: any) => {
-          resolve(data !== null && data !== undefined && data.bannedAt);
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(!!data?.bannedAt);
+          }
         });
-
-      // Timeout fallback - assume not banned if can't fetch
-      setTimeout(() => resolve(false), 2000);
     });
   }
 
@@ -225,6 +235,12 @@ export class NodeManager {
    * Leave a Node (removes membership).
    */
   async leaveNode(nodeId: string, publicKey: string): Promise<void> {
+    // Prevent owner from leaving without transferring ownership
+    const node = await this.getNode(nodeId);
+    if (node?.owner === publicKey) {
+      throw new Error("Owner cannot leave. Transfer ownership first.");
+    }
+
     const gun = GunInstanceManager.get();
     const user = GunInstanceManager.user();
 
@@ -260,10 +276,17 @@ export class NodeManager {
       throw new Error("Invalid invite format. Expected: nodeId/inviteKey");
     }
 
-    return {
-      nodeId: parts[0],
-      inviteKey: parts[1],
-    };
+    const [nodeId, inviteKey] = parts;
+
+    if (!nodeId.startsWith("node-")) {
+      throw new Error("Invalid invite: malformed node ID.");
+    }
+
+    if (inviteKey.length < 20) {
+      throw new Error("Invalid invite: invite key too short.");
+    }
+
+    return { nodeId, inviteKey };
   }
 
   // ── Member Management ──
@@ -301,15 +324,24 @@ export class NodeManager {
       } else if (roles === "admin") {
         roleIds = [BUILT_IN_ROLE_IDS.ADMIN];
       } else {
-        roleIds = [];  // Member role is implicit
+        roleIds = [BUILT_IN_ROLE_IDS.MEMBER]; // Explicitly assign member role
       }
     }
 
-    gun.get("nodes").get(nodeId).get("members").get(publicKey).put({
-      publicKey,
-      joinedAt: Date.now(),
-      roles: JSON.stringify(roleIds),
-      role: legacyRole,  // Keep legacy field for backwards compat
+    return new Promise((resolve, reject) => {
+      gun.get("nodes").get(nodeId).get("members").get(publicKey).put(
+        {
+          publicKey,
+          joinedAt: Date.now(),
+          roles: JSON.stringify(roleIds),
+          role: legacyRole,  // Keep legacy field for backwards compat
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ack: any) => {
+          if (ack.err) reject(new Error(`Failed to add member: ${ack.err}`));
+          else resolve();
+        }
+      );
     });
   }
 
@@ -324,25 +356,11 @@ export class NodeManager {
           return;
         }
 
-        // Parse roles array (support both new and legacy format)
-        let roles: string[] = [];
-        if (data.roles) {
-          try {
-            roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
-          } catch {
-            roles = [];
-          }
-        } else if (data.role) {
-          // Legacy format: convert single role to array
-          if (data.role === "owner") roles = [BUILT_IN_ROLE_IDS.OWNER];
-          else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
-        }
-
         resolve({
           publicKey: data.publicKey,
           displayName: "", // Resolved separately via profile lookup
           joinedAt: data.joinedAt || 0,
-          roles,
+          roles: this.parseRolesFromGunData(data),
         });
       });
     });
@@ -367,25 +385,11 @@ export class NodeManager {
       gun.get("nodes").get(nodeId).get("members").map().once((data: any) => {
         if (!data || !data.publicKey) return;
 
-        // Parse roles array (support both new and legacy format)
-        let roles: string[] = [];
-        if (data.roles) {
-          try {
-            roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
-          } catch {
-            roles = [];
-          }
-        } else if (data.role) {
-          // Legacy format: convert single role to array
-          if (data.role === "owner") roles = [BUILT_IN_ROLE_IDS.OWNER];
-          else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
-        }
-
         members.push({
           publicKey: data.publicKey,
           displayName: "",
           joinedAt: data.joinedAt || 0,
-          roles,
+          roles: this.parseRolesFromGunData(data),
         });
       });
 
@@ -498,11 +502,11 @@ export class NodeManager {
   ): Promise<void> {
     const gun = GunInstanceManager.get();
 
-    if (updates.name) {
-      updates.name = sanitizeChannelName(updates.name);
-    }
+    const sanitized = updates.name
+      ? { ...updates, name: sanitizeChannelName(updates.name) }
+      : updates;
 
-    gun.get("nodes").get(nodeId).get("channels").get(channelId).put(updates);
+    gun.get("nodes").get(nodeId).get("channels").get(channelId).put(sanitized);
   }
 
   async deleteChannel(nodeId: string, channelId: string): Promise<void> {
@@ -550,14 +554,27 @@ export class NodeManager {
   }
 
   private async resolveNodeList(nodeIds: string[]): Promise<NodeServer[]> {
-    const nodes: NodeServer[] = [];
-    for (const id of nodeIds) {
-      const node = await this.getNode(id);
-      if (node && node.name) {
-        nodes.push(node);
+    const results = await Promise.allSettled(nodeIds.map(id => this.getNode(id)));
+    return results
+      .filter((r): r is PromiseFulfilledResult<NodeServer | null> => r.status === "fulfilled")
+      .map(r => r.value)
+      .filter((n): n is NodeServer => !!n && !!n.name);
+  }
+
+  private parseRolesFromGunData(data: { roles?: unknown; role?: string }): string[] {
+    if (data.roles) {
+      try {
+        if (typeof data.roles === "string") return JSON.parse(data.roles);
+        if (Array.isArray(data.roles)) return data.roles as string[];
+        return [];
+      } catch {
+        return [];
       }
     }
-    return nodes;
+    if (data.role === "owner") return [BUILT_IN_ROLE_IDS.OWNER];
+    if (data.role === "admin") return [BUILT_IN_ROLE_IDS.ADMIN];
+    if (data.role === "member") return [BUILT_IN_ROLE_IDS.MEMBER];
+    return [];
   }
 
   /**
@@ -586,25 +603,11 @@ export class NodeManager {
     const ref = gun.get("nodes").get(nodeId).get("members").map().on((data: any) => {
       if (!data || !data.publicKey) return;
 
-      // Parse roles array (support both new and legacy format)
-      let roles: string[] = [];
-      if (data.roles) {
-        try {
-          roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
-        } catch {
-          roles = [];
-        }
-      } else if (data.role) {
-        // Legacy format: convert single role to array
-        if (data.role === "owner") roles = [BUILT_IN_ROLE_IDS.OWNER];
-        else if (data.role === "admin") roles = [BUILT_IN_ROLE_IDS.ADMIN];
-      }
-
       const member: NodeMember = {
         publicKey: data.publicKey,
         displayName: "",
         joinedAt: data.joinedAt || 0,
-        roles,
+        roles: this.parseRolesFromGunData(data),
       };
 
       // Queue and schedule flush
@@ -654,6 +657,7 @@ export class NodeManager {
         nodeId: data.nodeId || nodeId,
         createdAt: data.createdAt || 0,
         position: data.position ?? 0,
+        slowMode: data.slowMode ?? 0,
       };
 
       // Queue and schedule flush
@@ -673,24 +677,26 @@ export class NodeManager {
 // ── Helpers ──
 
 function generateNodeId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
-  return `node-${timestamp}-${random}`;
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const random = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+  return `node-${Date.now().toString(36)}-${random}`;
 }
 
 function generateChannelId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
-  return `ch-${timestamp}-${random}`;
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const random = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+  return `ch-${Date.now().toString(36)}-${random}`;
 }
 
 function generateInviteKey(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let key = "";
-  for (let i = 0; i < 24; i++) {
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return key;
+  const bytes = new Uint8Array(18); // 18 bytes → 24 base64url chars
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
 }
 
 function sanitizeChannelName(name: string): string {
@@ -706,4 +712,60 @@ function sanitizeChannelName(name: string): string {
 function getDefaultIcon(name: string): string {
   // Return the first letter as a placeholder icon
   return name.charAt(0).toUpperCase();
+}
+
+/**
+ * Migration: patch members who were stored with empty roles[] due to a bug in addMember.
+ * For any member with roles: [] but a valid legacy `role` field, backfill the roles array.
+ * Safe to call multiple times (idempotent).
+ */
+export async function migrateMemberRoles(nodeId: string): Promise<void> {
+  const gun = GunInstanceManager.get();
+
+  return new Promise((resolve) => {
+    let pending = 0;
+    let scanComplete = false;
+
+    const checkDone = () => {
+      if (scanComplete && pending === 0) resolve();
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gun.get("nodes").get(nodeId).get("members").map().once((data: any, key: string) => {
+      if (!data || !data.publicKey) return;
+
+      // Parse current roles
+      let roles: string[] = [];
+      if (data.roles) {
+        try {
+          roles = typeof data.roles === "string" ? JSON.parse(data.roles) : data.roles;
+        } catch {
+          roles = [];
+        }
+      }
+
+      // Only migrate if roles is empty but legacy role field exists
+      if (roles.length === 0 && data.role) {
+        let migratedRoles: string[] = [BUILT_IN_ROLE_IDS.MEMBER];
+        if (data.role === "owner") migratedRoles = [BUILT_IN_ROLE_IDS.OWNER];
+        else if (data.role === "admin") migratedRoles = [BUILT_IN_ROLE_IDS.ADMIN];
+
+        pending++;
+        gun.get("nodes").get(nodeId).get("members").get(key).put(
+          { roles: JSON.stringify(migratedRoles) },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (_ack: any) => {
+            pending--;
+            checkDone();
+          }
+        );
+      }
+    });
+
+    // Give Gun time to enumerate members, then mark scan complete
+    setTimeout(() => {
+      scanComplete = true;
+      checkDone();
+    }, 3000);
+  });
 }
