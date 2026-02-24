@@ -16,7 +16,7 @@ export { AvatarManager, avatarManager, configureAvatarManager } from "./avatar-m
 export { IPFSPeerAdvertiser, getIPFSPeerAdvertiser } from "./ipfs-peer-advertiser";
 
 // Node management
-export { NodeManager } from "./node-manager";
+export { NodeManager, migrateMemberRoles } from "./node-manager";
 export { RoleManager, roleManager } from "./role-manager";
 export { ModerationManager, getModerationManager } from "./moderation-manager";
 export { DirectoryManager, directoryManager } from "./directory-manager";

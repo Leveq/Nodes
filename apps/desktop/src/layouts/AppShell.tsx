@@ -18,6 +18,7 @@ import { useModerationEvents } from "../hooks/useModerationEvents";
 import { useDirectoryRefresh } from "../hooks/useDirectoryRefresh";
 import { useTransport } from "../providers/TransportProvider";
 import { initNotificationManager } from "../services/notification-manager";
+import { migrateMemberRoles } from "@nodes/transport-gun";
 import { NodeSidebar } from "./NodeSidebar";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { MainContent } from "./MainContent";
@@ -149,7 +150,16 @@ export function AppShell() {
         useDMStore.getState().loadConversations(),
         initializeSocial(publicKey),
         initNotificationManager(),
-      ]).finally(() => {
+      ]).then(() => {
+        // Run member role migration for owned Nodes (fire-and-forget)
+        // Only the owner's client writes, to avoid concurrent Gun write races
+        const ownedNodes = useNodeStore.getState().nodes.filter(
+          (n) => n.owner === publicKey
+        );
+        for (const node of ownedNodes) {
+          migrateMemberRoles(node.id).catch(console.error);
+        }
+      }).finally(() => {
         setInitialLoadComplete(true);
       });
     }
