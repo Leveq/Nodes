@@ -19,10 +19,13 @@ interface NodeState {
   nodes: NodeServer[];
   activeNodeId: string | null;
   activeChannelId: string | null;
+  activeChannelByNode: Record<string, string>; // nodeId -> last selected channel
   channels: Record<string, NodeChannel[]>; // nodeId → channels
   members: Record<string, NodeMember[]>; // nodeId → members
   loadingChannels: Record<string, boolean>; // nodeId → loading state
-  isLoading: boolean;
+  isLoadingNodes: boolean;
+  isCreatingNode: boolean;
+  isJoiningNode: boolean;
   displayNameCache: Record<string, CachedDisplayName>; // publicKey → cached name
 
   // Actions
@@ -66,46 +69,53 @@ interface NodeState {
 
 const nodeManager = new NodeManager();
 
+/** Returns the preferred active channel id for a node, using per-node memory. */
+function pickChannelId(
+  remembered: string | undefined,
+  channels: NodeChannel[]
+): string | null {
+  if (channels.length === 0) return null;
+  if (remembered && channels.some((c) => c.id === remembered)) return remembered;
+  return channels[0].id;
+}
+
 export const useNodeStore = create<NodeState>((set, get) => ({
   nodes: [],
   activeNodeId: null,
   activeChannelId: null,
+  activeChannelByNode: {},
   channels: {},
   members: {},
   loadingChannels: {},
-  isLoading: false,
+  isLoadingNodes: false,
+  isCreatingNode: false,
+  isJoiningNode: false,
   displayNameCache: {},
 
   loadUserNodes: async () => {
-    set({ isLoading: true });
+    set({ isLoadingNodes: true });
     try {
       const nodes = await nodeManager.getUserNodes();
-      set({ nodes, isLoading: false });
+      set({ nodes, isLoadingNodes: false });
 
       // If we have nodes but no active one, select the first
       if (nodes.length > 0 && !get().activeNodeId) {
         get().setActiveNode(nodes[0].id);
       }
-      
-      // Load channels for ALL nodes in background (needed for notifications)
-      // This ensures useNodeSubscriptions can subscribe to all channels
-      for (const node of nodes) {
-        get().loadChannels(node.id);
-      }
     } catch (err: unknown) {
-      set({ isLoading: false });
+      set({ isLoadingNodes: false });
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load Nodes: ${message}`);
     }
   },
 
   createNode: async (name, description, icon, creatorKey) => {
-    set({ isLoading: true });
+    set({ isCreatingNode: true });
     try {
       const node = await nodeManager.createNode(name, description, icon, creatorKey);
       set((state) => ({
         nodes: [...state.nodes, node],
-        isLoading: false,
+        isCreatingNode: false,
       }));
 
       // Auto-select the new Node
@@ -114,7 +124,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       useToastStore.getState().addToast("success", `Node "${name}" created.`);
       return node;
     } catch (err: unknown) {
-      set({ isLoading: false });
+      set({ isCreatingNode: false });
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to create Node: ${message}`);
       throw err;
@@ -122,21 +132,24 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   joinNode: async (inviteString, publicKey) => {
-    set({ isLoading: true });
+    set({ isJoiningNode: true });
     try {
       const invite = nodeManager.parseInvite(inviteString);
       const node = await nodeManager.joinNode(invite, publicKey);
 
       set((state) => ({
-        nodes: [...state.nodes, node],
-        isLoading: false,
+        // Avoid duplicates: only append if node not already in list
+        nodes: state.nodes.some((n) => n.id === node.id)
+          ? state.nodes
+          : [...state.nodes, node],
+        isJoiningNode: false,
       }));
 
       get().setActiveNode(node.id);
 
       useToastStore.getState().addToast("success", `Joined "${node.name}".`);
     } catch (err: unknown) {
-      set({ isLoading: false });
+      set({ isJoiningNode: false });
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", message);
       throw err;
@@ -148,12 +161,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const node = get().nodes.find((n) => n.id === nodeId);
       await nodeManager.leaveNode(nodeId, publicKey);
 
-      set((state) => ({
-        nodes: state.nodes.filter((n) => n.id !== nodeId),
-        activeNodeId: state.activeNodeId === nodeId ? null : state.activeNodeId,
-        activeChannelId:
-          state.activeNodeId === nodeId ? null : state.activeChannelId,
-      }));
+      get().removeNodeFromState(nodeId);
 
       useToastStore.getState().addToast("info", `Left "${node?.name || "Node"}".`);
     } catch (err: unknown) {
@@ -187,12 +195,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const node = get().nodes.find((n) => n.id === nodeId);
       await nodeManager.deleteNode(nodeId);
 
-      set((state) => ({
-        nodes: state.nodes.filter((n) => n.id !== nodeId),
-        activeNodeId: state.activeNodeId === nodeId ? null : state.activeNodeId,
-        activeChannelId:
-          state.activeNodeId === nodeId ? null : state.activeChannelId,
-      }));
+      get().removeNodeFromState(nodeId);
 
       useToastStore.getState().addToast("info", `Node "${node?.name || ""}" deleted.`);
     } catch (err: unknown) {
@@ -229,13 +232,18 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     // Check if we have cached data for this node
     const cachedChannels = nodeId ? get().channels[nodeId] : null;
     const cachedMembers = nodeId ? get().members[nodeId] : null;
-    const firstChannelId = cachedChannels?.[0]?.id ?? null;
+
+    // Pick the active channel: last-visited channel for this node → first cached → null
+    let activeChannelId: string | null = null;
+    if (nodeId && cachedChannels && cachedChannels.length > 0) {
+      activeChannelId = pickChannelId(get().activeChannelByNode[nodeId], cachedChannels);
+    }
     
     // Get the node to check for theme
     const node = nodeId ? get().nodes.find((n) => n.id === nodeId) : null;
 
     // Set active node and channel immediately
-    set({ activeNodeId: nodeId, activeChannelId: firstChannelId });
+    set({ activeNodeId: nodeId, activeChannelId });
     
     // Apply or clear Node theme
     const themeStore = useThemeStore.getState();
@@ -266,12 +274,18 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   setActiveChannel: (channelId) => {
-    console.log("[NodeStore] setActiveChannel called with:", channelId);
-    set({ activeChannelId: channelId });
+    const activeNodeId = get().activeNodeId;
+    if (channelId && activeNodeId) {
+      set((state) => ({
+        activeChannelId: channelId,
+        activeChannelByNode: { ...state.activeChannelByNode, [activeNodeId]: channelId },
+      }));
+    } else {
+      set({ activeChannelId: channelId });
+    }
     
     // Clear mention count and unread count when viewing a channel
     if (channelId) {
-      console.log("[NodeStore] Clearing mention count and unread for channel:", channelId);
       useNotificationStore.getState().clearMentionCount(channelId);
       useMessageStore.getState().clearUnread(channelId);
     }
@@ -293,9 +307,9 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         loadingChannels: { ...state.loadingChannels, [nodeId]: false },
       }));
 
-      // Auto-select first channel if none active
-      if (!get().activeChannelId && channels.length > 0) {
-        set({ activeChannelId: channels[0].id });
+      // If this is the active node, set the active channel to the last-visited or first channel
+      if (get().activeNodeId === nodeId && channels.length > 0) {
+        set({ activeChannelId: pickChannelId(get().activeChannelByNode[nodeId], channels) });
       }
     } catch (err: unknown) {
       set((state) => ({
@@ -334,6 +348,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   createChannel: async (nodeId, name, topic = "", type = "text") => {
     try {
       const existingChannels = get().channels[nodeId] || [];
+      // Position is appended at the end; gaps/reordering are acceptable for alpha
       const position = existingChannels.length;
 
       await nodeManager.createChannel(nodeId, name, type, topic, position);

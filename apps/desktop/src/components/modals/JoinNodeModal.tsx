@@ -12,7 +12,7 @@ interface JoinNodeModalProps {
  * Modal for joining a Node via invite link.
  */
 export function JoinNodeModal({ onClose }: JoinNodeModalProps) {
-  const { joinNode, isLoading } = useNodeStore();
+  const { joinNode, isJoiningNode } = useNodeStore();
   const { publicKey } = useIdentityStore();
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
@@ -63,8 +63,8 @@ export function JoinNodeModal({ onClose }: JoinNodeModalProps) {
           <Button variant="ghost" onClick={onClose} type="button">
             Cancel
           </Button>
-          <Button variant="primary" type="submit" disabled={isLoading}>
-            {isLoading ? "Joining..." : "Join Node"}
+          <Button variant="primary" type="submit" disabled={isJoiningNode}>
+            {isJoiningNode ? "Joining..." : "Join Node"}
           </Button>
         </div>
       </form>
