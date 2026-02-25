@@ -11,6 +11,7 @@ interface SocialState {
   outgoingRequests: FriendRequest[];
   blockedUsers: BlockedUser[];
   isLoading: boolean;
+  activeMyKey: string | null;
 
   // Active subscriptions
   friendsSub: Unsubscribe | null;
@@ -42,11 +43,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   outgoingRequests: [],
   blockedUsers: [],
   isLoading: false,
+  activeMyKey: null,
   friendsSub: null,
   outgoingSub: null,
   inboxSub: null,
 
   initialize: async (myKey) => {
+    set({ activeMyKey: myKey });
+
     const state = get();
     
     // Clean up old subscriptions
@@ -120,6 +124,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       const inboxSub = socialManager.subscribeInbox(myKey, async (requestId, fromKey) => {
         // Validate by checking the actual request
         const request = await socialManager.getRequest(requestId);
+        if (get().activeMyKey !== myKey) {
+          return; // Stale subscription — re-initialized with a different key
+        }
         if (!request || request.status !== "pending" || request.toKey !== myKey) {
           return; // Invalid or already processed
         }
@@ -276,6 +283,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         incomingRequests: state.incomingRequests.filter(
           (r) => r.fromKey !== publicKey
         ),
+        outgoingRequests: state.outgoingRequests.filter(
+          (r) => r.toKey !== publicKey
+        ),
       }));
 
       useToastStore.getState().addToast("info", "User blocked.");
@@ -361,6 +371,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       incomingRequests: [],
       outgoingRequests: [],
       blockedUsers: [],
+      activeMyKey: null,
       friendsSub: null,
       outgoingSub: null,
       inboxSub: null,
