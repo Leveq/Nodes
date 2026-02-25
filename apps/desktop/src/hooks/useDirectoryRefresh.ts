@@ -16,30 +16,41 @@ export function useDirectoryRefresh() {
   const channels = useNodeStore((s) => s.channels);
   const members = useNodeStore((s) => s.members);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (!isAuthenticated || !publicKey) return;
 
     const refreshOwned = async () => {
-      for (const node of nodes) {
-        // Only refresh Nodes I own
-        if (node.owner !== publicKey) continue;
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        for (const node of nodes) {
+          // Only refresh Nodes I own
+          if (node.owner !== publicKey) continue;
 
-        const isListed = await directoryManager.isListed(node.id);
-        if (!isListed) continue;
+          try {
+            const isListed = await directoryManager.isListed(node.id);
+            if (!isListed) continue;
 
-        const nodeChannels = channels[node.id] || [];
-        const nodeMembers = members[node.id] || [];
+            const nodeChannels = channels[node.id] || [];
+            const nodeMembers = members[node.id] || [];
 
-        // Refresh the listing with current data
-        await directoryManager.refreshListing(node.id, {
-          memberCount: nodeMembers.length,
-          channelCount: nodeChannels.length,
-          channelNames: nodeChannels.map((c) => c.name),
-          name: node.name,
-          description: node.description,
-          icon: node.icon,
-        });
+            // Refresh the listing with current data
+            await directoryManager.refreshListing(node.id, {
+              memberCount: nodeMembers.length,
+              channelCount: nodeChannels.length,
+              channelNames: nodeChannels.map((c) => c.name),
+              name: node.name,
+              description: node.description,
+              icon: node.icon,
+            });
+          } catch {
+            // Isolate per-node errors so other nodes still get refreshed
+          }
+        }
+      } finally {
+        inFlightRef.current = false;
       }
     };
 
