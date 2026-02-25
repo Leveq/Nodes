@@ -23,6 +23,7 @@ export function useNodeSubscriptions() {
   const transport = useTransport();
   const nodes = useNodeStore((s) => s.nodes);
   const allChannels = useNodeStore((s) => s.channels);
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
   const publicKey = useIdentityStore((s) => s.publicKey);
 
   // Store all channel subscriptions for cleanup
@@ -38,7 +39,7 @@ export function useNodeSubscriptions() {
   const channelToNodeRef = useRef<Map<string, { nodeId: string; nodeName: string }>>(new Map());
 
   useEffect(() => {
-    if (!transport || nodes.length === 0) {
+    if (!isAuthenticated || !publicKey || !transport || nodes.length === 0) {
       return;
     }
 
@@ -192,13 +193,13 @@ export function useNodeSubscriptions() {
       subscriptionsRef.current.forEach((unsub) => unsub());
       subscriptionsRef.current = [];
     };
-  }, [transport, publicKey, allChannels, nodes]);
+  }, [transport, isAuthenticated, publicKey, allChannels, nodes]);
 
   // Subscribe to channel list changes for real-time channel creation detection
   const channelSubsRef = useRef<Map<string, () => void>>(new Map());
   
   useEffect(() => {
-    if (nodes.length === 0) return;
+    if (!isAuthenticated || !publicKey || nodes.length === 0) return;
 
     // Subscribe to each node's channel list
     for (const node of nodes) {
@@ -237,5 +238,5 @@ export function useNodeSubscriptions() {
       channelSubsRef.current.forEach((unsub) => unsub());
       channelSubsRef.current.clear();
     };
-  }, [nodes]);
+  }, [isAuthenticated, publicKey, nodes]);
 }

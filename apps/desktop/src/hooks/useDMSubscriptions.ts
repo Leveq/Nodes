@@ -25,6 +25,7 @@ interface PendingDMMessage {
 export function useDMSubscriptions() {
   const conversations = useDMStore((s) => s.conversations);
   const activeConversationId = useDMStore((s) => s.activeConversationId);
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
   const keypair = useIdentityStore((s) => s.keypair);
   const publicKey = useIdentityStore((s) => s.publicKey);
 
@@ -143,7 +144,7 @@ export function useDMSubscriptions() {
   }, [flushPending]);
 
   useEffect(() => {
-    if (!keypair || !publicKey) return;
+    if (!isAuthenticated || !keypair || !publicKey) return;
 
     // Unsubscribe from active conversation (DMView handles it)
     if (activeConversationId && subscriptionsRef.current.has(activeConversationId)) {
@@ -243,11 +244,11 @@ export function useDMSubscriptions() {
         initialLoadDoneRef.current.delete(convId);
       }
     }
-  }, [conversations, activeConversationId, keypair, publicKey, handleMessage]);
+  }, [conversations, activeConversationId, isAuthenticated, keypair, publicKey, handleMessage]);
 
   // Subscribe to new incoming DMs (from inbox)
   useEffect(() => {
-    if (!keypair || !publicKey) return;
+    if (!isAuthenticated || !keypair || !publicKey) return;
 
     const unsub = dmManager.subscribeConversations((newConv) => {
       // Check if we already have this conversation
@@ -260,11 +261,11 @@ export function useDMSubscriptions() {
     return () => {
       unsub();
     };
-  }, [keypair, publicKey]);
+  }, [isAuthenticated, keypair, publicKey]);
 
   // Periodic poll for new conversations (fallback for Gun subscription issues)
   useEffect(() => {
-    if (!keypair || !publicKey) return;
+    if (!isAuthenticated || !keypair || !publicKey) return;
 
     const pollInterval = setInterval(async () => {
       try {
@@ -282,7 +283,7 @@ export function useDMSubscriptions() {
     }, 10000); // Poll every 10 seconds
 
     return () => clearInterval(pollInterval);
-  }, [keypair, publicKey]);
+  }, [isAuthenticated, keypair, publicKey]);
 
   // Cleanup on unmount
   useEffect(() => {

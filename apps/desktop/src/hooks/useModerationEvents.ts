@@ -10,6 +10,7 @@ import type { KickNotification } from "@nodes/core";
  * When detected, removes the Node from the sidebar and shows a notification.
  */
 export function useModerationEvents() {
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
   const publicKey = useIdentityStore((s) => s.publicKey);
   const nodes = useNodeStore((s) => s.nodes);
   const removeNodeFromState = useNodeStore((s) => s.removeNodeFromState);
@@ -21,7 +22,7 @@ export function useModerationEvents() {
   const subscriptionStart = useRef<number>(Date.now());
 
   useEffect(() => {
-    if (!publicKey) return;
+    if (!isAuthenticated || !publicKey) return;
     
     // Update subscription start time when effect runs
     subscriptionStart.current = Date.now();
@@ -95,7 +96,7 @@ export function useModerationEvents() {
         }
       }
     };
-  }, [publicKey, nodes, removeNodeFromState, addToast]);
+  }, [isAuthenticated, publicKey, nodes, removeNodeFromState, addToast]);
 
   // Clean up old processed kicks periodically (memory hygiene)
   useEffect(() => {
