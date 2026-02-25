@@ -32,6 +32,8 @@ export function useDisplayName(publicKey: string | undefined): {
   const identityDisplayName = useIdentityStore((s) => s.profile?.data.displayName);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!publicKey) {
       setDisplayName("Unknown");
       setIsLoading(false);
@@ -88,6 +90,7 @@ export function useDisplayName(publicKey: string | undefined): {
     profileManager
       .getPublicProfile(publicKey)
       .then((profile) => {
+        if (cancelled) return;
         const name =
           profile?.displayName || `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
         displayNameCache.set(publicKey, name);
@@ -99,11 +102,18 @@ export function useDisplayName(publicKey: string | undefined): {
         }
       })
       .catch(() => {
+        if (cancelled) return;
         const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
         displayNameCache.set(publicKey, fallback);
         setDisplayName(fallback);
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [publicKey, activeNodeId, identityPublicKey, identityDisplayName]);
 
   return { displayName, isLoading };

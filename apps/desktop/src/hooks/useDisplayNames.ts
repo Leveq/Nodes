@@ -27,7 +27,7 @@ export function useDisplayNames(publicKeys: string[]): {
   const identityDisplayName = useIdentityStore((s) => s.profile?.data.displayName);
 
   // Create a stable key for the publicKeys array
-  const publicKeysKey = publicKeys.join(",");
+  const publicKeysKey = Array.from(new Set(publicKeys)).sort().join(",");
 
   useEffect(() => {
     if (publicKeys.length === 0) {
@@ -36,10 +36,13 @@ export function useDisplayNames(publicKeys: string[]): {
       return;
     }
 
+    let cancelled = false;
+
     const resolveNames = async () => {
       setIsLoading(true);
       const result: Record<string, string> = {};
       const members = useNodeStore.getState().members;
+      const missingKeys: string[] = [];
 
       for (const publicKey of publicKeys) {
         // System
@@ -73,30 +76,43 @@ export function useDisplayNames(publicKeys: string[]): {
           }
         }
 
-        // Fetch from profile
-        try {
-          const profile = await profileManager.getPublicProfile(publicKey);
-          const name =
-            profile?.displayName ||
-            `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
-          displayNameCache.set(publicKey, name);
-          result[publicKey] = name;
-          // Cache avatar CID for use by Avatar components
-          if (profile?.avatar) {
-            setCachedAvatarCid(publicKey, profile.avatar);
-          }
-        } catch {
-          const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
-          displayNameCache.set(publicKey, fallback);
-          result[publicKey] = fallback;
-        }
+        // Needs a profile fetch
+        missingKeys.push(publicKey);
       }
 
-      setDisplayNames(result);
-      setIsLoading(false);
+      // Fetch all missing keys in parallel
+      await Promise.all(
+        missingKeys.map(async (publicKey) => {
+          try {
+            const profile = await profileManager.getPublicProfile(publicKey);
+            const name =
+              profile?.displayName ||
+              `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
+            displayNameCache.set(publicKey, name);
+            result[publicKey] = name;
+            // Cache avatar CID for use by Avatar components
+            if (profile?.avatar) {
+              setCachedAvatarCid(publicKey, profile.avatar);
+            }
+          } catch {
+            const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
+            displayNameCache.set(publicKey, fallback);
+            result[publicKey] = fallback;
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setDisplayNames(result);
+        setIsLoading(false);
+      }
     };
 
     resolveNames();
+
+    return () => {
+      cancelled = true;
+    };
   }, [publicKeysKey, activeNodeId, identityPublicKey, identityDisplayName]);
 
   return { displayNames, isLoading };
