@@ -51,6 +51,7 @@ export function MessageInput({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
   const { ipfsReady, ...transport } = useTransport();
@@ -77,6 +78,9 @@ export function MessageInput({
       textareaRef.current.focus();
     }
   }, [replyTarget]);
+
+  // Keep ref in sync with latest pendingAttachments for cleanup
+  pendingAttachmentsRef.current = pendingAttachments;
 
   // Merge external attachments (from drag-and-drop)
   useEffect(() => {
@@ -127,10 +131,11 @@ export function MessageInput({
   }, [channelId]);
 
   const handleTyping = useCallback(() => {
-    if (!transport) return;
+    const currentTransport = transportRef.current;
+    if (!currentTransport?.presence) return;
 
     // Set typing to true
-    transport.presence.setTyping(channelId, true).catch((err) => {
+    currentTransport.presence.setTyping(channelId, true).catch((err) => {
       console.error("[MessageInput] setTyping error:", err);
     });
 
@@ -141,9 +146,9 @@ export function MessageInput({
 
     // Set timeout to clear typing after 3 seconds
     typingTimeoutRef.current = window.setTimeout(() => {
-      transport.presence.setTyping(channelId, false).catch(() => {});
+      transportRef.current?.presence?.setTyping(channelId, false).catch(() => {});
     }, 3000);
-  }, [channelId, transport]);
+  }, [channelId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
@@ -439,7 +444,7 @@ export function MessageInput({
   // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => {
-      pendingAttachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      pendingAttachmentsRef.current.forEach((a) => URL.revokeObjectURL(a.previewUrl));
     };
   }, []);
 

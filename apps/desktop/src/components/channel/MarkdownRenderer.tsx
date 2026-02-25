@@ -84,6 +84,21 @@ function processTextWithMentions(children: React.ReactNode): React.ReactNode {
   return processChild(children);
 }
 
+// Allowlist of safe URL schemes for links and images
+const ALLOWED_URL_SCHEMES = ["http:", "https:", "mailto:"];
+
+/**
+ * Returns true if the given URL has an allowlisted scheme.
+ */
+function isSafeUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    return ALLOWED_URL_SCHEMES.includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * MarkdownRenderer renders message content with Markdown formatting.
  *
@@ -127,9 +142,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       e.preventDefault();
       if (!href) return;
 
-      // Check for javascript: protocol (security)
-      if (href.toLowerCase().startsWith("javascript:")) {
-        console.warn("[Markdown] Blocked javascript: URL");
+      // Only allow safelisted schemes
+      if (!isSafeUrl(href)) {
+        console.warn("[Markdown] Blocked URL with non-allowlisted scheme:", href);
         return;
       }
 
@@ -248,15 +263,18 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     // Horizontal rule
     hr: () => <hr className="border-nodes-border my-4" />,
 
-    // Images in markdown (basic support)
-    img: ({ src, alt }) => (
-      <img
-        src={src}
-        alt={alt || ""}
-        className="max-w-full h-auto rounded my-2"
-        loading="lazy"
-      />
-    ),
+    // Images in markdown (basic support, only safe schemes)
+    img: ({ src, alt }) => {
+      if (!isSafeUrl(src)) return null;
+      return (
+        <img
+          src={src}
+          alt={alt || ""}
+          className="max-w-full h-auto rounded my-2"
+          loading="lazy"
+        />
+      );
+    },
 
     // Tables (GFM)
     table: ({ children }) => (
