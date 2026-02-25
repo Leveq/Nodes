@@ -15,6 +15,7 @@ interface DiscoveryStore {
   setIsLoading: (loading: boolean) => void;
   setSelectedNode: (node: DirectoryListing | null) => void;
   setViewMode: (mode: "grid" | "list") => void;
+  reset: () => void;
 
   // Computed: filtered and sorted listings
   getFilteredListings: () => DirectoryListing[];
@@ -53,6 +54,15 @@ export const useDiscoveryStore = create<DiscoveryStore>((set, get) => ({
   setIsLoading: (isLoading) => set({ isLoading }),
   setSelectedNode: (node) => set({ selectedNode: node }),
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  reset: () => set({
+    listings: [],
+    filters: { sortBy: "members" },
+    isLoading: true,
+    selectedNode: null,
+    viewMode: "grid",
+    popularTags: [],
+  }),
 
   getFilteredListings: () => {
     const { listings, filters } = get();

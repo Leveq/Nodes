@@ -45,6 +45,7 @@ interface DMState {
   resolveEpub: (publicKey: string) => Promise<string>;
   updateConversation: (conversation: DMConversation) => void;
   cleanup: () => void;
+  reset: () => void;
 }
 
 const dmManager = new DMManager();
@@ -342,6 +343,24 @@ export const useDMStore = create<DMState>((set, get) => ({
       messages: {},
       typingUsers: {},
       unreadCounts: {},
+    });
+  },
+
+  reset: () => {
+    const { activeMessageSub, activeTypingSub } = get();
+    if (activeMessageSub) activeMessageSub();
+    if (activeTypingSub) activeTypingSub();
+    dmManager.cleanup();
+    set({
+      conversations: [],
+      activeConversationId: null,
+      messages: {},
+      typingUsers: {},
+      unreadCounts: {},
+      isLoading: false,
+      epubCache: {},
+      activeMessageSub: null,
+      activeTypingSub: null,
     });
   },
 }));

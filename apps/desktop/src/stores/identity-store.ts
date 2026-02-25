@@ -12,6 +12,13 @@ import type {
   ProfileWithVisibility,
 } from "@nodes/transport-gun";
 import type { FieldVisibility } from "@nodes/core";
+import { useNodeStore } from "./node-store";
+import { useDMStore } from "./dm-store";
+import { useNotificationStore } from "./notification-store";
+import { useMessageStore } from "./message-store";
+import { useNavigationStore } from "./navigation-store";
+import { useSearchStore } from "./search-store";
+import { useDiscoveryStore } from "./discovery-store";
 
 interface IdentityState {
   // State
@@ -31,7 +38,7 @@ interface IdentityState {
     accountVisibility: "public" | "private",
   ) => Promise<void>;
   login: (passphrase: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateProfile: (updates: Partial<ProfileData>) => Promise<void>;
   updateFieldVisibility: (
     field: keyof ProfileData,
@@ -60,6 +67,22 @@ const presenceTransport = new GunPresenceTransport();
 
 // LocalStorage key for the encrypted keystore
 const KEYSTORE_KEY = "nodes:keystore";
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error(message));
+      }
+    }, ms);
+    promise.then(
+      (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+      (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
+    );
+  });
+}
 
 export const useIdentityStore = create<IdentityState>((set, get) => ({
   isAuthenticated: false,
@@ -158,12 +181,11 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       // 6. Load profile from user graph (with timeout)
       let profile: ProfileWithVisibility | null = null;
       try {
-        profile = await Promise.race([
+        profile = await withTimeout(
           profileManager.getOwnProfile(keypair),
-          new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error("Profile load timeout")), 5000)
-          ),
-        ]);
+          5000,
+          "Profile load timeout"
+        );
       } catch {
         // Profile might not exist yet or Gun is slow, continue with null profile
         profile = null;
@@ -183,12 +205,20 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
     }
   },
 
-  logout: () => {
-    // Set offline and stop heartbeat
-    presenceTransport.goOffline().catch(() => {
-      // Ignore errors during logout
-    });
-    
+  logout: async () => {
+    // 1. Go offline
+    await presenceTransport.goOffline().catch(() => {});
+
+    // 2. Reset session-scoped stores
+    useNodeStore.getState().reset();
+    useDMStore.getState().reset();
+    useNotificationStore.getState().reset();
+    useMessageStore.getState().reset();
+    useNavigationStore.getState().reset();
+    useSearchStore.getState().reset();
+    useDiscoveryStore.getState().reset();
+
+    // 3. Clear identity
     keyManager.logout();
     set({
       isAuthenticated: false,
@@ -196,6 +226,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       keypair: null,
       profile: null,
       error: null,
+      isLoading: false,
     });
   },
 
@@ -301,8 +332,17 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
 
     // 2. Clear localStorage
     localStorage.removeItem(KEYSTORE_KEY);
-    
-    // 3. Logout (clears in-memory state)
+
+    // 3. Reset session-scoped stores
+    useNodeStore.getState().reset();
+    useDMStore.getState().reset();
+    useNotificationStore.getState().reset();
+    useMessageStore.getState().reset();
+    useNavigationStore.getState().reset();
+    useSearchStore.getState().reset();
+    useDiscoveryStore.getState().reset();
+
+    // 4. Clear identity
     keyManager.logout();
 
     set({
@@ -311,6 +351,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       keypair: null,
       profile: null,
       error: null,
+      isLoading: false,
     });
   },
 

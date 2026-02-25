@@ -31,6 +31,7 @@ interface MessageState {
   clearUnread: (channelId: string) => void;
   clearChannel: (channelId: string) => void;
   clearAllChannels: () => void;
+  reset: () => void;
 }
 
 function deduplicateMessages(messages: TransportMessage[]): TransportMessage[] {
@@ -233,6 +234,21 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       messages: {},
       typingUsers: {},
       unreadCounts: {},
+      activeSubscription: null,
+      activeTypingSub: null,
+    });
+  },
+
+  reset: () => {
+    const { activeSubscription, activeTypingSub } = get();
+    if (activeSubscription) activeSubscription();
+    if (activeTypingSub) activeTypingSub();
+
+    set({
+      messages: {},
+      typingUsers: {},
+      unreadCounts: {},
+      loadingChannels: {},
       activeSubscription: null,
       activeTypingSub: null,
     });

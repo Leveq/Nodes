@@ -211,8 +211,12 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     isLoading: false,
     rawQuery: "",
     parsedQuery: null,
+    scope: "all-nodes",
     results: [],
     selectedIndex: 0,
     totalResults: 0,
+    indexedDocuments: 0,
+    currentNodeId: null,
+    currentChannelId: null,
   }),
 }));
