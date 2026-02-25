@@ -4,6 +4,7 @@ import type { UserStatus } from "@nodes/core";
 import { useTransport } from "../providers/TransportProvider";
 import { useNodeStore } from "../stores/node-store";
 import { useSocialStore } from "../stores/social-store";
+import { useIdentityStore } from "../stores/identity-store";
 
 const OFFLINE_THRESHOLD = 60_000; // 60 seconds
 const STALENESS_CHECK_INTERVAL = 15_000; // Check every 15 seconds
@@ -17,6 +18,8 @@ const STALENESS_CHECK_INTERVAL = 15_000; // Check every 15 seconds
  */
 export function usePresenceSubscriptions() {
   const transport = useTransport();
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
+  const publicKey = useIdentityStore((s) => s.publicKey);
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const members = useNodeStore((s) => s.members);
   const friends = useSocialStore((s) => s.friends);
@@ -72,7 +75,7 @@ export function usePresenceSubscriptions() {
     // Clear lastSeen when node changes
     lastSeenRef.current.clear();
 
-    if (!transport) return;
+    if (!isAuthenticated || !publicKey || !transport) return;
 
     // Collect public keys: node members + friends
     const publicKeySet = new Set<string>();
@@ -122,5 +125,5 @@ export function usePresenceSubscriptions() {
         stalenessIntervalRef.current = null;
       }
     };
-  }, [transport, activeNodeId, activeMemberKeys, friends, updateMemberStatus]);
+  }, [transport, isAuthenticated, publicKey, activeNodeId, activeMemberKeys, friends, updateMemberStatus]);
 }

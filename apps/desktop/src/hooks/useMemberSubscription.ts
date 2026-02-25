@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NodeManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../stores/node-store";
+import { useIdentityStore } from "../stores/identity-store";
 
 const nodeManager = new NodeManager();
 
@@ -15,6 +16,8 @@ const MEMBER_POLL_INTERVAL = 5_000; // 5 seconds
  * - Preserves the `status` field set by presence system
  */
 export function useMemberSubscription() {
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
+  const publicKey = useIdentityStore((s) => s.publicKey);
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -25,7 +28,7 @@ export function useMemberSubscription() {
       intervalRef.current = null;
     }
 
-    if (!activeNodeId) return;
+    if (!isAuthenticated || !publicKey || !activeNodeId) return;
 
     // Poll for member changes periodically
     const pollMembers = async () => {
@@ -83,5 +86,5 @@ export function useMemberSubscription() {
         intervalRef.current = null;
       }
     };
-  }, [activeNodeId]);
+  }, [isAuthenticated, publicKey, activeNodeId]);
 }

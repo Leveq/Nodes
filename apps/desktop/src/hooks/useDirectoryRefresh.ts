@@ -10,6 +10,7 @@ const REFRESH_CHECK_INTERVAL = 60 * 60 * 1000; // Check every hour
  * Runs in the background. Only refreshes if the listing is in the directory.
  */
 export function useDirectoryRefresh() {
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
   const publicKey = useIdentityStore((s) => s.publicKey);
   const nodes = useNodeStore((s) => s.nodes);
   const channels = useNodeStore((s) => s.channels);
@@ -17,7 +18,7 @@ export function useDirectoryRefresh() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (!publicKey) return;
+    if (!isAuthenticated || !publicKey) return;
 
     const refreshOwned = async () => {
       for (const node of nodes) {
@@ -54,5 +55,5 @@ export function useDirectoryRefresh() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [publicKey, nodes, channels, members]);
+  }, [isAuthenticated, publicKey, nodes, channels, members]);
 }

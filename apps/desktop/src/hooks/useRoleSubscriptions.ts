@@ -9,8 +9,11 @@ import { useEffect, useRef } from "react";
 import { roleManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../stores/node-store";
 import { useRoleStore } from "../stores/role-store";
+import { useIdentityStore } from "../stores/identity-store";
 
 export function useRoleSubscriptions() {
+  const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
+  const publicKey = useIdentityStore((s) => s.publicKey);
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const setLoading = useRoleStore((s) => s.setLoading);
   const upsertRole = useRoleStore((s) => s.upsertRole);
@@ -29,7 +32,7 @@ export function useRoleSubscriptions() {
     }
     initialLoadComplete.current = false;
 
-    if (!activeNodeId) return;
+    if (!isAuthenticated || !publicKey || !activeNodeId) return;
 
     // Set loading state
     setLoading(activeNodeId, true);
@@ -64,5 +67,5 @@ export function useRoleSubscriptions() {
         unsubscribeRef.current = null;
       }
     };
-  }, [activeNodeId, setRoles, setLoading, upsertRole]);
+  }, [isAuthenticated, publicKey, activeNodeId, setRoles, setLoading, upsertRole]);
 }
