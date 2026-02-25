@@ -65,6 +65,7 @@ interface NodeState {
   isDisplayNameStale: (publicKey: string) => boolean;
   setDisplayNames: (names: Record<string, string>) => void;
   invalidateDisplayName: (publicKey: string) => void;
+  reset: () => void;
 }
 
 const nodeManager = new NodeManager();
@@ -458,6 +459,22 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const { [publicKey]: _removed, ...rest } = state.displayNameCache;
       void _removed; // Intentionally unused - destructuring to remove key
       return { displayNameCache: rest };
+    });
+  },
+
+  reset: () => {
+    set({
+      nodes: [],
+      activeNodeId: null,
+      activeChannelId: null,
+      activeChannelByNode: {},
+      channels: {},
+      members: {},
+      loadingChannels: {},
+      isLoadingNodes: false,
+      isCreatingNode: false,
+      isJoiningNode: false,
+      displayNameCache: {},
     });
   },
 }));

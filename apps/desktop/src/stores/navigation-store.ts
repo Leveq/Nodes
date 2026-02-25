@@ -5,6 +5,7 @@ type ViewMode = "node" | "dm" | "friends" | "discovery";
 interface NavigationState {
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+  reset: () => void;
 }
 
 /**
@@ -17,4 +18,5 @@ interface NavigationState {
 export const useNavigationStore = create<NavigationState>((set) => ({
   viewMode: "node",
   setViewMode: (mode) => set({ viewMode: mode }),
+  reset: () => set({ viewMode: "node" }),
 }));

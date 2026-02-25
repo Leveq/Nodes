@@ -48,6 +48,7 @@ interface NotificationState {
   updateChannelSettings: (channelId: string, settings: Partial<ChannelNotificationSetting>) => Promise<void>;
   getEffectiveChannelLevel: (channelId: string, nodeId: string) => ChannelNotificationLevel;
   shouldNotify: (nodeId: string, channelId: string, mentionsUser: boolean, mentionsEveryone: boolean) => boolean;
+  reset: () => void;
 }
 
 // Default settings
@@ -447,5 +448,15 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       default:
         return true;
     }
+  },
+
+  reset: () => {
+    notifiedMessageIds.clear();
+    set({
+      notifications: [],
+      unreadCount: 0,
+      isLoading: false,
+      mentionCounts: {},
+    });
   },
 }));
