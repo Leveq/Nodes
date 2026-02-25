@@ -45,7 +45,7 @@ import type { DMConversation } from "@nodes/core";
 export function AppShell() {
   const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
   const publicKey = useIdentityStore((s) => s.publicKey);
-  const isLoadingNodes = useNodeStore((s) => s.isLoading);
+  const isLoadingNodes = useNodeStore((s) => s.isLoadingNodes);
   const viewMode = useNavigationStore((s) => s.viewMode);
   const activeConversationId = useDMStore((s) => s.activeConversationId);
   const conversations = useDMStore((s) => s.conversations);

@@ -12,7 +12,7 @@ interface CreateNodeModalProps {
  * Modal for creating a new Node (community server).
  */
 export function CreateNodeModal({ onClose }: CreateNodeModalProps) {
-  const { createNode, isLoading } = useNodeStore();
+  const { createNode, isCreatingNode } = useNodeStore();
   const { publicKey } = useIdentityStore();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -85,8 +85,8 @@ export function CreateNodeModal({ onClose }: CreateNodeModalProps) {
           <Button variant="ghost" onClick={onClose} type="button">
             Cancel
           </Button>
-          <Button variant="primary" type="submit" disabled={isLoading}>
-            {isLoading ? "Creating..." : "Create Node"}
+          <Button variant="primary" type="submit" disabled={isCreatingNode}>
+            {isCreatingNode ? "Creating..." : "Create Node"}
           </Button>
         </div>
       </form>
