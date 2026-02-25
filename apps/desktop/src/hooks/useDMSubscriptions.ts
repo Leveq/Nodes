@@ -42,6 +42,10 @@ export function useDMSubscriptions() {
   // Batching: pending messages to process
   const pendingMessagesRef = useRef<PendingDMMessage[]>([]);
   const rafIdRef = useRef<number | null>(null);
+  // Monotonically increasing id to guard stale async startSubscription calls
+  const runIdRef = useRef<number>(0);
+  // Track initial-load timeout ids so they can be cleared
+  const initialLoadTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Process a single message (extracted for batching)
   const processMessage = useCallback((conversationId: string, recipientKey: string, message: TransportMessage, myPublicKey: string) => {
@@ -146,6 +150,8 @@ export function useDMSubscriptions() {
   useEffect(() => {
     if (!isAuthenticated || !keypair || !publicKey) return;
 
+    const runId = ++runIdRef.current;
+
     // Unsubscribe from active conversation (DMView handles it)
     if (activeConversationId && subscriptionsRef.current.has(activeConversationId)) {
       subscriptionsRef.current.get(activeConversationId)?.();
@@ -175,11 +181,19 @@ export function useDMSubscriptions() {
       // (the actual unsub function will replace this placeholder)
       subscriptionsRef.current.set(convId, () => {});
 
+      // Capture the current run id before the async call
+      const capturedRunId = runId;
+
       // We need the recipient's epub to decrypt messages
       const startSubscription = async () => {
         try {
           const state = useDMStore.getState();
           const epub = state.epubCache[recipientKey] || await state.resolveEpub(recipientKey);
+
+          // Stale guard: abort if a newer effect run has started
+          if (runIdRef.current !== capturedRunId) {
+            return;
+          }
           
           // Mark existing messages as seen before subscribing
           const existingMessages = state.messages[convId] || [];
@@ -202,7 +216,8 @@ export function useDMSubscriptions() {
           // Mark initial load as done after a short delay
           // (Gun fires history messages immediately on subscribe)
           // Then apply the accumulated unread count
-          setTimeout(() => {
+          const timerId = setTimeout(() => {
+            initialLoadTimersRef.current.delete(convId);
             initialLoadDoneRef.current.add(convId);
             
             // Apply accumulated unread count from initial load
@@ -225,6 +240,7 @@ export function useDMSubscriptions() {
               }
             }
           }, 2000);
+          initialLoadTimersRef.current.set(convId, timerId);
         } catch {
           // Remove placeholder on failure so we can retry later
           subscriptionsRef.current.delete(convId);
@@ -242,8 +258,19 @@ export function useDMSubscriptions() {
         unsub();
         currentSubs.delete(convId);
         initialLoadDoneRef.current.delete(convId);
+        const timerId = initialLoadTimersRef.current.get(convId);
+        if (timerId !== undefined) {
+          clearTimeout(timerId);
+          initialLoadTimersRef.current.delete(convId);
+        }
       }
     }
+
+    return () => {
+      // Clear all pending initial-load timeouts when the effect reruns
+      initialLoadTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      initialLoadTimersRef.current.clear();
+    };
   }, [conversations, activeConversationId, isAuthenticated, keypair, publicKey, handleMessage]);
 
   // Subscribe to new incoming DMs (from inbox)
@@ -292,6 +319,7 @@ export function useDMSubscriptions() {
     const initial = initialLoadDoneRef.current;
     const pending = pendingUnreadRef.current;
     const lastRead = lastReadAtRef.current;
+    const timers = initialLoadTimersRef.current;
     
     return () => {
       // Cancel any pending batch flush
@@ -300,6 +328,9 @@ export function useDMSubscriptions() {
         rafIdRef.current = null;
       }
       pendingMessagesRef.current = [];
+
+      timers.forEach((timerId) => clearTimeout(timerId));
+      timers.clear();
       
       subs.forEach((unsub) => unsub());
       subs.clear();
