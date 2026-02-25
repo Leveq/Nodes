@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Unsubscribe, TransportMessage } from "@nodes/transport";
 import { useTransport } from "../providers/TransportProvider";
 import { useNodeStore } from "../stores/node-store";
+import { useNavigationStore } from "../stores/navigation-store";
 import { useMessageStore } from "../stores/message-store";
 import { useIdentityStore } from "../stores/identity-store";
 import { getSearchIndex } from "../services/search-index";
@@ -32,11 +33,15 @@ export function useNodeSubscriptions() {
   const seenMessagesRef = useRef<Set<string>>(new Set());
   // Track initial load state per channel
   const initialLoadDoneRef = useRef<Set<string>>(new Set());
+  // Track per-channel initial-load timeout ids for cleanup
+  const initialLoadTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // Batching: pending messages to process
   const pendingMessagesRef = useRef<Map<string, TransportMessage[]>>(new Map());
   const rafIdRef = useRef<number | null>(null);
   // Map channel ID to node info for notifications
   const channelToNodeRef = useRef<Map<string, { nodeId: string; nodeName: string }>>(new Map());
+  // Monotonically-increasing run id to guard stale callbacks
+  const runIdRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isAuthenticated || !publicKey || !transport || nodes.length === 0) {
@@ -48,12 +53,16 @@ export function useNodeSubscriptions() {
     subscriptionsRef.current = [];
     seenMessagesRef.current.clear();
     initialLoadDoneRef.current.clear();
+    initialLoadTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    initialLoadTimeoutsRef.current.clear();
     pendingMessagesRef.current.clear();
     channelToNodeRef.current.clear();
     if (rafIdRef.current) {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
     }
+
+    const runId = ++runIdRef.current;
 
     // Build channel -> node mapping and collect all channels
     const allChannelsList: Array<{ channelId: string; nodeId: string; nodeName: string; channelName: string }> = [];
@@ -82,6 +91,10 @@ export function useNodeSubscriptions() {
 
     // Flush pending messages in batches
     const flushPending = () => {
+      if (runIdRef.current !== runId) {
+        pendingMessagesRef.current.clear();
+        return;
+      }
       rafIdRef.current = null;
       const { addMessage, incrementUnread, messages } = useMessageStore.getState();
       const searchIndex = getSearchIndex();
@@ -118,22 +131,18 @@ export function useNodeSubscriptions() {
           const isInitialLoadDone = initialLoadDoneRef.current.has(channelId);
           const isFromOther = message.authorKey !== publicKey;
           
-          console.log("[NodeSubscriptions] Checking notification eligibility:", { 
-            messageId: message.id, 
-            isInitialLoadDone, 
-            isFromOther,
-            authorKey: message.authorKey?.slice(0, 10),
-            myKey: publicKey?.slice(0, 10)
-          });
-          
           if (isInitialLoadDone && isFromOther) {
-            console.log("[NodeSubscriptions] Incrementing unread for channel:", channelId);
-            incrementUnread(channelId);
+            const { activeNodeId, activeChannelId } = useNodeStore.getState();
+            const viewMode = useNavigationStore.getState().viewMode;
+            const isViewingThisChannel =
+              viewMode === "node" && activeNodeId === nodeInfo?.nodeId && activeChannelId === channelId;
+            if (!isViewingThisChannel) {
+              incrementUnread(channelId);
+            }
             
             // Process for notifications if message mentions user
             // Deduplication happens in notification-store.addNotification()
             const isRelevant = isMessageRelevantToUser(message.content, publicKey || "");
-            console.log("[NodeSubscriptions] Message relevance:", isRelevant, "content:", message.content.slice(0, 30));
             
             if (nodeInfo && isRelevant) {
               // Find channel name
@@ -157,6 +166,10 @@ export function useNodeSubscriptions() {
     // Subscribe to ALL channels across ALL nodes
     for (const { channelId } of allChannelsList) {
       const unsub = transport.message.subscribe(channelId, (message: TransportMessage) => {
+        // Discard if this effect run is stale
+        if (runIdRef.current !== runId) {
+          return;
+        }
         // Skip if we've already processed this message
         if (seenMessagesRef.current.has(message.id)) {
           return;
@@ -179,9 +192,13 @@ export function useNodeSubscriptions() {
       
       // Mark initial load as done after a short delay
       // (Gun fires history messages immediately on subscribe)
-      setTimeout(() => {
-        initialLoadDoneRef.current.add(channelId);
+      const timeoutId = setTimeout(() => {
+        if (runIdRef.current === runId) {
+          initialLoadDoneRef.current.add(channelId);
+        }
+        initialLoadTimeoutsRef.current.delete(channelId);
       }, 2000);
+      initialLoadTimeoutsRef.current.set(channelId, timeoutId);
     }
 
     // Cleanup on unmount or when nodes change
@@ -190,6 +207,8 @@ export function useNodeSubscriptions() {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
       }
+      initialLoadTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      initialLoadTimeoutsRef.current.clear();
       subscriptionsRef.current.forEach((unsub) => unsub());
       subscriptionsRef.current = [];
     };
@@ -212,7 +231,6 @@ export function useNodeSubscriptions() {
         const exists = existingChannels.some((c) => c.id === channel.id);
         
         if (!exists) {
-          console.log("[useNodeSubscriptions] New channel detected:", channel.name, "in node:", node.name);
           // Add the new channel to the store
           useNodeStore.setState((state) => ({
             channels: {
