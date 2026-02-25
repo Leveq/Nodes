@@ -87,8 +87,12 @@ export const useDMStore = create<DMState>((set, get) => ({
         const localOnly = state.conversations.filter(
           (c) => !newConversations.some((nc) => nc.id === c.id)
         );
+        const localOnlyStamped = localOnly.map((c) => ({
+          ...c,
+          unreadCount: state.unreadCounts[c.id] ?? 0,
+        }));
         
-        return { conversations: [...merged, ...localOnly], isLoading: false };
+        return { conversations: [...merged, ...localOnlyStamped], isLoading: false };
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
