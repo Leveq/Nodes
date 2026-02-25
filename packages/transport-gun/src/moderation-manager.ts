@@ -52,8 +52,6 @@ export class ModerationManager {
       targetName,
       reason,
     });
-
-    console.log(`[Moderation] ${actorName} kicked ${targetName} from Node ${nodeId.slice(0, 8)}`);
   }
 
   /**
@@ -100,8 +98,6 @@ export class ModerationManager {
       targetName,
       reason,
     });
-
-    console.log(`[Moderation] ${actorName} banned ${targetName} from Node ${nodeId.slice(0, 8)}`);
   }
 
   /**
@@ -127,8 +123,6 @@ export class ModerationManager {
       targetKey,
       targetName,
     });
-
-    console.log(`[Moderation] ${actorName} unbanned ${targetName} from Node ${nodeId.slice(0, 8)}`);
   }
 
   /**
@@ -137,6 +131,14 @@ export class ModerationManager {
   async isBanned(nodeId: string, publicKey: string): Promise<boolean> {
     const gun = GunInstanceManager.get();
     return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      }, 2000);
+
       gun
         .get("nodes")
         .get(nodeId)
@@ -144,11 +146,12 @@ export class ModerationManager {
         .get(publicKey)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .once((data: any) => {
-          resolve(data !== null && data !== undefined && data.bannedAt);
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(Boolean(data?.bannedAt));
+          }
         });
-
-      // Timeout fallback
-      setTimeout(() => resolve(false), 2000);
     });
   }
 
@@ -160,6 +163,7 @@ export class ModerationManager {
     const bans: BanEntry[] = [];
 
     return new Promise((resolve) => {
+      let settled = false;
       gun
         .get("nodes")
         .get(nodeId)
@@ -177,7 +181,12 @@ export class ModerationManager {
           }
         });
 
-      setTimeout(() => resolve(bans), 500);
+      setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(bans);
+        }
+      }, 500);
     });
   }
 
@@ -245,8 +254,6 @@ export class ModerationManager {
       channelName,
       metadata: JSON.stringify({ delaySeconds }),
     });
-
-    console.log(`[Moderation] ${actorName} set slow mode to ${delaySeconds}s in #${channelName}`);
   }
 
   /**
@@ -255,6 +262,14 @@ export class ModerationManager {
   async getSlowMode(nodeId: string, channelId: string): Promise<number> {
     const gun = GunInstanceManager.get();
     return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(0);
+        }
+      }, 1000);
+
       gun
         .get("nodes")
         .get(nodeId)
@@ -262,10 +277,12 @@ export class ModerationManager {
         .get(channelId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .once((data: any) => {
-          resolve(data?.slowMode ?? 0);
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(data?.slowMode ?? 0);
+          }
         });
-
-      setTimeout(() => resolve(0), 1000);
     });
   }
 
@@ -322,8 +339,6 @@ export class ModerationManager {
       channelName,
       metadata: JSON.stringify({ count }),
     });
-
-    console.log(`[Moderation] ${actorName} bulk deleted ${count} messages from ${targetName} in #${channelName}`);
   }
 
   // ── Voice Moderation ──
@@ -351,8 +366,6 @@ export class ModerationManager {
       channelName,
       metadata: JSON.stringify({ muted }),
     });
-
-    console.log(`[Moderation] ${actorName} ${muted ? "muted" : "unmuted"} ${targetName} in voice`);
   }
 
   /**
@@ -376,8 +389,6 @@ export class ModerationManager {
       channelId,
       channelName,
     });
-
-    console.log(`[Moderation] ${actorName} disconnected ${targetName} from voice`);
   }
 
   // ── Audit Log ──
@@ -459,6 +470,7 @@ export class ModerationManager {
     const entries: AuditLogEntry[] = [];
 
     return new Promise((resolve) => {
+      let settled = false;
       gun
         .get("nodes")
         .get(nodeId)
@@ -484,8 +496,11 @@ export class ModerationManager {
         });
 
       setTimeout(() => {
-        entries.sort((a, b) => b.timestamp - a.timestamp);
-        resolve(entries.slice(0, limit));
+        if (!settled) {
+          settled = true;
+          entries.sort((a, b) => b.timestamp - a.timestamp);
+          resolve(entries.slice(0, limit));
+        }
       }, 500);
     });
   }
