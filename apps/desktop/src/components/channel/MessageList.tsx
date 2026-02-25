@@ -44,6 +44,7 @@ export function MessageList({
   const messages = useMessageStore((s) => s.messages[channelId] ?? EMPTY_MESSAGES);
   const isLoading = useMessageStore((s) => s.loadingChannels[channelId] ?? false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
   const [showNewMessagesBanner, setShowNewMessagesBanner] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const prevMessageCountRef = useRef(messages.length);
@@ -86,13 +87,18 @@ export function MessageList({
     if (messageEl) {
       messageEl.scrollIntoView({ behavior: "smooth", block: "center" });
       // Highlight briefly
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
       setHighlightedMessageId(messageId);
-      setTimeout(() => setHighlightedMessageId(null), 2000);
+      highlightTimeoutRef.current = window.setTimeout(() => setHighlightedMessageId(null), 2000);
     }
   }, []);
 
   // Listen for scroll-to-message events from search
   useEffect(() => {
+    let scrollTimeout: number | null = null;
+
     const handleScrollToMessage = (event: CustomEvent<{ messageId: string; channelId: string; highlight?: boolean }>) => {
       const { messageId, channelId: targetChannelId, highlight } = event.detail;
       
@@ -100,7 +106,7 @@ export function MessageList({
       if (targetChannelId !== channelId) return;
       
       // Wait a bit for the channel view to render if we just navigated
-      setTimeout(() => {
+      scrollTimeout = window.setTimeout(() => {
         const container = scrollRef.current;
         if (!container) return;
         
@@ -108,8 +114,11 @@ export function MessageList({
         if (messageEl) {
           messageEl.scrollIntoView({ behavior: "smooth", block: "center" });
           if (highlight) {
+            if (highlightTimeoutRef.current) {
+              clearTimeout(highlightTimeoutRef.current);
+            }
             setHighlightedMessageId(messageId);
-            setTimeout(() => setHighlightedMessageId(null), 2000);
+            highlightTimeoutRef.current = window.setTimeout(() => setHighlightedMessageId(null), 2000);
           }
         }
       }, 100);
@@ -118,6 +127,13 @@ export function MessageList({
     window.addEventListener("scroll-to-message", handleScrollToMessage as EventListener);
     return () => {
       window.removeEventListener("scroll-to-message", handleScrollToMessage as EventListener);
+      if (scrollTimeout !== null) {
+        clearTimeout(scrollTimeout);
+      }
+      if (highlightTimeoutRef.current !== null) {
+        clearTimeout(highlightTimeoutRef.current);
+        highlightTimeoutRef.current = null;
+      }
     };
   }, [channelId]);
 

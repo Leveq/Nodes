@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { TransportMessage, ReactionData } from "@nodes/transport";
 import { useTransport } from "../../providers/TransportProvider";
 import { useMessageStore } from "../../stores/message-store";
@@ -37,6 +37,7 @@ export function ChannelView({
 }: ChannelViewProps) {
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
+  const typingTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const [droppedAttachments, setDroppedAttachments] = useState<PendingAttachment[]>([]);
   
@@ -211,9 +212,16 @@ export function ChannelView({
           addTypingUser(channelId, typingPublicKey);
 
           // Auto-remove after 5 seconds (in case we miss the "stopped typing" event)
-          setTimeout(() => {
+          // Clear any existing timeout for this user before setting a new one
+          const existingTimeout = typingTimeoutsRef.current.get(typingPublicKey);
+          if (existingTimeout !== undefined) {
+            clearTimeout(existingTimeout);
+          }
+          const tid = window.setTimeout(() => {
             removeTypingUser(channelId, typingPublicKey);
+            typingTimeoutsRef.current.delete(typingPublicKey);
           }, 5000);
+          typingTimeoutsRef.current.set(typingPublicKey, tid);
         } else {
           removeTypingUser(channelId, typingPublicKey);
         }
@@ -240,6 +248,9 @@ export function ChannelView({
       messageUnsub();
       typingUnsub();
       reactionUnsub();
+      // Clear all pending typing-indicator auto-remove timeouts
+      typingTimeoutsRef.current.forEach((tid) => clearTimeout(tid));
+      typingTimeoutsRef.current.clear();
     };
   }, [channelId, transport, publicKey]);
 
