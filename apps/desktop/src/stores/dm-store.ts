@@ -87,12 +87,18 @@ export const useDMStore = create<DMState>((set, get) => ({
         const localOnly = state.conversations.filter(
           (c) => !newConversations.some((nc) => nc.id === c.id)
         );
+        const localOnlyStamped = localOnly.map((c) => ({
+          ...c,
+          unreadCount: state.unreadCounts[c.id] ?? 0,
+        }));
         
+
         // Deduplicate by id (localOnly should have no overlap, but be defensive)
-        const all = [...merged, ...localOnly];
+        const all = [...merged, ...localOnlyStamped];
         const deduped = Array.from(new Map(all.map((c) => [c.id, c])).values());
-        
+
         return { conversations: deduped, isLoading: false };
+
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
