@@ -209,13 +209,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // Zustand's get() and set() are synchronous, so this check is atomic
     const existingInState = get().notifications.some(n => n.messageId === notification.messageId);
     if (existingInState) {
-      console.log("[NotificationStore] Skipping duplicate (state check) for message:", notification.messageId);
       return;
     }
     
     // Also check module-level Set (faster check for rapid-fire calls in same module instance)
     if (notifiedMessageIds.has(notification.messageId)) {
-      console.log("[NotificationStore] Skipping duplicate (Set check) for message:", notification.messageId);
       return;
     }
     
@@ -242,11 +240,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       toDelete.forEach(msgId => notifiedMessageIds.delete(msgId));
     }
     
-    console.log("[NotificationStore] Adding notification:", fullNotification.id, "for message:", notification.messageId);
-    
     // Increment mention count for the channel (handled here to ensure it only happens once after dedup)
     if (notification.channelId) {
-      console.log("[NotificationStore] Incrementing mention count for channel:", notification.channelId);
       get().incrementMentionCount(notification.channelId);
     }
 
@@ -297,27 +292,38 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // Also decrement the mention count for this channel
     const channelId = notification.channelId;
     if (channelId) {
-      const currentCount = get().mentionCounts[channelId] || 0;
-      if (currentCount > 0) {
-        set((state) => ({
+      set((state) => {
+        const current = state.mentionCounts[channelId] || 0;
+        if (current <= 1) {
+          // Count would reach 0 — remove the key entirely
+          const { [channelId]: _removed, ...rest } = state.mentionCounts;
+          return {
+            notifications: state.notifications.filter((n) => n.id !== notificationId),
+            unreadCount: notification.read
+              ? state.unreadCount
+              : Math.max(0, state.unreadCount - 1),
+            mentionCounts: rest,
+          };
+        }
+        return {
+          notifications: state.notifications.filter((n) => n.id !== notificationId),
+          unreadCount: notification.read
+            ? state.unreadCount
+            : Math.max(0, state.unreadCount - 1),
           mentionCounts: {
             ...state.mentionCounts,
-            [channelId]: Math.max(0, currentCount - 1),
+            [channelId]: current - 1,
           },
-        }));
-        // If count is now 0, remove the key entirely
-        if (currentCount - 1 <= 0) {
-          get().clearMentionCount(channelId);
-        }
-      }
+        };
+      });
+    } else {
+      set((state) => ({
+        notifications: state.notifications.filter((n) => n.id !== notificationId),
+        unreadCount: notification.read
+          ? state.unreadCount
+          : Math.max(0, state.unreadCount - 1),
+      }));
     }
-
-    set((state) => ({
-      notifications: state.notifications.filter((n) => n.id !== notificationId),
-      unreadCount: notification.read
-        ? state.unreadCount
-        : Math.max(0, state.unreadCount - 1),
-    }));
   },
 
   clearAllNotifications: async () => {
@@ -327,10 +333,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   // Mention tracking
   incrementMentionCount: (channelId) => {
-    console.log("[NotificationStore] incrementMentionCount for channel:", channelId);
     set((state) => {
       const newCount = (state.mentionCounts[channelId] || 0) + 1;
-      console.log("[NotificationStore] New mention count for", channelId, ":", newCount);
       return {
         mentionCounts: {
           ...state.mentionCounts,
@@ -341,11 +345,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   clearMentionCount: (channelId) => {
-    console.log("[NotificationStore] clearMentionCount for channel:", channelId);
-    console.log("[NotificationStore] Current mentionCounts:", get().mentionCounts);
     set((state) => {
-      const { [channelId]: removed, ...rest } = state.mentionCounts;
-      console.log("[NotificationStore] Removed count:", removed, "remaining:", rest);
+      const { [channelId]: _removed, ...rest } = state.mentionCounts;
       return { mentionCounts: rest };
     });
   },
@@ -450,6 +451,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
   },
 
+  // Clears transient session state (notifications, unread badge, mention counts).
+  // Settings are intentionally kept in memory so that the user's notification
+  // preferences are immediately available after re-login without waiting for
+  // another IndexedDB round-trip.
   reset: () => {
     notifiedMessageIds.clear();
     set({
