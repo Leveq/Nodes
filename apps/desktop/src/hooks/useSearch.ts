@@ -60,8 +60,6 @@ export function useSearch() {
    * Execute search with current query and scope
    */
   const executeSearch = useCallback(() => {
-    console.log(`[useSearch] executeSearch - query: "${rawQuery}", terms: ${parsedQuery?.terms.length}, scope: ${scope}`);
-    
     if (!parsedQuery || !parsedQuery.terms.length) {
       setResults([]);
       return;
@@ -72,8 +70,6 @@ export function useSearch() {
     try {
       const index = indexRef.current;
       const queryText = parsedQuery.terms.join(" ");
-      
-      console.log(`[useSearch] Searching for: "${queryText}", currentChannelId: ${currentChannelId}, currentNodeId: ${currentNodeId}`);
       
       // Build filters based on scope
       const filters: SearchFilters = { ...parsedQuery.filters };
@@ -165,7 +161,6 @@ export function useSearch() {
     } else if (result.type === "dm" && result.conversationId) {
       // Navigate to DM conversation
       // TODO: Implement DM navigation when DM view is updated
-      console.log("[useSearch] Navigate to DM:", result.conversationId);
     }
   }, [results, selectedIndex, close, setActiveNode, setActiveChannel]);
   
