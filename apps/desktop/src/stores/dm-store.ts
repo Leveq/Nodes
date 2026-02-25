@@ -71,15 +71,15 @@ export const useDMStore = create<DMState>((set, get) => ({
       set((state) => {
         const merged = newConversations.map((newConv) => {
           const existing = state.conversations.find((c) => c.id === newConv.id);
-          if (existing) {
-            return {
-              ...newConv,
-              // Preserve preview data from local state
-              lastMessagePreview: existing.lastMessagePreview || newConv.lastMessagePreview,
-              lastMessageAt: Math.max(existing.lastMessageAt, newConv.lastMessageAt),
-            };
-          }
-          return newConv;
+          const base = existing
+            ? {
+                ...newConv,
+                // Preserve preview data from local state
+                lastMessagePreview: existing.lastMessagePreview || newConv.lastMessagePreview,
+                lastMessageAt: Math.max(existing.lastMessageAt, newConv.lastMessageAt),
+              }
+            : newConv;
+          return { ...base, unreadCount: state.unreadCounts[newConv.id] ?? 0 };
         });
         
         // Also include any conversations that exist locally but weren't in Gun
@@ -92,7 +92,13 @@ export const useDMStore = create<DMState>((set, get) => ({
           unreadCount: state.unreadCounts[c.id] ?? 0,
         }));
         
-        return { conversations: [...merged, ...localOnlyStamped], isLoading: false };
+
+        // Deduplicate by id (localOnly should have no overlap, but be defensive)
+        const all = [...merged, ...localOnlyStamped];
+        const deduped = Array.from(new Map(all.map((c) => [c.id, c])).values());
+
+        return { conversations: deduped, isLoading: false };
+
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -129,6 +135,7 @@ export const useDMStore = create<DMState>((set, get) => ({
               lastMessageAt: Date.now(),
               lastMessagePreview: "",
               unreadCount: 0,
+              lastReadAt: Date.now(),
             },
             ...state.conversations,
           ],
@@ -175,6 +182,9 @@ export const useDMStore = create<DMState>((set, get) => ({
         epub,
         keypair,
         (message) => {
+          // Guard: if user has switched away, discard stale subscription events
+          if (get().activeConversationId !== conversationId) return;
+
           const currentState = get();
           
           // Check if message already exists
@@ -294,17 +304,26 @@ export const useDMStore = create<DMState>((set, get) => ({
   },
 
   incrementUnread: (conversationId) => {
-    set((state) => ({
-      unreadCounts: {
-        ...state.unreadCounts,
-        [conversationId]: (state.unreadCounts[conversationId] || 0) + 1,
-      },
-    }));
+    set((state) => {
+      const newCount = (state.unreadCounts[conversationId] || 0) + 1;
+      return {
+        unreadCounts: {
+          ...state.unreadCounts,
+          [conversationId]: newCount,
+        },
+        conversations: state.conversations.map((c) =>
+          c.id === conversationId ? { ...c, unreadCount: newCount } : c
+        ),
+      };
+    });
   },
 
   clearUnread: (conversationId) => {
     set((state) => ({
       unreadCounts: { ...state.unreadCounts, [conversationId]: 0 },
+      conversations: state.conversations.map((c) =>
+        c.id === conversationId ? { ...c, unreadCount: 0 } : c
+      ),
     }));
   },
 
