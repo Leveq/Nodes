@@ -22,21 +22,21 @@ const PUBLIC_PEERS = [
  */
 function getDefaultPeers(): string[] {
   const peers: string[] = [];
-  
-  // If staging relay is set, use it as primary
+
   if (STAGING_RELAY) {
-    console.log("[Gun] Using staging relay:", STAGING_RELAY);
+    console.log("[Gun] Using relay:", STAGING_RELAY);
     peers.push(STAGING_RELAY);
+    // When a relay is explicitly configured, use ONLY that relay.
+    // No public peer fallback — prevents cross-environment data contamination.
+    return peers;
   }
-  
-  // In development, also try local relay
+
+  // No relay configured — dev fallback only
   if (import.meta.env.DEV) {
     peers.push(LOCAL_RELAY);
   }
-  
-  // Always include public peers as fallback
+
   peers.push(...PUBLIC_PEERS);
-  
   return peers;
 }
 
@@ -80,6 +80,8 @@ export class GunInstanceManager {
       peers: activePeers,
       localStorage: true, // Use browser localStorage for persistence
       radisk: true, // Enable Radisk storage engine
+      // @ts-expect-error - 'super' is a valid Gun option not reflected in types
+      super: false, // Prevent auto-connecting to Gun's public superpeer network
     });
 
     return gunInstance;
