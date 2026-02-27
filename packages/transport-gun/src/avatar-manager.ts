@@ -83,23 +83,34 @@ export class AvatarManager {
       return null;
     }
 
-    // Use custom fetch (Tauri) if provided, otherwise browser fetch
     const fetchFn = serverPinFetch || fetch;
-    
-    const formData = new FormData();
-    formData.append("file", new Blob([imageData.buffer as ArrayBuffer], { type: "image/png" }));
 
-    const res = await fetchFn(`${ipfsApiUrl}/api/v0/add`, {
+    // Build multipart body manually - Tauri's fetch doesn't serialize FormData correctly for Kubo
+    const boundary = "----NodesBoundary" + Date.now();
+    const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="avatar.png"\r\nContent-Type: image/png\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+
+    const headerBytes = new TextEncoder().encode(header);
+    const footerBytes = new TextEncoder().encode(footer);
+
+    const body = new Uint8Array(headerBytes.length + imageData.length + footerBytes.length);
+    body.set(headerBytes, 0);
+    body.set(imageData, headerBytes.length);
+    body.set(footerBytes, headerBytes.length + imageData.length);
+
+    const res = await fetchFn(`${ipfsApiUrl}/api/v0/add?pin=true`, {
       method: "POST",
-      body: formData,
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body: body,
     });
 
     if (!res.ok) {
       throw new Error(`IPFS pin failed: ${res.statusText}`);
     }
-
     const data = await res.json();
-    return data.Hash; // CID
+    return data.Hash;
   }
 
   /**
@@ -128,12 +139,12 @@ export class AvatarManager {
     // 2. Pin to staging server - use server's Qm CID for storage (gateway-compatible)
     let fullCid = heliaFullCid;
     let smallCid = heliaSmallCid;
-    
+
     try {
       const serverFullCid = await this.pinToServer(fullBytes);
       const serverSmallCid = await this.pinToServer(smallBytes);
       console.log(`[Avatar] Server pin: full=${serverFullCid}, small=${serverSmallCid}`);
-      
+
       // Use server CIDs (Qm format) - guaranteed to be on gateway
       if (serverFullCid) fullCid = serverFullCid;
       if (serverSmallCid) smallCid = serverSmallCid;
@@ -143,7 +154,7 @@ export class AvatarManager {
 
     // Store CIDs in user's Gun graph (prefer server Qm CID)
     const user = GunInstanceManager.user();
-    
+
     await new Promise<void>((resolve, reject) => {
       user.get("profile").get("avatar").put(fullCid, (ack: GunAck) => {
         if (ack.err) reject(new Error(ack.err));
@@ -286,7 +297,7 @@ export class AvatarManager {
       try {
         const url = `${ipfsGatewayUrl}/ipfs/${cid}`;
         console.log(`[Avatar] Trying staging gateway: ${url}`);
-        
+
         // Use custom fetch (Tauri) if available, otherwise browser fetch
         const fetchFn = serverPinFetch || fetch;
         const response = await fetchFn(url, {
