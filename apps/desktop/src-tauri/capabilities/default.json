@@ -1,7 +1,9 @@
 {
   "identifier": "default",
   "description": "Default capability for the Nodes app",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -21,13 +23,54 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://nodesipfs.leveq.dev/*" },
-        { "url": "https://ipfs.io/*" },
-        { "url": "https://dweb.link/*" },
-        { "url": "https://w3s.link/*" },
-        { "url": "https://cloudflare-ipfs.com/*" },
-        { "url": "https://*.ipfs.io/*" },
-        { "url": "https://*.dweb.link/*" }
+        {
+          "url": "https://ipfs.nodes.services/*"
+        },
+        {
+          "url": "https://relay.nodes.services/*"
+        },
+        {
+          "url": "wss://relay.nodes.services/*"
+        },
+        {
+          "url": "wss://voice.nodes.services/*"
+        },
+        {
+          "url": "https://nodesipfs.leveq.dev/*"
+        },
+        {
+          "url": "https://nodesrelay.leveq.dev/*"
+        },
+        {
+          "url": "wss://nodesrelay.leveq.dev/*"
+        },
+        {
+          "url": "wss://nodesvoice.leveq.dev/*"
+        },
+        {
+          "url": "https://ipfs.io/*"
+        },
+        {
+          "url": "https://dweb.link/*"
+        },
+        {
+          "url": "https://w3s.link/*"
+        },
+        {
+          "url": "https://cloudflare-ipfs.com/*"
+        },
+        {
+          "url": "https://*.ipfs.io/*"
+        },
+        {
+          "url": "https://*.dweb.link/*"
+        },
+        {
+          "url": "https://api.giphy.com/*"
+        },
+        {
+          "url": "https://media*.giphy.com/*"
+        }
       ]
     },
     "notification:default",
