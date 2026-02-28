@@ -99,6 +99,12 @@ export class NodeManager {
           return;
         }
 
+        // Parse theme from JSON string (stored as themeJson to avoid Gun nested-node issues)
+        let theme = undefined;
+        if (data.themeJson) {
+          try { theme = JSON.parse(data.themeJson); } catch { /* ignore */ }
+        }
+
         resolve({
           id: data.id,
           name: data.name || "",
@@ -107,6 +113,8 @@ export class NodeManager {
           owner: data.owner || "",
           createdAt: data.createdAt || 0,
           inviteKey: data.inviteKey || "",
+          defaultRoleId: data.defaultRoleId || undefined,
+          theme,
         });
       });
     });
@@ -117,13 +125,21 @@ export class NodeManager {
    */
   async updateNode(
     nodeId: string,
-    updates: Partial<Pick<NodeServer, "name" | "description" | "icon">>
+    updates: Partial<Pick<NodeServer, "name" | "description" | "icon" | "theme" | "defaultRoleId">>
   ): Promise<void> {
     const gun = GunInstanceManager.get();
 
+    // Serialize theme as a JSON string to avoid Gun nested-node issues
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gunUpdates: Record<string, any> = { ...updates };
+    if (updates.theme !== undefined) {
+      gunUpdates.themeJson = updates.theme ? JSON.stringify(updates.theme) : null;
+      delete gunUpdates.theme;
+    }
+
     return new Promise((resolve, reject) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      gun.get("nodes").get(nodeId).put(updates, (ack: any) => {
+      gun.get("nodes").get(nodeId).put(gunUpdates, (ack: any) => {
         if (ack.err) reject(new Error(ack.err));
         else resolve();
       });
@@ -136,7 +152,9 @@ export class NodeManager {
    */
   async deleteNode(nodeId: string): Promise<void> {
     const gun = GunInstanceManager.get();
+    const user = GunInstanceManager.user();
 
+    // Null out the shared node data so other members detect the deletion
     gun.get("nodes").get(nodeId).put({
       name: null,
       description: null,
@@ -144,6 +162,74 @@ export class NodeManager {
       owner: null,
       inviteKey: null,
       deletedAt: Date.now(),
+    });
+
+    // Also remove from the owner's own node reference list so it doesn't
+    // reappear on the next startup (leaveNode does the same for members)
+    user.get("nodes").get(nodeId).put(null);
+  }
+
+  /**
+   * Subscribe to a single Node's metadata for deletion and live-update detection.
+   * `onDeleted` fires when the node is deleted.
+   * `onThemeChange` fires with the parsed theme object (or null) when themeJson changes.
+   */
+  subscribeToNodeMeta(
+    nodeId: string,
+    onDeleted: () => void,
+    onThemeChange?: (theme: import("@nodes/core").NodesTheme | null) => void
+  ): () => void {
+    const gun = GunInstanceManager.get();
+    let lastThemeJson: string | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ref = gun.get("nodes").get(nodeId).on((data: any) => {
+      if (!data) return;
+      // Deleted nodes have deletedAt set OR name nulled out
+      if (data.deletedAt || !data.name) {
+        onDeleted();
+        return;
+      }
+      // Detect theme changes for live re-apply on other clients
+      if (onThemeChange && data.themeJson !== lastThemeJson) {
+        lastThemeJson = data.themeJson;
+        let theme = null;
+        if (data.themeJson) {
+          try { theme = JSON.parse(data.themeJson); } catch { /* ignore */ }
+        }
+        onThemeChange(theme);
+      }
+    });
+    return () => ref.off();
+  }
+
+  /**
+   * Fetch only the defaultRoleId field for a Node.
+   * Uses a dedicated .once() path so it isn't dropped when the full node
+   * object resolves before this leaf has synced to the local Gun cache.
+   */
+  async getNodeDefaultRoleId(nodeId: string): Promise<string | undefined> {
+    const gun = GunInstanceManager.get();
+
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(undefined);
+        }
+      }, 4000);
+
+      gun.get("nodes").get(nodeId).get("defaultRoleId").once(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (data: any) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(typeof data === "string" && data ? data : undefined);
+          }
+        }
+      );
     });
   }
 
@@ -174,8 +260,15 @@ export class NodeManager {
       throw new Error("You're already a member of this Node.");
     }
 
-    // Add as member
-    await this.addMember(invite.nodeId, publicKey, "member");
+    // Fetch defaultRoleId as a dedicated read so it isn't missed when the
+    // main getNode() .once() fires before this leaf has synced on a fresh device.
+    const resolvedDefaultRoleId = await this.getNodeDefaultRoleId(invite.nodeId);
+
+    // Add as member with the node's configured default role (fall back to built-in member)
+    const roleIds = resolvedDefaultRoleId && resolvedDefaultRoleId !== BUILT_IN_ROLE_IDS.OWNER
+      ? [resolvedDefaultRoleId]
+      : [BUILT_IN_ROLE_IDS.MEMBER];
+    await this.addMember(invite.nodeId, publicKey, roleIds);
 
     // Add to user's Node list
     const user = GunInstanceManager.user();
@@ -554,11 +647,21 @@ export class NodeManager {
   }
 
   private async resolveNodeList(nodeIds: string[]): Promise<NodeServer[]> {
+    const user = GunInstanceManager.user();
     const results = await Promise.allSettled(nodeIds.map(id => this.getNode(id)));
-    return results
-      .filter((r): r is PromiseFulfilledResult<NodeServer | null> => r.status === "fulfilled")
-      .map(r => r.value)
-      .filter((n): n is NodeServer => !!n && !!n.name);
+    const valid: NodeServer[] = [];
+    results.forEach((r, i) => {
+      if (r.status !== "fulfilled") return;
+      const n = r.value;
+      if (n && n.name) {
+        valid.push(n);
+      } else {
+        // Node was deleted or is empty — prune from user's own reference list
+        // so it doesn't reappear on the next startup.
+        user.get("nodes").get(nodeIds[i]).put(null);
+      }
+    });
+    return valid;
   }
 
   private parseRolesFromGunData(data: { roles?: unknown; role?: string }): string[] {

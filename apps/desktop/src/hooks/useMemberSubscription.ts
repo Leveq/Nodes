@@ -48,14 +48,27 @@ export function useMemberSubscription() {
             .filter(m => !freshKeys.has(m.publicKey))
             .map(m => m.publicKey)
         );
+
+        // Find members whose role assignments have changed
+        const roleUpdatedMembers = freshMembers.filter(freshMember => {
+          const current = currentMembers.find(m => m.publicKey === freshMember.publicKey);
+          if (!current) return false; // new member, handled above
+          return JSON.stringify(current.roles) !== JSON.stringify(freshMember.roles);
+        });
         
         // Only update if there are changes
-        if (newMembers.length > 0 || removedKeys.size > 0) {
+        if (newMembers.length > 0 || removedKeys.size > 0 || roleUpdatedMembers.length > 0) {
           useNodeStore.setState(state => {
             const existing = state.members[activeNodeId] || [];
             
             // Keep existing members that weren't removed (preserves status)
-            const kept = existing.filter(m => !removedKeys.has(m.publicKey));
+            // Apply role updates to existing members where roles changed
+            const kept = existing
+              .filter(m => !removedKeys.has(m.publicKey))
+              .map(m => {
+                const roleUpdate = roleUpdatedMembers.find(u => u.publicKey === m.publicKey);
+                return roleUpdate ? { ...m, roles: roleUpdate.roles } : m;
+              });
             
             // Add new members
             const updated = [...kept, ...newMembers];

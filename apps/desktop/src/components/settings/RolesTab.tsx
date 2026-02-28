@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Lock, Plus, GripVertical, ChevronRight } from "lucide-react";
 import { useNodeRoles, usePermissions, useIsOwner } from "../../hooks/usePermissions";
 import { useNodeStore } from "../../stores/node-store";
@@ -17,12 +17,42 @@ import { RoleEditor } from "./RoleEditor";
  */
 export function RolesTab() {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const nodes = useNodeStore((s) => s.nodes);
+  const updateNode = useNodeStore((s) => s.updateNode);
   const roles = useNodeRoles();
   const { canManageRoles } = usePermissions();
   const isOwner = useIsOwner();
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSavingDefault, setIsSavingDefault] = useState(false);
+
+  const node = nodes.find((n) => n.id === activeNodeId);
+
+  // Current default role: what's saved on the node (fallback to member)
+  const savedDefaultRoleId = node?.defaultRoleId ?? BUILT_IN_ROLE_IDS.MEMBER;
+  const [pendingDefaultRoleId, setPendingDefaultRoleId] = useState<string>(savedDefaultRoleId);
+
+  // Roles available as join defaults (exclude owner)
+  const assignableRoles = useMemo(
+    () => roles.filter((r) => r.id !== BUILT_IN_ROLE_IDS.OWNER),
+    [roles]
+  );
+
+  const handleSaveDefaultRole = async () => {
+    if (!activeNodeId || pendingDefaultRoleId === savedDefaultRoleId) return;
+    setIsSavingDefault(true);
+    try {
+      await updateNode(activeNodeId, { defaultRoleId: pendingDefaultRoleId });
+    } finally {
+      setIsSavingDefault(false);
+    }
+  };
+
+  // Keep dropdown in sync if the saved value changes externally
+  useEffect(() => {
+    setPendingDefaultRoleId(savedDefaultRoleId);
+  }, [savedDefaultRoleId]);
 
   // Sort roles by position
   const sortedRoles = useMemo(() => {
@@ -66,6 +96,38 @@ export function RolesTab() {
 
   return (
     <div className="space-y-4">
+      {/* Default Join Role */}
+      {(canManageRoles || isOwner) && (
+        <div className="p-3 bg-nodes-surface rounded-lg border border-nodes-border space-y-2">
+          <div>
+            <h4 className="text-sm font-semibold text-nodes-text">Default Join Role</h4>
+            <p className="text-xs text-nodes-text-muted">
+              Role automatically assigned to new members when they join this Node.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={pendingDefaultRoleId}
+              onChange={(e) => setPendingDefaultRoleId(e.target.value)}
+              className="flex-1 px-3 py-1.5 text-sm bg-nodes-bg border border-nodes-border rounded-lg text-nodes-text focus:outline-none focus:border-nodes-primary"
+            >
+              {assignableRoles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSaveDefaultRole}
+              disabled={isSavingDefault || pendingDefaultRoleId === savedDefaultRoleId}
+              className="px-3 py-1.5 text-sm bg-nodes-primary text-white rounded-lg hover:bg-nodes-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSavingDefault ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

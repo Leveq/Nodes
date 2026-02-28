@@ -63,9 +63,14 @@ export class PermissionResolver {
       if (role?.permissions[permission]) return true;
     }
 
-    // Implicit member role check (everyone has member permissions by default)
-    const memberRole = this.roles.get(BUILT_IN_ROLE_IDS.MEMBER);
-    if (memberRole?.permissions[permission]) return true;
+    // Implicit member role fallback — ONLY when the user has no explicitly assigned
+    // roles (e.g. a freshly joined user whose member record hasn't propagated yet).
+    // If the user has roles, those roles are authoritative; the fallback must not
+    // silently override a restrictive role like "visitor".
+    if (userRoleIds.length === 0) {
+      const memberRole = this.roles.get(BUILT_IN_ROLE_IDS.MEMBER);
+      if (memberRole?.permissions[permission]) return true;
+    }
 
     return false;
   }
@@ -142,6 +147,7 @@ export class PermissionResolver {
     const keys: (keyof RolePermissions)[] = [
       "manageNode", "manageChannels", "editChannelSettings",
       "manageRoles", "assignRoles",
+      "viewChannel",
       "sendMessages", "sendFiles", "useReactions", "embedLinks",
       "editOwnMessages", "deleteOwnMessages", "deleteAnyMessage",
       "kickMembers", "banMembers", "manageInvites", "viewAuditLog",

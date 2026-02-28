@@ -1,10 +1,11 @@
 import { create } from "zustand";
-import { NodeManager } from "@nodes/transport-gun";
+import { NodeManager, roleManager } from "@nodes/transport-gun";
 import type { NodeServer, NodeMember, NodeChannel } from "@nodes/core";
 import { useToastStore } from "./toast-store";
 import { useNotificationStore } from "./notification-store";
 import { useMessageStore } from "./message-store";
 import { useThemeStore } from "./theme-store";
+import { useRoleStore } from "./role-store";
 
 // TTL for cached display names (5 minutes)
 const DISPLAY_NAME_CACHE_TTL = 5 * 60 * 1000;
@@ -42,11 +43,12 @@ interface NodeState {
   deleteNode: (nodeId: string) => Promise<void>;
   updateNode: (
     nodeId: string,
-    updates: Partial<Pick<NodeServer, "name" | "description" | "icon" | "theme">>
+    updates: Partial<Pick<NodeServer, "name" | "description" | "icon" | "theme" | "defaultRoleId">>
   ) => Promise<void>;
   setActiveNode: (nodeId: string | null) => void;
   setActiveChannel: (channelId: string | null) => void;
   loadChannels: (nodeId: string) => Promise<void>;
+  loadChannelOverrides: (nodeId: string) => Promise<void>;
   loadMembers: (nodeId: string) => Promise<void>;
   createChannel: (nodeId: string, name: string, topic?: string, type?: "text" | "voice") => Promise<void>;
   updateChannel: (
@@ -215,6 +217,17 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         ),
       }));
 
+      // If the theme was changed and this is the currently active node,
+      // re-apply immediately so the user doesn't need to restart.
+      if ("theme" in updates && get().activeNodeId === nodeId) {
+        const themeStore = useThemeStore.getState();
+        if (updates.theme) {
+          themeStore.applyNodeTheme(updates.theme);
+        } else {
+          themeStore.clearNodeTheme();
+        }
+      }
+
       useToastStore.getState().addToast("success", "Node updated.");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -312,6 +325,9 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       if (get().activeNodeId === nodeId && channels.length > 0) {
         set({ activeChannelId: pickChannelId(get().activeChannelByNode[nodeId], channels) });
       }
+
+      // Load channel permission overrides in the background (non-blocking)
+      get().loadChannelOverrides(nodeId);
     } catch (err: unknown) {
       set((state) => ({
         loadingChannels: { ...state.loadingChannels, [nodeId]: false },
@@ -319,6 +335,22 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load channels: ${message}`);
     }
+  },
+
+  loadChannelOverrides: async (nodeId) => {
+    const nodeChannels = get().channels[nodeId];
+    if (!nodeChannels || nodeChannels.length === 0) return;
+    const roleStoreState = useRoleStore.getState();
+    await Promise.all(
+      nodeChannels.map(async (ch) => {
+        try {
+          const overrides = await roleManager.getChannelOverrides(nodeId, ch.id);
+          roleStoreState.setChannelOverrides(nodeId, ch.id, overrides);
+        } catch {
+          // Non-fatal – channel may have no overrides yet
+        }
+      })
+    );
   },
 
   loadMembers: async (nodeId) => {

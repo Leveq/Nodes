@@ -12,6 +12,7 @@ import { MessageInput } from "./MessageInput";
 import { TypingIndicator } from "./TypingIndicator";
 import { DropZone } from "./DropZone";
 import type { PendingAttachment } from "./FileAttachmentButton";
+import { useCanSendInChannel, useIsAdmin } from "../../hooks/usePermissions";
 
 // Stable empty object to avoid new references on each render
 const EMPTY_REACTIONS: Record<string, Record<string, ReactionData[]>> = {};
@@ -38,6 +39,10 @@ export function ChannelView({
   const transport = useTransport();
   const publicKey = useIdentityStore((s) => s.publicKey);
   const typingTimeoutsRef = useRef<Map<string, number>>(new Map());
+
+  const canSend = useCanSendInChannel(channelId);
+  const isAdmin = useIsAdmin();
+  const showInput = canSend || isAdmin;
 
   const [droppedAttachments, setDroppedAttachments] = useState<PendingAttachment[]>([]);
   
@@ -274,11 +279,20 @@ export function ChannelView({
           onRemoveReaction={handleRemoveReaction}
         />
         <TypingIndicator channelId={channelId} />
-        <MessageInput
-          channelId={channelId}
-          channelName={channelName}
-          externalAttachments={droppedAttachments}
-        />
+        {showInput ? (
+          <MessageInput
+            channelId={channelId}
+            channelName={channelName}
+            externalAttachments={droppedAttachments}
+          />
+        ) : (
+          <div className="px-4 py-3 mx-4 mb-4 rounded-lg bg-nodes-surface border border-nodes-border flex items-center gap-2 text-nodes-text-muted text-sm">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            You don't have permission to send messages in <strong className="text-nodes-text">#{channelName}</strong>.
+          </div>
+        )}
       </div>
     </DropZone>
   );

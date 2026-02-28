@@ -36,6 +36,114 @@ export function useMyRoles(nodeId?: string | null): string[] {
 }
 
 /**
+ * Check if the current user can VIEW a specific channel.
+ * Channels are VISIBLE BY DEFAULT — they are hidden only when a role the user
+ * holds has an explicit "deny" override on viewChannel for that channel.
+ * This preserves backwards compatibility: users with old Gun-stored roles
+ * (which don't have viewChannel in their permissions JSON) still see all channels.
+ */
+export function useCanViewChannel(channelId: string | null | undefined): boolean {
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const myRoles = useMyRoles();
+  const isOwner = useIsOwner();
+
+  const isDenied = useRoleStore((s) => {
+    // Owners and admins always see everything
+    if (!activeNodeId || !channelId || isOwner) return false;
+
+    const channelOverrides = s.channelOverridesByNode[activeNodeId]?.[channelId];
+    if (!channelOverrides || channelOverrides.length === 0) return false;
+
+    // Build a set of the user's effective role IDs (includes implicit member)
+    const effectiveRoles = new Set([...myRoles, BUILT_IN_ROLE_IDS.MEMBER]);
+
+    // An explicit allow on ANY of the user's roles wins over a deny
+    let hasDeny = false;
+    for (const entry of channelOverrides) {
+      if (!effectiveRoles.has(entry.roleId)) continue;
+      const state = entry.overrides.viewChannel;
+      if (state === "allow") return false; // explicit allow wins
+      if (state === "deny") hasDeny = true;
+    }
+    return hasDeny;
+  });
+
+  return !isDenied;
+}
+
+/**
+ * Check if the current user can SEND MESSAGES in a specific channel.
+ * Logic mirrors useCanViewChannel:
+ *  - Owners/admins always can.
+ *  - A channel-level "deny" override on sendMessages blocks it.
+ *  - A channel-level "allow" override grants it regardless of base role.
+ *  - Otherwise falls back to the user's base role permissions (no implicit member
+ *    fallback — visitor-style roles must truly restrict sending).
+ */
+export function useCanSendInChannel(channelId: string | null | undefined): boolean {
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const myRoles = useMyRoles();
+  const isOwner = useIsOwner();
+
+  return useRoleStore((s) => {
+    if (!activeNodeId || !channelId) return true;
+    if (isOwner) return true;
+
+    // ── 1. Channel-level overrides (highest priority) ─────────────────────
+    const channelOverrides = s.channelOverridesByNode[activeNodeId]?.[channelId];
+    if (channelOverrides && channelOverrides.length > 0) {
+      const effectiveRoles = new Set([...myRoles, BUILT_IN_ROLE_IDS.MEMBER]);
+      let hasDeny = false;
+      for (const entry of channelOverrides) {
+        if (!effectiveRoles.has(entry.roleId)) continue;
+        const state = entry.overrides.sendMessages;
+        if (state === "allow") return true;  // explicit channel allow wins
+        if (state === "deny") hasDeny = true;
+      }
+      if (hasDeny) return false;
+    }
+
+    // ── 2. Base role permissions ───────────────────────────────────────────
+    const roles = s.rolesByNode[activeNodeId];
+    if (!roles) return true; // roles not loaded yet, optimistic allow
+
+    const roleMap = new Map(roles.map((r) => [r.id, r]));
+
+    // If the user has explicitly assigned roles, those are authoritative.
+    if (myRoles.length > 0) {
+      for (const roleId of myRoles) {
+        const role = roleMap.get(roleId);
+        if (role?.permissions.sendMessages) return true;
+      }
+      return false; // no assigned role grants sendMessages
+    }
+
+    // No roles assigned at all: fall back to implicit member permissions.
+    const memberRole = roleMap.get(BUILT_IN_ROLE_IDS.MEMBER);
+    return memberRole?.permissions.sendMessages ?? true;
+  });
+}
+
+/**
+ * Check if the current user can view a channel — includes channel overrides.
+ * This also reflects whether base sendMessages permission is true at the role level.
+ */
+export function useChannelPermission(
+  channelId: string | null | undefined,
+  permission: keyof import("@nodes/core").RolePermissions
+): boolean {
+  const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const myRoles = useMyRoles();
+  const isOwner = useIsOwner();
+
+  return useRoleStore((s) => {
+    if (!activeNodeId || !channelId) return true;
+    if (isOwner) return true;
+    return s.hasPermission(activeNodeId, myRoles, permission, isOwner, channelId);
+  });
+}
+
+/**
  * Check if the current user is the owner of a Node
  * Checks both role assignment AND node.owner field (for race condition fallback)
  */
