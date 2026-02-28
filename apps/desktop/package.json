@@ -23,6 +23,7 @@
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-http": "^2.5.7",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-updater": "~2.10.0",
     "browser-image-compression": "^2.0.2",
     "gun": "^0.2020.1241",
     "highlight.js": "^11.11.1",

@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Create the system tray
             tray::create_tray(app.handle())?;

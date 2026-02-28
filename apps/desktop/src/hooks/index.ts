@@ -10,6 +10,7 @@ export { useModerationEvents } from "./useModerationEvents";
 export { useSlowMode } from "./useSlowMode";
 export { useSearch, useSearchIndex } from "./useSearch";
 export { useDirectoryRefresh } from "./useDirectoryRefresh";
+export { useUpdater } from "./useUpdater";
 export {
   usePermissions,
   useMyRoles,
