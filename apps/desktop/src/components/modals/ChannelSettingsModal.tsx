@@ -5,9 +5,12 @@ import { useNodeStore } from "../../stores/node-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
 import { useHasPermission } from "../../hooks/usePermissions";
-import { getModerationManager } from "@nodes/transport-gun";
-import { SLOW_MODE_OPTIONS } from "@nodes/core";
-import { Clock, Trash2 } from "lucide-react";
+import { useNodeRoles } from "../../hooks/usePermissions";
+import { useRoleStore } from "../../stores/role-store";
+import { getModerationManager, roleManager } from "@nodes/transport-gun";
+import { SLOW_MODE_OPTIONS, BUILT_IN_ROLE_IDS } from "@nodes/core";
+import type { OverrideState } from "@nodes/core";
+import { Clock, Trash2, Shield } from "lucide-react";
 
 interface ChannelSettingsModalProps {
   channelId: string;
@@ -177,6 +180,14 @@ export function ChannelSettingsModal({ channelId, onClose }: ChannelSettingsModa
           </div>
         )}
 
+        {/* Channel Permissions */}
+        {(canEditChannel || canManageChannels) && (
+          <ChannelPermissionsSection
+            channelId={channelId}
+            nodeId={activeNodeId}
+          />
+        )}
+
         {/* Danger zone */}
         {canManageChannels && (
           <div className="pt-4 border-t border-nodes-border">
@@ -218,5 +229,169 @@ export function ChannelSettingsModal({ channelId, onClose }: ChannelSettingsModa
         )}
       </div>
     </Modal>
+  );
+}
+// ── Channel Permissions Section ──────────────────────────────────────────────
+
+type OverrideMap = Record<string, { viewChannel: OverrideState; sendMessages: OverrideState }>;
+
+interface ChannelPermissionsSectionProps {
+  channelId: string;
+  nodeId: string;
+}
+
+function ChannelPermissionsSection({ channelId, nodeId }: ChannelPermissionsSectionProps) {
+  const roles = useNodeRoles(nodeId);
+  const addToast = useToastStore((s) => s.addToast);
+  const [overrides, setOverrides] = useState<OverrideMap>({});
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Seed local state from role-store whenever channel or roles change
+  const storedOverrides = useRoleStore((s) => s.channelOverridesByNode[nodeId]?.[channelId]);
+
+  useEffect(() => {
+    const initial: OverrideMap = {};
+    if (storedOverrides) {
+      for (const entry of storedOverrides) {
+        initial[entry.roleId] = {
+          viewChannel: (entry.overrides.viewChannel as OverrideState) ?? "inherit",
+          sendMessages: (entry.overrides.sendMessages as OverrideState) ?? "inherit",
+        };
+      }
+    }
+    setOverrides(initial);
+  }, [storedOverrides]);
+
+  const toggle = (roleId: string, perm: "viewChannel" | "sendMessages") => {
+    setOverrides((prev) => {
+      const cur = prev[roleId]?.[perm] ?? "inherit";
+      const next: OverrideState = cur === "inherit" ? "deny" : cur === "deny" ? "allow" : "inherit";
+      return {
+        ...prev,
+        [roleId]: { ...(prev[roleId] ?? { viewChannel: "inherit", sendMessages: "inherit" }), [perm]: next },
+      };
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await Promise.all(
+        Object.entries(overrides).map(([roleId, perms]) =>
+          roleManager.setChannelOverride(nodeId, channelId, roleId, {
+            viewChannel: perms.viewChannel === "inherit" ? undefined : perms.viewChannel,
+            sendMessages: perms.sendMessages === "inherit" ? undefined : perms.sendMessages,
+          })
+        )
+      );
+      // Refresh overrides in the role-store
+      const fresh = await roleManager.getChannelOverrides(nodeId, channelId);
+      useRoleStore.getState().setChannelOverrides(nodeId, channelId, fresh);
+      addToast("success", "Channel permissions saved");
+    } catch (err) {
+      addToast("error", `Failed to save permissions: ${(err as Error).message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Only show non-owner roles in the list
+  const editableRoles = roles.filter((r) => r.id !== BUILT_IN_ROLE_IDS.OWNER);
+  if (editableRoles.length === 0) return null;
+
+  return (
+    <div className="pt-4 border-t border-nodes-border">
+      <h3 className="text-sm font-semibold text-nodes-text mb-1 flex items-center gap-2">
+        <Shield className="w-4 h-4 text-nodes-primary" />
+        Channel Permissions
+      </h3>
+      <p className="text-xs text-nodes-text-muted mb-3">
+        Override per-role permissions for this channel. Overrides take precedence over role defaults.
+      </p>
+
+      <div className="space-y-1">
+        {/* Header */}
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-2 pb-1">
+          <span className="text-xs font-medium text-nodes-text-muted uppercase">Role</span>
+          <span className="text-xs font-medium text-nodes-text-muted uppercase w-16 text-center">View</span>
+          <span className="text-xs font-medium text-nodes-text-muted uppercase w-16 text-center">Send</span>
+        </div>
+
+        {editableRoles.map((role) => {
+          const perms = overrides[role.id] ?? { viewChannel: "inherit", sendMessages: "inherit" };
+          return (
+            <div
+              key={role.id}
+              className="grid grid-cols-[1fr_auto_auto] gap-2 items-center px-2 py-1.5 rounded-lg hover:bg-nodes-surface"
+            >
+              {/* Role name */}
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: role.color }} />
+                <span className="text-sm text-nodes-text truncate">{role.name}</span>
+              </div>
+
+              {/* View Channel toggle */}
+              <OverrideToggle
+                state={perms.viewChannel}
+                onToggle={() => toggle(role.id, "viewChannel")}
+              />
+
+              {/* Send Messages toggle */}
+              <OverrideToggle
+                state={perms.sendMessages}
+                onToggle={() => toggle(role.id, "sendMessages")}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between mt-3">
+        <p className="text-xs text-nodes-text-muted">
+          <span className="inline-flex items-center gap-1">
+            <OverrideDot state="inherit" /> inherit
+          </span>
+          {" · "}
+          <span className="inline-flex items-center gap-1">
+            <OverrideDot state="allow" /> allow
+          </span>
+          {" · "}
+          <span className="inline-flex items-center gap-1">
+            <OverrideDot state="deny" /> deny
+          </span>
+        </p>
+        <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          {isSaving ? "Saving…" : "Save Permissions"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function OverrideDot({ state }: { state: OverrideState }) {
+  return (
+    <span
+      className={`w-2 h-2 rounded-full inline-block ${
+        state === "allow" ? "bg-green-500" : state === "deny" ? "bg-red-500" : "bg-nodes-text-muted"
+      }`}
+    />
+  );
+}
+
+function OverrideToggle({ state, onToggle }: { state: OverrideState; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      title={state === "inherit" ? "Inherit from role (click to deny)" : state === "deny" ? "Denied (click to allow)" : "Allowed (click to inherit)"}
+      className={`w-16 h-7 rounded-md text-xs font-semibold transition-colors border flex items-center justify-center gap-1 ${
+        state === "allow"
+          ? "bg-green-500/20 border-green-500/50 text-green-400"
+          : state === "deny"
+          ? "bg-red-500/20 border-red-500/50 text-red-400"
+          : "bg-nodes-surface border-nodes-border text-nodes-text-muted"
+      }`}
+    >
+      {state === "allow" ? "✓ Allow" : state === "deny" ? "✕ Deny" : "– Inherit"}
+    </button>
   );
 }

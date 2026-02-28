@@ -72,9 +72,13 @@ export class RoleManager {
 
         let permissions: RolePermissions;
         try {
-          permissions = typeof data.permissions === "string"
+          const parsed = typeof data.permissions === "string"
             ? JSON.parse(data.permissions)
             : data.permissions;
+          // Backfill any permission fields added after this role was stored in Gun
+          const builtInId = data.id as keyof typeof DEFAULT_PERMISSIONS;
+          const defaults = DEFAULT_PERMISSIONS[builtInId] ?? DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.MEMBER];
+          permissions = { ...defaults, ...parsed };
         } catch {
           // Fallback to default permissions for this role type
           const builtInId = data.id as keyof typeof DEFAULT_PERMISSIONS;
@@ -120,9 +124,13 @@ export class RoleManager {
 
         let permissions: RolePermissions;
         try {
-          permissions = typeof data.permissions === "string"
+          const parsed = typeof data.permissions === "string"
             ? JSON.parse(data.permissions)
             : data.permissions;
+          // Backfill any permission fields added after this role was stored in Gun
+          const builtInId = data.id as keyof typeof DEFAULT_PERMISSIONS;
+          const defaults = DEFAULT_PERMISSIONS[builtInId] ?? DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.MEMBER];
+          permissions = { ...defaults, ...parsed };
         } catch {
           const builtInId = data.id as keyof typeof DEFAULT_PERMISSIONS;
           permissions = DEFAULT_PERMISSIONS[builtInId] || DEFAULT_PERMISSIONS[BUILT_IN_ROLE_IDS.MEMBER];

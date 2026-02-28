@@ -49,6 +49,12 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
       settings: { ...state.settings, activeThemeId: themeId },
     }));
     
+    // Don't override node theme — it will be cleared when leaving the node
+    if (get().nodeThemeOverride) {
+      get().saveToStorage();
+      return;
+    }
+
     // Apply the theme
     const theme = get().allThemes.find((t) => t.id === themeId) ?? BUILT_IN_THEMES[0];
     ThemeEngine.apply(theme, get().settings.accentColorOverride);
@@ -60,6 +66,12 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
       settings: { ...state.settings, accentColorOverride: color },
     }));
     
+    // Don't override node theme — it will be cleared when leaving the node
+    if (get().nodeThemeOverride) {
+      get().saveToStorage();
+      return;
+    }
+
     // Apply the accent
     const theme = get().getActiveTheme();
     ThemeEngine.apply(theme, color);

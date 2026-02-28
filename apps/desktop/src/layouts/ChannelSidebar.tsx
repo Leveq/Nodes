@@ -6,7 +6,7 @@ import { useNotificationStore } from "../stores/notification-store";
 import { CreateChannelModal, NodeSettingsModal, ChannelSettingsModal } from "../components/modals";
 import { ChannelListSkeleton } from "../components/ui";
 import { VoiceChannelEntry, VoiceConnectionBar } from "../components/voice";
-import { usePermissions } from "../hooks/usePermissions";
+import { usePermissions, useCanViewChannel, useCanSendInChannel, useIsAdmin } from "../hooks/usePermissions";
 import { useVoiceTransport } from "../providers/TransportProvider";
 
 /**
@@ -259,6 +259,17 @@ function ChannelItem({ channelId, nodeId, name, isActive, onClick, onOpenSetting
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   
+  const canView = useCanViewChannel(channelId);
+  const canSend = useCanSendInChannel(channelId);
+  const isAdmin = useIsAdmin();
+
+  // Non-admins who cannot view this channel: hide it completely
+  if (!canView && !isAdmin) return null;
+
+  // Channel is visible but read-only (sendMessages denied, or viewChannel denied for admin display)
+  const isReadOnly = !canSend && !isAdmin;
+  const isHiddenForAdmin = !canView && isAdmin; // admin can see it but others can't
+  
   const unreadCount = useMessageStore((s) => s.unreadCounts[channelId] || 0);
   const clearUnread = useMessageStore((s) => s.clearUnread);
   const mentionCount = useNotificationStore((s) => s.mentionCounts[channelId] || 0);
@@ -322,12 +333,28 @@ function ChannelItem({ channelId, nodeId, name, isActive, onClick, onOpenSetting
             : hasUnread || hasMentions
             ? "text-text-primary"
             : ""
-        } ${isMuted ? "opacity-60" : ""}`}
+        } ${isMuted ? "opacity-60" : ""} ${isReadOnly ? "opacity-70" : ""} ${isHiddenForAdmin ? "opacity-50" : ""}`}
       >
         <span className="text-lg leading-none">#</span>
         <span className={`truncate flex-1 ${hasUnread || hasMentions ? "font-semibold" : ""}`}>
           {name}
         </span>
+        {/* Admin-only: channel hidden from others */}
+        {isHiddenForAdmin && (
+          <span className="text-text-muted" title="Hidden from most roles">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+            </svg>
+          </span>
+        )}
+        {/* Read-only lock icon */}
+        {isReadOnly && !isHiddenForAdmin && (
+          <span className="text-text-muted" title="Read only">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </span>
+        )}
         {/* Muted icon */}
         {isMuted && (
           <span className="text-text-muted" title="Muted">

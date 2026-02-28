@@ -46,6 +46,7 @@ export interface NodeServer {
   createdAt: number;
   inviteKey: string; // Random key for invite link verification
   theme?: NodesTheme | null; // Custom Node theme (applies to all members by default)
+  defaultRoleId?: string; // Role ID assigned to new members when they join (defaults to MEMBER)
 }
 
 export interface NodeMember {
@@ -208,6 +209,9 @@ export interface RolePermissions {
   manageRoles: boolean;          // Create, edit, delete roles
   assignRoles: boolean;          // Assign roles to members
 
+  // Channel visibility
+  viewChannel: boolean;          // See and read a channel (can be overridden per-channel)
+
   // Messaging
   sendMessages: boolean;
   sendFiles: boolean;
@@ -242,6 +246,7 @@ export const DEFAULT_PERMISSIONS: Record<BuiltInRoleId, RolePermissions> = {
   [BUILT_IN_ROLE_IDS.OWNER]: {
     manageNode: true, manageChannels: true, editChannelSettings: true,
     manageRoles: true, assignRoles: true,
+    viewChannel: true,
     sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
     editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: true,
     kickMembers: true, banMembers: true, manageInvites: true, viewAuditLog: true,
@@ -250,6 +255,7 @@ export const DEFAULT_PERMISSIONS: Record<BuiltInRoleId, RolePermissions> = {
   [BUILT_IN_ROLE_IDS.ADMIN]: {
     manageNode: true, manageChannels: true, editChannelSettings: true,
     manageRoles: true, assignRoles: true,
+    viewChannel: true,
     sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
     editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: true,
     kickMembers: true, banMembers: true, manageInvites: true, viewAuditLog: true,
@@ -258,6 +264,7 @@ export const DEFAULT_PERMISSIONS: Record<BuiltInRoleId, RolePermissions> = {
   [BUILT_IN_ROLE_IDS.MODERATOR]: {
     manageNode: false, manageChannels: false, editChannelSettings: true,
     manageRoles: false, assignRoles: false,
+    viewChannel: true,
     sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
     editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: true,
     kickMembers: true, banMembers: false, manageInvites: false, viewAuditLog: true,
@@ -266,6 +273,7 @@ export const DEFAULT_PERMISSIONS: Record<BuiltInRoleId, RolePermissions> = {
   [BUILT_IN_ROLE_IDS.MEMBER]: {
     manageNode: false, manageChannels: false, editChannelSettings: false,
     manageRoles: false, assignRoles: false,
+    viewChannel: true,
     sendMessages: true, sendFiles: true, useReactions: true, embedLinks: true,
     editOwnMessages: true, deleteOwnMessages: true, deleteAnyMessage: false,
     kickMembers: false, banMembers: false, manageInvites: false, viewAuditLog: false,

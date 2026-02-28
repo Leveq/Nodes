@@ -8,6 +8,8 @@ import { useVoiceStore } from "../stores/voice-store";
 import { useSearchStore } from "../stores/search-store";
 import { useNodeSubscriptions } from "../hooks/useNodeSubscriptions";
 import { useMemberSubscription } from "../hooks/useMemberSubscription";
+import { useChannelSubscription } from "../hooks/useChannelSubscription";
+import { useNodeDeletionGuard } from "../hooks/useNodeDeletionGuard";
 import { useRoleSubscriptions } from "../hooks/useRoleSubscriptions";
 import { useDMSubscriptions } from "../hooks/useDMSubscriptions";
 import { usePresenceSubscriptions } from "../hooks/usePresenceSubscriptions";
@@ -121,8 +123,14 @@ export function AppShell() {
   // Subscribe to member changes for the active Node
   useMemberSubscription();
 
+  // Subscribe to channel list changes for the active Node (detects deletions/additions)
+  useChannelSubscription();
+
   // Subscribe to roles for the active Node
   useRoleSubscriptions();
+
+  // Watch all joined nodes for deletion and auto-remove them from state
+  useNodeDeletionGuard();
 
   // Subscribe to kick/ban events for the current user
   useModerationEvents();
