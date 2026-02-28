@@ -67,4 +67,5 @@ jobs:
           releaseDraft: true
           prerelease: true
           projectPath: apps/desktop
+          tauriScript: pnpm tauri
           args: ${{ matrix.args }}
