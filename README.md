@@ -12,7 +12,7 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v0.10.0-alpha)
+## What Works Today (v1.0.0-beta)
 
 - **Self-sovereign identity** — Keypair-based identity with encrypted local keystore and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management
@@ -44,15 +44,20 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 
 ![Nodes](./.github/docs/Screenshots/nodesscreenshot01.png)
 ![Nodes getting started](./.github/docs/Screenshots/nodesscreenshot02.png)
-<!-- Add more screenshots: voice channel, theme switching, Node discovery, GIF picker -->
 
 ## Download
 
 | Platform | Download |
 |----------|----------|
-| Windows | [Nodes-setup.msi](https://github.com/Leveq/Nodes/releases/latest) |
-| Linux | [Nodes.AppImage](https://github.com/Leveq/Nodes/releases/latest) |
-| macOS | Coming soon |
+| Windows (MSI) | [Nodes_1.0.0_x64_en-US.msi](https://github.com/Leveq/Nodes/releases/latest) |
+| Windows (NSIS) | [Nodes_1.0.0_x64-setup.exe](https://github.com/Leveq/Nodes/releases/latest) |
+| Linux (AppImage) | [Nodes_1.0.0_amd64.AppImage](https://github.com/Leveq/Nodes/releases/latest) |
+| Linux (deb) | [Nodes_1.0.0_amd64.deb](https://github.com/Leveq/Nodes/releases/latest) |
+| Linux (rpm) | [Nodes-1.0.0-1.x86_64.rpm](https://github.com/Leveq/Nodes/releases/latest) |
+| macOS (Apple Silicon) | [Nodes_1.0.0_aarch64.dmg](https://github.com/Leveq/Nodes/releases/latest) |
+| macOS (Intel) | [Nodes_1.0.0_x64.dmg](https://github.com/Leveq/Nodes/releases/latest) |
+
+Or use the web client at [app.nodes.services](https://app.nodes.services).
 
 ## Architecture
 
@@ -157,10 +162,15 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Notifications & @Mentions — Milestone 3.3
 - ✅ Theming — Milestone 3.4
 - ✅ Media polish (avatars, GIFs, emoji picker, clipboard paste) — Milestone 3.5a
-- 🔲 Polish pass & production release — Milestone 3.5
+- ✅ Polish pass & production release — Milestone 3.5
 
 ### Phase 4 — Scale
-Mobile (React Native), plugin/bot system, encrypted channels, federation, web PWA.
+- 🔲 Auto-updater (in-app update notifications)
+- 🔲 Mobile app (React Native)
+- 🔲 Linux & macOS desktop builds
+- 🔲 Plugin/bot system
+- 🔲 Encrypted channels
+- 🔲 Web PWA
 
 ## How It's Different
 
@@ -175,19 +185,21 @@ Mobile (React Native), plugin/bot system, encrypted channels, federation, web PW
 
 ## Known Limitations (Beta)
 
-- **No mobile app yet.** Desktop only for now.
+- **No mobile app yet.** Desktop and web only for now.
 - **No E2E encrypted channels.** Only DMs are encrypted. Channel messages are signed but not encrypted.
 - **No push notifications on web.** Desktop notifications require the Tauri app.
+- **Back up your identity keypair.** There is no password recovery — if you lose your keys, your identity is gone.
 - **No message history beyond what relays persist.** If all relays drop a message before you sync, it's gone.
 - **DM metadata is visible.** Who talks to whom and when is observable in the Gun graph. Message content is encrypted.
 - **Single relay dependency.** While the protocol is decentralized, the current deployment uses a single relay server. Running your own relay mitigates this.
 
 ## Contributing
 
-Nodes is early-stage alpha. If you're interested in contributing, open an issue to discuss before submitting a PR. Areas where help is most needed:
+Nodes is in beta. If you're interested in contributing, open an issue to discuss before submitting a PR. Areas where help is most needed:
 
-- Video chat implementation
 - Mobile app (React Native)
+- Linux and macOS desktop builds
+- Auto-updater implementation
 - Automated test coverage
 - UI/UX design and polish
 - Security auditing
