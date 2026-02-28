@@ -4,8 +4,11 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastContainer } from "./components/ToastContainer";
 import { TransportProvider } from "./providers/TransportProvider";
 import { AppShell } from "./layouts/AppShell";
+import { useUpdater } from "./hooks/useUpdater";
 
 function App() {
+  useUpdater();
+
   return (
     <ErrorBoundary>
       <TransportProvider>
