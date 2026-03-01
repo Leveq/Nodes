@@ -275,7 +275,7 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
   const offlineMembers = nodeMembers.filter((m) => !isOnline(m));
 
   return (
-    <div className="w-60 bg-depth-secondary border-l border-surface-border flex flex-col shrink-0">
+    <div className="w-60 h-full bg-depth-secondary border-l border-surface-border flex flex-col shrink-0">
       <div className="p-4 border-b border-surface-border flex items-center justify-between">
         <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide">
           Members{!isMembersLoading && ` — ${nodeMembers.length}`}
