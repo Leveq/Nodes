@@ -73,4 +73,5 @@ jobs:
           prerelease: true
           projectPath: apps/desktop
           tauriScript: pnpm tauri
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
