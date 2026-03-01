@@ -49,13 +49,13 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 
 | Platform | Download |
 |----------|----------|
-| Windows (MSI) | [Nodes_1.0.0_x64_en-US.msi](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes_1.0.0_x64_en-US.msi) |
-| Windows (NSIS) | [Nodes_1.0.0_x64-setup.exe](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes_1.0.0_x64-setup.exe) |
-| Linux (AppImage) | [Nodes_1.0.0_amd64.AppImage](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes_1.0.0_amd64.AppImage) |
-| Linux (deb) | [Nodes_1.0.0_amd64.deb](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes_1.0.0_amd64.deb) |
-| Linux (rpm) | [Nodes-1.0.0-1.x86_64.rpm](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes-1.0.0-1.x86_64.rpm) |
-| macOS (Apple Silicon) | [Nodes_1.0.0_aarch64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes_1.0.0_aarch64.dmg) |
-| macOS (Intel) | [Nodes_1.0.0_x64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta4/Nodes_1.0.0_x64.dmg) |
+| Windows (MSI) | [Nodes_1.0.0_x64_en-US.msi](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes_1.0.0_x64_en-US.msi) |
+| Windows (NSIS) | [Nodes_1.0.0_x64-setup.exe](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes_1.0.0_x64-setup.exe) |
+| Linux (AppImage) | [Nodes_1.0.0_amd64.AppImage](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes_1.0.0_amd64.AppImage) |
+| Linux (deb) | [Nodes_1.0.0_amd64.deb](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes_1.0.0_amd64.deb) |
+| Linux (rpm) | [Nodes-1.0.0-1.x86_64.rpm](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes-1.0.0-1.x86_64.rpm) |
+| macOS (Apple Silicon) | [Nodes_1.0.0_aarch64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes_1.0.0_aarch64.dmg) |
+| macOS (Intel) | [Nodes_1.0.0_x64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.0.0-beta6/Nodes_1.0.0_x64.dmg) |
 
 Or use the web client at [app.nodes.services](https://app.nodes.services).
 
