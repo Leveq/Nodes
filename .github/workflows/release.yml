@@ -70,7 +70,7 @@ jobs:
           releaseName: 'Nodes ${{ github.ref_name }}'
           releaseBody: 'See release notes.'
           releaseDraft: true
-          prerelease: false
+          prerelease: true
           projectPath: apps/desktop
           tauriScript: pnpm tauri
           updaterJsonPreferNsis: true
