@@ -1,0 +1,299 @@
+# Nodes Security Model
+
+**Version:** 1.0.0-beta · **Last Updated:** March 2026
+
+This document describes the security architecture, threat model, and known limitations of Nodes. It is intended for users who want to understand what Nodes protects against, what it does not, and what is planned for future hardening.
+
+Nodes is a beta product built by a solo developer. It has not undergone a formal security audit. This document is an exercise in transparency, not a guarantee.
+
+---
+
+## Principles
+
+Nodes is built on three security principles:
+
+1. **No PII collection.** Identity is a cryptographic keypair. Nodes never asks for your name, email, phone number, or government ID. There is no account database to breach.
+
+2. **Encryption by default.** Direct messages are end-to-end encrypted before they leave your device. Channel messages are cryptographically signed by the author.
+
+3. **User-owned data.** Your identity, profile, and message history live in your own cryptographic graph. Nodes has no central server that stores your data in plaintext.
+
+---
+
+## Cryptographic Primitives
+
+Nodes uses GunJS SEA (Security, Encryption, Authorization) for all cryptographic operations.
+
+| Operation | Algorithm | Purpose |
+|-----------|-----------|---------|
+| Identity keypairs | ECDSA (secp256k1) | Signing, identity verification |
+| Key exchange | ECDH (secp256k1) | Deriving shared secrets for DM encryption |
+| DM encryption | AES-256-GCM | Symmetric encryption of message content |
+| Message signing | ECDSA | Proving authorship, preventing tampering |
+| Profile encryption | AES-256-GCM | Encrypting private profile fields |
+| Key derivation | PBKDF2 | Deriving encryption keys from ECDH shared secrets |
+
+### How DM Encryption Works
+
+1. Alice and Bob each have an ECDSA keypair (signing) and an ECDH keypair (encryption).
+2. When Alice sends a DM to Bob, her client performs an ECDH key exchange using her private encryption key and Bob's public encryption key. This derives a shared secret that only Alice and Bob can compute.
+3. The message content is encrypted with AES-256-GCM using the derived shared secret.
+4. The encrypted ciphertext is written to the GunJS graph.
+5. Bob's client performs the same ECDH exchange (his private key + Alice's public key) to derive the same shared secret and decrypt the message.
+6. Relay peers only ever see ciphertext. They cannot decrypt the message content.
+
+### Forward Secrecy: Current Limitation
+
+Nodes currently uses **static ECDH** for DM encryption. This means the shared secret between Alice and Bob is derived from their long-lived keypairs and remains the same for every message they exchange.
+
+**What this means in practice:** If an attacker compromises either Alice's or Bob's private key in the future, they could decrypt every past DM between them — not just future messages. This is because the same shared secret was used for all historical messages.
+
+**How Signal solves this:** Signal implements the Double Ratchet algorithm, which generates a new ephemeral key for every message. Each message is encrypted with a unique key that is deleted after use. Compromising a key at time T reveals nothing about messages sent at time T-1. This property is called Perfect Forward Secrecy (PFS).
+
+**Current risk level:** Low for most users. An attacker would need to both (a) compromise your private key and (b) have captured and stored your encrypted DM traffic from the Gun graph. This is primarily a concern for high-risk users facing targeted, persistent surveillance — not casual attackers or data breaches.
+
+**Planned mitigation:** Implementing an ephemeral key ratchet for DMs is on the security roadmap. This would generate a new ECDH keypair per message (or per message chain), derive a fresh shared secret each time, and delete spent keys. The challenge is integrating ratcheting with GunJS's eventual consistency model, where messages may arrive out of order.
+
+### How Message Signing Works
+
+All channel messages are signed with the author's ECDSA private key. When a message is received, the client verifies the signature against the author's public key. This ensures:
+
+- Messages cannot be forged by other users or relay peers.
+- Messages cannot be silently modified in transit.
+- Every message has provable authorship.
+
+### Replay Protection: Current Status
+
+A replay attack occurs when an attacker captures a valid signed message and re-injects it into the network, causing it to appear as if the original author sent it again.
+
+**Current mitigation:** Every message in Nodes includes a unique `id` and a `timestamp`. The GunJS graph uses content-addressed storage where each message occupies a unique path. Re-injecting an identical message would write to the same graph path (an idempotent operation — it doesn't create a duplicate), and injecting a modified copy would fail signature verification.
+
+**Remaining gap:** A sophisticated attacker with write access to the Gun graph could potentially construct a new graph path and place a copied message at a different location with a manipulated timestamp. The message signature would still verify (the content is unchanged), but it would appear in a context the author didn't intend. The practical impact is limited — the message content isn't fabricated, only its placement — but it's a theoretical integrity concern.
+
+**Planned mitigation:** Adding a monotonic sequence number or channel-scoped nonce to the signed message payload would make replay attacks detectable. If a message claims to be sequence #47 but #47 already exists with different content, the duplicate is rejected. This requires changes to the message schema and signing envelope.
+
+### Data Validation and Graph Poisoning
+
+A graph poisoning attack occurs when a malicious peer writes invalid or malicious data to the GunJS graph, hoping other clients will accept and render it.
+
+**How Nodes defends against this:**
+
+1. **Signature verification on all messages.** Every message includes an ECDSA signature. When a client receives a message, it verifies the signature against the claimed author's public key before rendering. Unsigned messages or messages with invalid signatures are discarded.
+
+2. **Schema validation.** The client validates message structure before processing. Malformed data (missing fields, wrong types, unexpected content) is rejected.
+
+3. **Author verification for mutations.** Operations like message editing and deletion verify that the requesting user's public key matches the original author's key. A malicious peer cannot edit or delete another user's messages.
+
+4. **Permission checks for moderation actions.** Kick, ban, role changes, and channel modifications verify the actor's role and permissions within the Node's permission hierarchy before applying.
+
+**What this means:** A malicious relay or peer can write garbage to the Gun graph, but Nodes clients will ignore it. The graph may contain invalid data, but it won't be rendered or acted upon. The security boundary is at the client's validation layer, not at the network layer — which is the correct design for a trustless P2P system.
+
+---
+
+## Threat Model
+
+### What Nodes Protects Against
+
+| Threat | Protection |
+|--------|-----------|
+| **Centralized data breach** | No central database exists. User data lives in distributed peer graphs, not on a company server. There is no honeypot of PII to steal. |
+| **Corporate data mining** | Nodes collects zero personal data. No analytics, no telemetry, no ad targeting. |
+| **Platform censorship** | A Node ban removes you from that community but does not delete your identity. You retain your keypair, profile, and DM history. |
+| **DM content interception** | DMs are E2E encrypted with AES-256-GCM via ECDH key exchange. Relay peers and network observers see only ciphertext. |
+| **Message forgery** | All messages are ECDSA-signed. A forged message would fail signature verification. |
+| **Single point of failure** | The protocol is peer-to-peer. If a relay goes down, clients can connect to other relays or communicate directly. |
+| **Identity theft via server compromise** | Private keys never leave the user's device. There is no server that holds private keys. |
+
+### What Nodes Does NOT Protect Against
+
+| Threat | Current Status | Notes |
+|--------|---------------|-------|
+| **Device compromise / malware** | Not mitigated | If an attacker has access to your device, they can extract your private key and impersonate you. This is true of all systems that use local key storage, including Signal. |
+| **DM metadata exposure** | Partially mitigated | Message *content* is encrypted, but the GunJS graph structure reveals who communicates with whom and when. Timestamps and participant public keys are visible to anyone who can read the graph. |
+| **Channel message confidentiality** | Not encrypted | Channel messages are signed (authenticity is verified) but not encrypted. Anyone with access to the channel's Gun graph path can read them. This is by design — channels are community spaces, not private conversations. |
+| **IP address exposure** | Not mitigated | Nodes does not route traffic through anonymizing networks. Your IP address is visible to relay peers and, in WebRTC voice connections, to other participants. Use a VPN or Tor if IP privacy is required. |
+| **Traffic analysis** | Not mitigated | An observer monitoring network traffic can determine that you are using Nodes, estimate message frequency, and identify communication patterns, even without reading message content. |
+| **Key loss** | Not recoverable | If you lose your keypair and have no backup, your identity is permanently inaccessible. There is no password reset, no recovery email, no support team. This is the fundamental tradeoff of self-sovereign identity. |
+| **Relay-level denial of service** | Partially mitigated | The current deployment relies on a single relay cluster. If those relays go down, message persistence is interrupted. The protocol supports multiple relays, and running your own relay mitigates this entirely. |
+| **Compromised relay peer** | Partially mitigated | A malicious relay could drop messages, serve stale data, or log metadata. It cannot forge messages (signature verification prevents this), read DMs (E2E encryption prevents this), or steal identities (private keys are never transmitted). |
+| **Retroactive DM decryption (no forward secrecy)** | Not mitigated | DMs use static ECDH — the same shared secret encrypts all messages between two users. If a private key is compromised in the future, an attacker who recorded past encrypted traffic could decrypt it. See "Forward Secrecy" section above. |
+| **Message replay** | Mostly mitigated | Message IDs and content-addressed graph storage prevent simple replays. A sophisticated attacker could potentially re-place a valid signed message in a different graph context. See "Replay Protection" section above. |
+| **Graph poisoning** | Mitigated | Malicious peers can write invalid data to the Gun graph, but clients validate signatures, schemas, and permissions before rendering. Invalid data is silently discarded. See "Data Validation" section above. |
+
+---
+
+## Identity and Key Management
+
+### Key Generation
+
+Identity keypairs are generated client-side using GunJS SEA. The private key never leaves the device unless the user explicitly exports it for backup.
+
+### Key Storage
+
+Private keys are stored in an encrypted local keystore on the user's device:
+
+- **Desktop app (Tauri):** Encrypted in the application's local data directory.
+- **Web client:** Encrypted in browser storage.
+
+### Backup and Recovery
+
+Users can export their keypair as an encrypted backup. This is the **only** recovery mechanism. If the backup is lost and the device is inaccessible, the identity is gone.
+
+**Recommendations for users:**
+
+- Back up your keypair immediately after creation.
+- Store backups in multiple secure locations (encrypted USB, password manager, printed QR code in a safe).
+- Treat your keypair backup like a cryptocurrency seed phrase.
+
+### What Happens If Your Key Is Compromised
+
+If an attacker obtains your private key:
+
+- They can impersonate you — send messages, join Nodes, and modify your profile as you.
+- They can decrypt your DMs.
+- There is no centralized "revoke" mechanism. You would need to create a new identity and inform your contacts.
+
+**Planned mitigation:** Key rotation and a revocation announcement mechanism are planned for a future release. This would allow a compromised identity to broadcast a signed revocation notice and link to a new identity.
+
+---
+
+## GunJS Security Considerations
+
+Nodes relies on GunJS for its P2P data layer. This comes with specific security characteristics.
+
+### Strengths
+
+- **SEA cryptography** is built into the protocol — signing, encryption, and key exchange are first-class operations.
+- **Content-addressable data** — data in the graph is referenced by its cryptographic hash, making silent modification detectable.
+- **No central authority** — there is no single server that can be compelled to hand over data or modify records.
+
+### Limitations
+
+- **Not formally verified.** GunJS has not undergone the same level of academic cryptographic analysis as the Signal Protocol.
+- **Graph visibility.** The GunJS graph structure is readable by any connected peer. While encrypted values are opaque, the graph topology (who has data, what paths exist) is observable.
+- **Eventual consistency.** GunJS uses a conflict resolution algorithm (HAM — Hypothetical Amnesia Machine) that resolves concurrent writes. In adversarial conditions, this could be exploited to cause data conflicts, though not to forge signed data.
+- **Relay trust.** Relay peers are trusted for availability (message persistence and forwarding) but not for integrity (signatures prevent tampering) or confidentiality (encryption prevents reading).
+
+---
+
+## Voice and Video Security
+
+### WebRTC (P2P Mesh, ≤6 participants)
+
+- Audio/video streams are encrypted with **DTLS-SRTP** (Datagram Transport Layer Security for Secure Real-time Transport Protocol).
+- Encryption keys are negotiated per session between peers.
+- Streams flow directly between participants — no server handles unencrypted media.
+- **IP addresses are visible** to other participants in the mesh. This is inherent to WebRTC P2P.
+
+### LiveKit SFU (7+ participants)
+
+- The LiveKit SFU (Selective Forwarding Unit) routes encrypted media between participants.
+- Streams are encrypted in transit between clients and the SFU.
+- The SFU has access to media streams in order to forward them. This is a fundamental limitation of SFU architecture — it is not end-to-end encrypted.
+- **Mitigation:** Communities can self-host their own LiveKit instance, keeping voice infrastructure under their control.
+
+---
+
+## File Sharing Security
+
+Files are shared via IPFS (InterPlanetary File System).
+
+| Aspect | Current Implementation |
+|--------|----------------------|
+| Upload | Files are uploaded to an IPFS node. The resulting CID (Content Identifier) is shared in the message. |
+| Access control | Anyone with the CID can retrieve the file. CIDs are shared in channel messages (public) or DMs (encrypted). |
+| Persistence | Files are pinned on the server's IPFS node for availability. Without pinning, files may be garbage collected. |
+| Encryption at rest | Files uploaded in DMs benefit from the CID being inside an encrypted message — but the file itself is not individually encrypted on IPFS. Anyone who obtains the CID can retrieve the file. |
+
+### Planned Improvements
+
+- **Client-side encryption before upload:** Encrypt files with AES-256-GCM on the client before uploading to IPFS. Only the recipient(s) with the decryption key can access the file content. This is the highest-priority security improvement.
+- **Ephemeral file sharing:** Files that auto-unpin after a configurable time period.
+
+---
+
+## Comparison with Signal and Discord
+
+| | Signal | Nodes | Discord |
+|---|--------|-------|---------|
+| **DM encryption** | E2E (Signal Protocol, formally verified) | E2E (ECDH + AES-256-GCM via GunJS SEA) | Not E2E (TLS in transit only) |
+| **Forward secrecy** | Yes (Double Ratchet, per-message keys) | Not yet (static ECDH, same shared secret) | N/A (no E2E) |
+| **Group encryption** | E2E (Sender Keys) | Signed, not encrypted | Not encrypted |
+| **Replay protection** | Yes (sequence numbers, ratchet state) | Partial (content-addressed storage, unique IDs) | Server-managed |
+| **Formal audits** | Extensive, peer-reviewed | None (beta, solo developer) | Internal corporate |
+| **Metadata protection** | Sealed sender, minimal metadata | Limited — graph structure exposes patterns | Full metadata access by Discord |
+| **Identity model** | Phone number required | Cryptographic keypair (no PII) | Email + phone + gov ID |
+| **Data storage** | Encrypted on-device only | Encrypted on-device + encrypted in P2P graph | Plaintext on corporate servers |
+| **Infrastructure** | Centralized Signal servers | Peer-to-peer with optional relays | Centralized corporate servers |
+| **Key management** | Automatic, tied to phone | Manual backup required | N/A (server-managed auth) |
+| **Open source** | Yes (client + server) | Yes (AGPL-3.0) | No |
+
+### Honest Assessment
+
+Nodes is **more private than Discord** and **less hardened than Signal**. This is the expected position for a beta product built by a solo developer.
+
+Signal has the advantage of a decade of formal audits, a full-time cryptography team, and academic publications analyzing its protocol. Nodes has the advantage of requiring zero personal information, operating without central servers, and giving users complete ownership of their identity and data.
+
+The goal is not to replace Signal for high-risk threat models. The goal is to provide a community platform (Discord's use case) that respects user privacy and sovereignty by default.
+
+---
+
+## Security Roadmap
+
+These are planned security improvements, roughly ordered by priority.
+
+### Near-Term
+
+- **Forward secrecy for DMs.** Implement an ephemeral key ratchet so each message (or message chain) uses a unique encryption key derived from short-lived ECDH keypairs. Spent keys are deleted, ensuring past messages cannot be decrypted if a long-term key is later compromised. This is the single highest-priority cryptographic improvement.
+- **Replay protection.** Add a monotonic sequence number or channel-scoped nonce to the signed message payload, allowing clients to detect and reject replayed messages placed in unintended graph contexts.
+- **Client-side file encryption.** Encrypt files before IPFS upload so that CID possession alone does not grant access.
+- **Key rotation mechanism.** Allow users to rotate their keypair and broadcast a signed migration notice linking old and new identities.
+- **Encrypted channel option.** E2E encryption for channels where confidentiality is required, using group key management.
+
+### Medium-Term
+
+- **Metadata reduction.** Investigate techniques to reduce graph-level metadata exposure, such as mixing, batching, or pseudonymous routing.
+- **Social key recovery.** Split keypair backup across multiple trusted contacts using Shamir's Secret Sharing, allowing recovery without a single backup.
+- **Community security audit.** Publish the cryptographic model in sufficient detail for community review, and invite independent security researchers to evaluate it.
+
+### Long-Term
+
+- **Tor/anonymizing network integration.** Route relay connections through Tor or I2P to protect IP addresses.
+- **Formal protocol specification.** Document the full cryptographic protocol (key exchange, message encryption, signing, graph structure) in a format suitable for academic analysis.
+- **Formal security audit.** Engage a professional security firm to audit the cryptographic implementation and P2P architecture.
+
+---
+
+## Responsible Disclosure
+
+If you discover a security vulnerability in Nodes, please report it responsibly.
+
+- **Email:** security@leveq.dev
+- **Do not** open a public GitHub issue for security vulnerabilities.
+- I will acknowledge receipt within 48 hours and work with you on a fix before public disclosure.
+
+---
+
+## Summary
+
+Nodes provides meaningful security and privacy improvements over centralized platforms like Discord:
+
+- No personal information is collected or stored.
+- DMs are end-to-end encrypted.
+- All messages are cryptographically signed.
+- Identity is self-sovereign — no corporation controls your account.
+- The codebase is open source and auditable.
+
+Nodes does not yet match the hardened security posture of Signal:
+
+- No formal cryptographic audit has been conducted.
+- DM encryption does not yet implement forward secrecy (static ECDH, no ratcheting).
+- Metadata exposure is higher.
+- GunJS has not been formally verified.
+- Voice channels using LiveKit SFU are not end-to-end encrypted.
+
+This document will be updated as the security model evolves. Transparency is not a weakness — it is the foundation of trust.
+
+---
+
+*"There's nothing to breach because there's nothing to store."*
