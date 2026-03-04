@@ -396,4 +396,14 @@ This document will be updated as the security model evolves. Transparency is not
 
 ---
 
+## PR #45 Oversight (fixed in PR #47)
+
+PR #45 introduced two regressions that were corrected in a follow-up:
+
+- **Breaking key derivation change:** The HKDF key derivation change was applied to encryption but not matched with a decryption fallback, silently breaking all existing DM message history and DM notifications. A backwards-compatible fallback was added to `DMCrypto.decryptMessage()` and `ProfileCrypto.decryptField()`: the new HKDF-derived key is tried first; if decryption fails, the legacy raw ECDH key (pre-HKDF) is used as a fallback. This fallback can be removed once all messages have been re-encrypted with the new key format.
+
+- **`publishEpubCert()` never wired at login:** `publishEpubCert()` was implemented in PR #45 but never called during login, identity creation, or backup import — so no user ever actually published their `_epubCert` to the Gun graph. Additionally, `getRecipientEpub()` waited for `_epubCert` without guarding against Gun's `.once()` silently never firing on a non-existent node in relay/P2P environments, causing a 5-second stall on every DM open for any peer without an `_epubCert`. Both issues are fixed: `publishEpubCert()` is now called at login, identity creation, and backup import; and `getRecipientEpub()` has a 2-second secondary timeout that unblocks epub resolution if the cert node never responds.
+
+---
+
 *"There's nothing to breach because there's nothing to store."*

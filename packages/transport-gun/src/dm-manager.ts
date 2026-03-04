@@ -9,6 +9,9 @@ import type { TransportMessage, MessageHandler, Unsubscribe } from "@nodes/trans
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const SEA = Gun.SEA as any;
 
+/** Secondary timeout (ms) for _epubCert resolution — prevents stalling if the Gun node never fires. */
+const EPUB_CERT_TIMEOUT_MS = 2000;
+
 /**
  * DMManager handles direct message operations.
  *
@@ -526,11 +529,13 @@ export class DMManager {
       let epubReceived = false;
       let certReceived = false;
       let timer: ReturnType<typeof setTimeout>;
+      let certTimer: ReturnType<typeof setTimeout>;
 
       const settle = (fn: () => void) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(timer);
+        clearTimeout(certTimer);
         fn();
       };
 
@@ -581,6 +586,16 @@ export class DMManager {
           certReceived = true;
           tryResolve();
         });
+
+      // NOTE: Gun's .once() may never fire on a non-existent node in relay/P2P environments.
+      // A secondary timeout ensures epub resolution is not blocked indefinitely for legacy
+      // users who have not yet published _epubCert. See PR #45 oversight.
+      certTimer = setTimeout(() => {
+        if (!certReceived) {
+          certReceived = true;
+          tryResolve();
+        }
+      }, EPUB_CERT_TIMEOUT_MS);
 
       // Timeout
       timer = setTimeout(() => {
