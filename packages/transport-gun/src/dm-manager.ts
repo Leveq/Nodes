@@ -555,7 +555,9 @@ export class DMManager {
       let epubCert: string | null = null;
       let epubReceived = false;
       let certReceived = false;
+      // eslint-disable-next-line prefer-const
       let timer: ReturnType<typeof setTimeout>;
+      // eslint-disable-next-line prefer-const
       let certTimer: ReturnType<typeof setTimeout>;
 
       const settle = (fn: () => void) => {

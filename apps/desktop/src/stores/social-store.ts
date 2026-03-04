@@ -242,7 +242,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
       // Subscribe to cancelled-inbox for real-time cancellation detection
       // This fires when someone cancels a friend request they sent us
-      const cancelledSub = socialManager.subscribeCancelledInbox(myKey, (requestId, fromKey) => {
+      const cancelledSub = socialManager.subscribeCancelledInbox(myKey, (requestId, _fromKey) => {
         if (get().activeMyKey !== myKey) {
           return; // Stale subscription
         }
