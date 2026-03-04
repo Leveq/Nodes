@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import type { TransportMessage } from "@nodes/transport";
 import { useDMStore } from "../../stores/dm-store";
+import { useIdentityStore } from "../../stores/identity-store";
+import { useTransport } from "../../providers/TransportProvider";
 import { ProfileManager } from "@nodes/transport-gun";
 import { groupMessages, isSystemMessage } from "../../utils/message-grouping";
 import { shouldShowDateSeparator } from "../../utils/time";
@@ -9,6 +11,7 @@ import { SystemMessage } from "../channel/SystemMessage";
 import { DateSeparator } from "../channel/DateSeparator";
 import { NewMessagesBanner } from "../channel/NewMessagesBanner";
 import { DMMessageInput } from "./DMMessageInput";
+import { DMTypingIndicator } from "./DMTypingIndicator";
 import { Avatar } from "../ui";
 import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 
@@ -30,12 +33,17 @@ interface DMViewProps {
 export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProps) {
   const messages = useDMStore((s) => s.messages[conversationId] ?? EMPTY_MESSAGES);
   const isLoading = useDMStore((s) => s.isLoading);
+  const addTypingUser = useDMStore((s) => s.addTypingUser);
+  const removeTypingUser = useDMStore((s) => s.removeTypingUser);
+  const publicKey = useIdentityStore((s) => s.publicKey);
+  const transport = useTransport();
   
   const [recipientName, setRecipientName] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showNewMessagesBanner, setShowNewMessagesBanner] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const prevMessageCountRef = useRef(messages.length);
+  const typingTimeoutRef = useRef<number | null>(null);
 
   // Resolve recipient name
   useEffect(() => {
@@ -53,6 +61,40 @@ export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProp
     }
     resolveName();
   }, [recipientKey]);
+
+  // Subscribe to typing indicators for this conversation
+  useEffect(() => {
+    if (!transport.presence || !conversationId) return;
+
+    const unsub = transport.presence.subscribeTyping(
+      conversationId,
+      (typingPublicKey, isTyping) => {
+        // Don't show our own typing indicator
+        if (typingPublicKey === publicKey) return;
+
+        if (isTyping) {
+          addTypingUser(conversationId, typingPublicKey);
+
+          // Auto-remove after 5 seconds if we miss the stop event
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+          }
+          typingTimeoutRef.current = window.setTimeout(() => {
+            removeTypingUser(conversationId, typingPublicKey);
+          }, 5000);
+        } else {
+          removeTypingUser(conversationId, typingPublicKey);
+        }
+      }
+    );
+
+    return () => {
+      unsub();
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [transport.presence, conversationId, publicKey, addTypingUser, removeTypingUser]);
 
   // Group messages by author
   const messageGroups = useMemo(() => groupMessages(messages), [messages]);
@@ -223,6 +265,9 @@ export function DMView({ conversationId, recipientKey, onUserClick }: DMViewProp
       {showNewMessagesBanner && (
         <NewMessagesBanner onClick={scrollToBottom} />
       )}
+
+      {/* Typing indicator */}
+      <DMTypingIndicator conversationId={conversationId} />
 
       {/* Input */}
       <DMMessageInput

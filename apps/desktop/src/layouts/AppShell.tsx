@@ -18,6 +18,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useGracefulShutdown } from "../hooks/useGracefulShutdown";
 import { useModerationEvents } from "../hooks/useModerationEvents";
 import { useDirectoryRefresh } from "../hooks/useDirectoryRefresh";
+import { useUpdater } from "../hooks/useUpdater";
 import { useTransport } from "../providers/TransportProvider";
 import { initNotificationManager } from "../services/notification-manager";
 import { migrateMemberRoles } from "@nodes/transport-gun";
@@ -63,6 +64,7 @@ export function AppShell() {
   const toggleSearch = useSearchStore((s) => s.toggle);
   
   // UI state for settings and profile
+  const { updateAvailable } = useUpdater();
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
@@ -243,6 +245,7 @@ export function AppShell() {
       <StatusBar 
         onOpenSettings={() => setShowSettings(true)} 
         onOpenProfile={() => setShowEditProfile(true)}
+        updateAvailable={updateAvailable}
       />
 
       {/* Settings overlay */}

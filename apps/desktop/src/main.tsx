@@ -8,6 +8,8 @@ import { configureAvatarManager, configureFileTransport } from "@nodes/transport
 // Detect if running in Tauri
 const isTauri = !!(window as any).__TAURI_INTERNALS__;
 
+// Window is shown by SplashScreen.tsx after the first canvas frame is painted
+
 // Configure IPFS endpoints for avatar pinning/fetching and file uploads
 // These env vars are set in .env.local or via deploy script
 // Use Tauri's native HTTP client for server pinning to bypass CORS (desktop only)

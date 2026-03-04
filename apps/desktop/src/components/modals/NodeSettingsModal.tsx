@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Modal } from "./Modal";
 import { Button, Input } from "../ui";
 import { useNodeStore } from "../../stores/node-store";
@@ -9,6 +9,7 @@ import { RolesTab } from "../settings/RolesTab";
 import { ModerationTab } from "../settings/ModerationTab";
 import { DiscoveryTab } from "../settings/DiscoveryTab";
 import { NodeAppearanceTab } from "../settings/NodeAppearanceTab";
+import { directoryManager } from "@nodes/transport-gun";
 
 interface NodeSettingsModalProps {
   onClose: () => void;
@@ -27,7 +28,7 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
   const generateInvite = useNodeStore((s) => s.generateInvite);
   const publicKey = useIdentityStore((s) => s.publicKey);
   const addToast = useToastStore((s) => s.addToast);
-  const { isOwner, canManageNode, canManageRoles } = usePermissions();
+  const { isOwner, canManageNode, canManageRoles, canManageInvites } = usePermissions();
   const canKickMembers = useHasPermission("kickMembers");
   const canBanMembers = useHasPermission("banMembers");
   const canModerate = canKickMembers || canBanMembers;
@@ -44,6 +45,14 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isListed, setIsListed] = useState(false);
+
+  // Check if node is listed in public directory
+  useEffect(() => {
+    if (node?.id) {
+      directoryManager.isListed(node.id).then(setIsListed);
+    }
+  }, [node?.id]);
 
   if (!node || !publicKey) {
     return null;
@@ -183,29 +192,33 @@ export function NodeSettingsModal({ onClose }: NodeSettingsModalProps) {
             </div>
           )}
 
-          {/* Invite section */}
-          <div className="pt-4 border-t border-nodes-border">
-            <h3 className="text-sm font-semibold text-nodes-text mb-3">
-              Invite Link
-            </h3>
-            {inviteCode ? (
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-nodes-bg text-nodes-text text-sm px-3 py-2 rounded border border-nodes-border font-mono truncate">
-                  {inviteCode}
-                </code>
-                <Button variant="primary" onClick={handleCopyInvite}>
-                  Copy
+          {/* Invite section - shown to everyone for listed nodes, or to those with manageInvites permission for unlisted nodes */}
+          {(isListed || canManageInvites) && (
+            <div className="pt-4 border-t border-nodes-border">
+              <h3 className="text-sm font-semibold text-nodes-text mb-3">
+                Invite Link
+              </h3>
+              {inviteCode ? (
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-nodes-bg text-nodes-text text-sm px-3 py-2 rounded border border-nodes-border font-mono truncate">
+                    {inviteCode}
+                  </code>
+                  <Button variant="primary" onClick={handleCopyInvite}>
+                    Copy
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="ghost" onClick={handleGenerateInvite}>
+                  Generate Invite Code
                 </Button>
-              </div>
-            ) : (
-              <Button variant="ghost" onClick={handleGenerateInvite}>
-                Generate Invite Code
-              </Button>
-            )}
-            <p className="text-xs text-nodes-text-muted mt-2">
-              Share this code with others to let them join this Node.
-            </p>
-          </div>
+              )}
+              <p className="text-xs text-nodes-text-muted mt-2">
+                {isListed 
+                  ? "This Node is publicly listed. Anyone can find it in the directory."
+                  : "Share this code with others to let them join this Node."}
+              </p>
+            </div>
+          )}
 
           {/* Danger zone */}
           <div className="pt-4 border-t border-nodes-border">

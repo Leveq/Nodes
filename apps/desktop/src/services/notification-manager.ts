@@ -335,6 +335,52 @@ export async function processDMForNotification(
 }
 
 /**
+ * Process friend request for notification (bell icon + desktop)
+ */
+export async function processFriendRequestNotification(
+  fromKey: string,
+  fromName: string,
+  message?: string
+): Promise<void> {
+  const identity = useIdentityStore.getState();
+  const notificationStore = useNotificationStore.getState();
+
+  // Don't notify for own requests (shouldn't happen but guard)
+  if (!identity.keypair || fromKey === identity.keypair.pub) {
+    return;
+  }
+
+  const settings = notificationStore.settings;
+  if (settings.global.dnd) {
+    return;
+  }
+
+  // Create app notification
+  const appNotification: Omit<AppNotification, "id"> = {
+    type: "friend_request",
+    senderKey: fromKey,
+    senderName: fromName,
+    messageId: `fr-${fromKey}-${Date.now()}`, // Unique ID for the request
+    messagePreview: message || "wants to be your friend",
+    timestamp: Date.now(),
+    read: false,
+  };
+
+  await notificationStore.addNotification(appNotification);
+  console.log("[NotificationManager] Added friend request notification:", appNotification);
+
+  // Show desktop notification
+  const title = "Friend Request";
+  const body = `${fromName} wants to be your friend`;
+
+  await showDesktopNotification(title, body, {
+    tag: `friend-request-${fromKey}`,
+  });
+
+  playNotificationSound();
+}
+
+/**
  * Helper to truncate message for preview
  */
 function truncateMessage(content: string, maxLength: number): string {
