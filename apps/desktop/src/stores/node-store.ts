@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { NodeManager, roleManager } from "@nodes/transport-gun";
+import { NodeManager, roleManager, directoryManager } from "@nodes/transport-gun";
 import type { NodeServer, NodeMember, NodeChannel } from "@nodes/core";
 import { useToastStore } from "./toast-store";
 import { useNotificationStore } from "./notification-store";
@@ -196,6 +196,10 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   deleteNode: async (nodeId) => {
     try {
       const node = get().nodes.find((n) => n.id === nodeId);
+      
+      // Delist from directory first (if listed)
+      await directoryManager.delistNode(nodeId).catch(() => {});
+      
       await nodeManager.deleteNode(nodeId);
 
       get().removeNodeFromState(nodeId);

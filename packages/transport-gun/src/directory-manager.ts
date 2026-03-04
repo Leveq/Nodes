@@ -161,14 +161,29 @@ export class DirectoryManager {
   ): () => void {
     const gun = GunInstanceManager.get();
     const listingsMap = new Map<string, DirectoryListing>();
+    const deletedNodes = new Set<string>();
 
     const ref = gun.get("directory");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ref.map().on((data: any, nodeId: string) => {
+      // Skip already-known deleted nodes
+      if (deletedNodes.has(nodeId)) return;
+      
       if (!data || data === null || !data.isPublic) {
         listingsMap.delete(nodeId);
       } else {
+        // Validate the underlying node still exists
+        gun.get("nodes").get(nodeId).once((nodeData: any) => {
+          if (nodeData?.deletedAt || !nodeData?.name) {
+            // Node was deleted but listing wasn't cleaned up
+            deletedNodes.add(nodeId);
+            listingsMap.delete(nodeId);
+            // Auto-cleanup: mark as not public
+            gun.get("directory").get(nodeId).put({ isPublic: false, delistedAt: Date.now() });
+            handler(Array.from(listingsMap.values()));
+          }
+        });
         try {
           listingsMap.set(nodeId, {
             nodeId,
