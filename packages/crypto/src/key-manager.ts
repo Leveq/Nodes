@@ -51,11 +51,13 @@ export class KeyManager {
   /**
    * Encrypt and store the keypair locally.
    * Uses a passphrase to derive an encryption key via SEA.work (PBKDF2).
+   * A cryptographically random salt is generated and stored alongside the keystore.
    * The encrypted keystore is saved to localStorage or filesystem (via Tauri).
    */
   async saveToLocalStore(passphrase: string): Promise<EncryptedKeystore> {
     const kp = this.getKeypair();
-    const salt = kp.pub; // Use public key as salt for deterministic derivation
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const salt = btoa(String.fromCharCode(...saltBytes));
     const derived = await SEA.work(passphrase, salt);
     const encrypted = await SEA.encrypt(JSON.stringify(kp), derived as string);
 
@@ -64,6 +66,7 @@ export class KeyManager {
       encrypted: encrypted as string,
       pub: kp.pub,
       createdAt: Date.now(),
+      salt,
     };
 
     return keystore;
@@ -76,7 +79,8 @@ export class KeyManager {
     keystore: EncryptedKeystore,
     passphrase: string,
   ): Promise<KeyPair> {
-    const derived = await SEA.work(passphrase, keystore.pub);
+    const salt = keystore.salt ?? keystore.pub; // backwards compat fallback
+    const derived = await SEA.work(passphrase, salt);
     const decrypted = await SEA.decrypt(keystore.encrypted, derived as string);
 
     if (!decrypted) {
@@ -94,10 +98,12 @@ export class KeyManager {
   /**
    * Export keypair as an encrypted backup file.
    * User provides a backup passphrase (can be different from local passphrase).
+   * A cryptographically random salt is generated and stored in the backup.
    */
   async exportBackup(passphrase: string, label: string): Promise<KeyBackup> {
     const kp = this.getKeypair();
-    const salt = `backup:${kp.pub}`;
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const salt = btoa(String.fromCharCode(...saltBytes));
     const derived = await SEA.work(passphrase, salt);
     const encrypted = await SEA.encrypt(JSON.stringify(kp), derived as string);
 
@@ -107,6 +113,7 @@ export class KeyManager {
       pub: kp.pub,
       exportedAt: Date.now(),
       label,
+      salt,
     };
   }
 
@@ -114,7 +121,8 @@ export class KeyManager {
    * Import keypair from an encrypted backup file.
    */
   async importBackup(backup: KeyBackup, passphrase: string): Promise<KeyPair> {
-    const derived = await SEA.work(passphrase, `backup:${backup.pub}`);
+    const salt = backup.salt ?? `backup:${backup.pub}`; // backwards compat fallback
+    const derived = await SEA.work(passphrase, salt);
     const decrypted = await SEA.decrypt(backup.encrypted, derived as string);
 
     if (!decrypted) {
@@ -127,6 +135,23 @@ export class KeyManager {
       : decrypted as KeyPair;
     this.keypair = kp;
     return kp;
+  }
+
+  /**
+   * Generate a certificate binding epub to the identity key.
+   * Sign the epub with the ECDSA identity key so peers can verify it.
+   * The payload includes a `ts` timestamp for informational context;
+   * peers check that the signed epub matches the published epub but do not
+   * enforce freshness — certs are long-lived per identity.
+   * Publish to user.get("profile").get("_epubCert") and user.get("profile").get("_epub").
+   */
+  async generateEpubCert(): Promise<string> {
+    const kp = this.getKeypair();
+    const cert = await SEA.sign({ epub: kp.epub, ts: Date.now() }, kp);
+    if (!cert) {
+      throw new Error("Failed to generate epub certificate. SEA.sign returned falsy.");
+    }
+    return cert as string;
   }
 
   /**

@@ -511,36 +511,114 @@ export class DMManager {
 
   /**
    * Look up a user's epub (encryption public key) from their Gun profile.
-   * Needed to derive the shared secret.
+   * Also fetches and verifies the epubCert (ECDSA binding of epub to pub key).
+   * If the cert is present and invalid, throws to indicate active tampering.
+   * If the cert is absent, proceeds with a warning (legacy identity).
    */
   async getRecipientEpub(publicKey: string): Promise<string> {
     const gun = GunInstanceManager.get();
+    const noEpubCertWarning = `[DMManager] No epubCert for peer ${publicKey}, skipping MITM check (legacy identity)`;
 
     return new Promise((resolve, reject) => {
       let resolved = false;
+      let epub: string | null = null;
+      let epubCert: string | null = null;
+      let epubReceived = false;
+      let certReceived = false;
+      let timer: ReturnType<typeof setTimeout>;
 
-      // Look up epub from user's profile where it's published
+      const settle = (fn: () => void) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        fn();
+      };
+
+      const tryResolve = async () => {
+        if (!epubReceived || !certReceived || resolved) return;
+
+        if (!epub) {
+          settle(() => reject(new Error("Could not resolve recipient's encryption key. They may need to update their profile.")));
+          return;
+        }
+
+        if (epubCert) {
+          // Verify the cert: it should be signed by the peer's pub key
+          const verified = await SEA.verify(epubCert, publicKey);
+          if (
+            !verified ||
+            typeof verified !== "object" ||
+            (verified as { epub?: string }).epub !== epub
+          ) {
+            settle(() => reject(new Error(`[DMManager] epubCert verification failed for peer ${publicKey} — possible MITM attack`)));
+            return;
+          }
+        } else {
+          console.warn(noEpubCertWarning);
+        }
+
+        settle(() => resolve(epub!));
+      };
+
       gun
         .user(publicKey)
         .get("profile")
         .get("_epub")
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .once((epub: any) => {
-          if (resolved) return;
-          if (epub && typeof epub === "string") {
-            resolved = true;
-            clearTimeout(timer);
-            resolve(epub);
-          }
+        .once((value: any) => {
+          epub = value && typeof value === "string" ? value : null;
+          epubReceived = true;
+          tryResolve();
+        });
+
+      gun
+        .user(publicKey)
+        .get("profile")
+        .get("_epubCert")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .once((value: any) => {
+          epubCert = value && typeof value === "string" ? value : null;
+          certReceived = true;
+          tryResolve();
         });
 
       // Timeout
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         if (!resolved) {
-          resolved = true;
-          reject(new Error("Could not resolve recipient's encryption key. They may need to update their profile."));
+          if (epub) {
+            if (!epubCert) console.warn(noEpubCertWarning);
+            settle(() => resolve(epub!));
+          } else {
+            settle(() => reject(new Error("Could not resolve recipient's encryption key. They may need to update their profile.")));
+          }
         }
       }, 5000);
+    });
+  }
+
+  /**
+   * Publish the epub and epubCert to the authenticated user's Gun profile.
+   * Call this after login/identity creation to enable MITM protection for peers.
+   */
+  async publishEpubCert(epub: string, epubCert: string): Promise<void> {
+    const user = GunInstanceManager.user();
+
+    return new Promise((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      user.get("profile").get("_epub").put(epub, (ack: any) => {
+        if (ack.err) {
+          reject(new Error(`Failed to publish epub: ${ack.err}`));
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        user.get("profile").get("_epubCert").put(epubCert, (ack2: any) => {
+          if (ack2.err) {
+            reject(new Error(`Failed to publish epubCert: ${ack2.err}`));
+          } else {
+            resolve();
+          }
+        });
+      });
     });
   }
 
