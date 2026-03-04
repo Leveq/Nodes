@@ -336,10 +336,6 @@ export function useDMSubscriptions() {
         return;
       }
 
-      // Check if we already have this conversation in store
-      const existingConvs = useDMStore.getState().conversations;
-      const isNewToStore = !existingConvs.some((c) => c.id === newConv.id);
-      
       // Update conversation in store
       useDMStore.getState().updateConversation(newConv);
       
