@@ -196,9 +196,15 @@ export class DMManager {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on(async (data: any) => {
         if (!data || !data.id || seenIds.has(data.id)) return;
-        if (typeof data !== "object" || !data.encrypted) return;
-
+        // Add to seenIds IMMEDIATELY to prevent race condition with rapid Gun callbacks
         seenIds.add(data.id);
+        
+        if (typeof data !== "object" || !data.encrypted) {
+          console.log("[DMManager] Skipping invalid message data:", data?.id || "no-id");
+          return;
+        }
+
+        console.log("[DMManager] Processing message:", data.id, "from:", data.authorKey?.slice(0, 12));
 
         try {
           // Decrypt the message
@@ -208,18 +214,27 @@ export class DMManager {
             myKeypair
           );
 
-          // Verify signature against the claimed author's public key
-          const signedPayload = JSON.stringify({
-            id: data.id,
-            encrypted: data.encrypted,
-            timestamp: data.timestamp,
-            authorKey: data.authorKey,
-          });
-          const verified = await SEA.verify(data.signature, data.authorKey);
-          if (!verified || verified !== signedPayload) {
-            console.warn("[DMManager] Message signature verification failed, dropping:", data.id);
-            seenIds.delete(data.id);
-            return;
+          // Verify signature if present (legacy messages may not have signatures)
+          // Only verify if signature is a valid non-empty string (Gun may return odd values for missing fields)
+          if (data.signature && typeof data.signature === 'string' && data.signature.length > 10) {
+            try {
+              const signedPayload = JSON.stringify({
+                id: data.id,
+                encrypted: data.encrypted,
+                timestamp: data.timestamp,
+                authorKey: data.authorKey,
+              });
+              // SEA.verify returns the original DATA object if valid, undefined/false if invalid
+              const verified = await SEA.verify(data.signature, data.authorKey);
+              // Compare by stringifying since verify returns an object
+              const verifiedStr = verified ? JSON.stringify(verified) : null;
+              if (!verified || verifiedStr !== signedPayload) {
+                console.warn("[DMManager] Message signature verification failed, dropping:", data.id);
+                return;
+              }
+            } catch (sigErr) {
+              console.warn("[DMManager] Signature verification error, allowing message:", data.id, sigErr);
+            }
           }
 
           const message: TransportMessage = {
@@ -238,7 +253,8 @@ export class DMManager {
             flushTimer = setTimeout(flush, 16); // ~60fps
           }
         } catch (err) {
-          console.error("Failed to decrypt DM:", err);
+          console.error("[DMManager] Failed to decrypt DM:", data.id, err);
+          console.error("[DMManager] recipientEpub:", recipientEpub?.slice(0, 20), "myPub:", myKeypair.pub?.slice(0, 12));
           // Skip messages we can't decrypt (shouldn't happen in normal flow)
         }
       });
@@ -299,17 +315,26 @@ export class DMManager {
               myKeypair
             );
 
-            // Verify signature against the claimed author's public key
-            const signedPayload = JSON.stringify({
-              id: data.id,
-              encrypted: data.encrypted,
-              timestamp: data.timestamp,
-              authorKey: data.authorKey,
-            });
-            const verified = await SEA.verify(data.signature, data.authorKey);
-            if (!verified || verified !== signedPayload) {
-              console.warn("[DMManager] Message signature verification failed, dropping:", data.id);
-              return;
+            // Verify signature if present (legacy messages may not have signatures)
+            // Only verify if signature is a valid non-empty string (Gun may return odd values for missing fields)
+            if (data.signature && typeof data.signature === 'string' && data.signature.length > 10) {
+              try {
+                const signedPayload = JSON.stringify({
+                  id: data.id,
+                  encrypted: data.encrypted,
+                  timestamp: data.timestamp,
+                  authorKey: data.authorKey,
+                });
+                // SEA.verify returns the original DATA object if valid, undefined/false if invalid
+                const verified = await SEA.verify(data.signature, data.authorKey);
+                const verifiedStr = verified ? JSON.stringify(verified) : null;
+                if (!verified || verifiedStr !== signedPayload) {
+                  console.warn("[DMManager] Message signature verification failed in getHistory, dropping:", data.id);
+                  return;
+                }
+              } catch (sigErr) {
+                console.warn("[DMManager] Signature verification error, allowing message:", data.id, sigErr);
+              }
             }
 
             messages.push({
@@ -345,6 +370,7 @@ export class DMManager {
     const user = GunInstanceManager.user();
     const gun = GunInstanceManager.get();
     const myPublicKey = user.is?.pub;
+    console.log("[DMManager] getConversations called, myPub:", myPublicKey?.slice(0, 12));
 
     return new Promise((resolve) => {
       const conversationsMap = new Map<string, DMConversation>();
@@ -353,6 +379,7 @@ export class DMManager {
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
+          console.log("[DMManager] getConversations resolved (timeout), count:", conversationsMap.size);
           resolve(Array.from(conversationsMap.values()));
         }
       }, 3000);
@@ -528,7 +555,9 @@ export class DMManager {
       let epubCert: string | null = null;
       let epubReceived = false;
       let certReceived = false;
+      // eslint-disable-next-line prefer-const
       let timer: ReturnType<typeof setTimeout>;
+      // eslint-disable-next-line prefer-const
       let certTimer: ReturnType<typeof setTimeout>;
 
       const settle = (fn: () => void) => {

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Bell, Check, Trash2, X, AtSign, MessageSquare } from "lucide-react";
+import { Bell, Check, Trash2, X, AtSign, MessageSquare, UserPlus } from "lucide-react";
 import { useNotificationStore } from "../../stores/notification-store";
 import { useNodeStore } from "../../stores/node-store";
 import { useNavigationStore } from "../../stores/navigation-store";
@@ -26,6 +26,7 @@ export function NotificationCenter() {
   const setActiveNode = useNodeStore((s) => s.setActiveNode);
   const setActiveChannel = useNodeStore((s) => s.setActiveChannel);
   const setViewMode = useNavigationStore((s) => s.setViewMode);
+  const setFriendsTab = useNavigationStore((s) => s.setFriendsTab);
 
   // Close on click outside
   useEffect(() => {
@@ -48,7 +49,11 @@ export function NotificationCenter() {
 
   // Handle clicking a notification to navigate
   const handleNotificationClick = (notification: AppNotification) => {
-    if (notification.nodeId && notification.channelId) {
+    if (notification.type === "friend_request") {
+      // Navigate to friends view, Incoming tab
+      setFriendsTab("incoming");
+      setViewMode("friends");
+    } else if (notification.nodeId && notification.channelId) {
       setViewMode("node");
       setActiveNode(notification.nodeId);
       setActiveChannel(notification.channelId);
@@ -152,7 +157,11 @@ function NotificationItem({
   const senderName = displayName || notification.senderName;
 
   // Get icon based on notification type
-  const Icon = notification.type === "dm" ? MessageSquare : AtSign;
+  const Icon = notification.type === "dm" 
+    ? MessageSquare 
+    : notification.type === "friend_request" 
+      ? UserPlus 
+      : AtSign;
   
   // Get accent color based on type
   const getTypeColor = () => {
@@ -165,6 +174,8 @@ function NotificationItem({
         return "text-success";
       case "dm":
         return "text-info";
+      case "friend_request":
+        return "text-purple-400";
       default:
         return "text-text-muted";
     }
@@ -196,6 +207,12 @@ function NotificationItem({
         {notification.nodeName && notification.channelName && (
           <div className="text-xs text-text-muted truncate">
             {notification.nodeName} / #{notification.channelName}
+          </div>
+        )}
+        
+        {notification.type === "friend_request" && (
+          <div className="text-xs text-purple-400 truncate">
+            Friend Request
           </div>
         )}
         

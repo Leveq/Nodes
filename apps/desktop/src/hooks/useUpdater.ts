@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { useToastStore } from "../stores/toast-store";
 
@@ -6,9 +6,11 @@ import { useToastStore } from "../stores/toast-store";
  * Checks for a new Nodes release on app launch.
  * If an update is found it downloads and installs it in the background,
  * then prompts the user to restart.
+ * Returns `updateAvailable` which becomes true once an update is detected.
  */
 export function useUpdater() {
   const addToast = useToastStore((s) => s.addToast);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
     // Only runs inside the Tauri runtime
@@ -21,6 +23,7 @@ export function useUpdater() {
         const update = await check();
         if (!update || cancelled) return;
 
+        setUpdateAvailable(true);
         addToast(
           "info",
           `Update ${update.version} available — downloading…`,
@@ -47,4 +50,7 @@ export function useUpdater() {
       cancelled = true;
     };
   }, [addToast]);
+
+  return { updateAvailable };
 }
+

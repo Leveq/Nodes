@@ -555,7 +555,7 @@ export interface DirectoryFilters {
 
 // ── Notification Types ──
 
-export type NotificationType = "mention" | "dm" | "reply" | "role_mention" | "everyone" | "here";
+export type NotificationType = "mention" | "dm" | "reply" | "role_mention" | "everyone" | "here" | "friend_request";
 export type ChannelNotificationLevel = "default" | "all" | "mentions" | "nothing";
 export type NodeNotificationLevel = "all" | "mentions" | "nothing";
 

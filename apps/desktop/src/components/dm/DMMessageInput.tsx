@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useDMStore } from "../../stores/dm-store";
 import { useIdentityStore } from "../../stores/identity-store";
+import { useTransport } from "../../providers/TransportProvider";
 import type { KeyPair } from "@nodes/crypto";
 import { GifButton } from "../channel/GifButton";
 import { EmojiPicker } from "../channel/EmojiPicker";
 import { Smile } from "lucide-react";
 
 interface DMMessageInputProps {
+  conversationId: string;
   recipientKey: string;
   recipientName: string;
 }
@@ -16,6 +18,7 @@ interface DMMessageInputProps {
  * Similar to MessageInput but uses the DM store for encrypted messaging.
  */
 export function DMMessageInput({
+  conversationId,
   recipientKey,
   recipientName,
 }: DMMessageInputProps) {
@@ -23,9 +26,13 @@ export function DMMessageInput({
   const [isSending, setIsSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
 
   const sendMessage = useDMStore((s) => s.sendMessage);
   const keypair = useIdentityStore((s) => s.keypair);
+  const transport = useTransport();
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -37,8 +44,42 @@ export function DMMessageInput({
     }
   }, [content]);
 
+  // Clear typing indicator on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      const currentTransport = transportRef.current;
+      if (currentTransport?.presence) {
+        currentTransport.presence.setTyping(conversationId, false).catch(() => {});
+      }
+    };
+  }, [conversationId]);
+
+  const handleTyping = useCallback(() => {
+    const currentTransport = transportRef.current;
+    if (!currentTransport?.presence) return;
+
+    currentTransport.presence.setTyping(conversationId, true).catch((err) => {
+      console.error("[DMMessageInput] setTyping error:", err);
+    });
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = window.setTimeout(() => {
+      transportRef.current?.presence?.setTyping(conversationId, false).catch(() => {});
+    }, 3000);
+  }, [conversationId]);
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
+    const newValue = e.target.value;
+    setContent(newValue);
+    if (newValue.trim()) {
+      handleTyping();
+    }
   };
 
   const handleSend = async () => {
@@ -46,6 +87,13 @@ export function DMMessageInput({
     if (!trimmed || !keypair || isSending) return;
 
     setIsSending(true);
+
+    // Clear typing indicator immediately
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    transportRef.current?.presence?.setTyping(conversationId, false).catch(() => {});
 
     try {
       await sendMessage(trimmed, recipientKey, keypair as KeyPair);

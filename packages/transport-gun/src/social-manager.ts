@@ -25,6 +25,11 @@ export class SocialManager {
     const gun = GunInstanceManager.get();
     const user = GunInstanceManager.user();
 
+    // Prevent self-friending
+    if (fromKey === toKey) {
+      throw new Error("You cannot send a friend request to yourself.");
+    }
+
     // Check if blocked
     const isBlocked = await this.isBlocked(toKey);
     if (isBlocked) {
@@ -123,12 +128,22 @@ export class SocialManager {
       respondedAt: now,
     });
 
-    // Add sender to our friends list
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (user.get("social") as any).get("friends").get(request.fromKey).put({
-      publicKey: request.fromKey,
-      addedAt: now,
-    });
+    // Notify the sender via their accepted-inbox (reliable real-time notification)
+    const myPub = user?.is?.pub;
+    if (myPub) {
+      await this.writeAcceptedNotification(request.fromKey, myPub, requestId);
+    }
+
+    // Add sender to our friends list (guard against self-friending from corrupt data)
+    if (request.fromKey === myPub) {
+      console.warn("[SocialManager] Prevented adding self as friend in acceptRequest");
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (user.get("social") as any).get("friends").get(request.fromKey).put({
+        publicKey: request.fromKey,
+        addedAt: now,
+      });
+    }
 
     // Remove from our incoming requests
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,6 +157,10 @@ export class SocialManager {
     const gun = GunInstanceManager.get();
     const user = GunInstanceManager.user();
     const now = Date.now();
+    const myPub = user?.is?.pub;
+
+    // Get the request to find the sender
+    const request = await this.getRequest(requestId);
 
     // Update shared request status
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,6 +172,94 @@ export class SocialManager {
     // Remove from our incoming requests
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (user.get("social") as any).get("incomingRequests").get(requestId).put(null);
+
+    // Notify the sender that the request was declined
+    if (request && myPub) {
+      await this.writeDeclinedNotification(request.fromKey, requestId, myPub);
+    }
+  }
+
+  /**
+   * Write declined notification to sender's inbox.
+   * When we decline a request, notify the sender so they can remove it from outgoing.
+   */
+  async writeDeclinedNotification(
+    senderKey: string,
+    requestId: string,
+    fromKey: string
+  ): Promise<void> {
+    const gun = GunInstanceManager.get();
+    console.log("[SocialManager] Writing declined notification:", { senderKey: senderKey.slice(0,8), requestId });
+
+    return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (gun.get("declined-inbox") as any).get(senderKey).get(requestId).put(
+        {
+          fromKey,
+          requestId,
+          declinedAt: Date.now(),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ack: any) => {
+          if (ack.err) {
+            console.error("[SocialManager] Failed to write declined notification:", ack.err);
+          }
+          resolve();
+        }
+      );
+      // Timeout fallback
+      setTimeout(resolve, 1000);
+    });
+  }
+
+  /**
+   * Subscribe to declined-inbox for real-time decline detection.
+   * When someone declines our friend request, we get notified here.
+   */
+  subscribeDeclinedInbox(
+    myKey: string,
+    handler: (requestId: string) => void
+  ): Unsubscribe {
+    const gun = GunInstanceManager.get();
+    const processedRequests = new Set<string>();
+    const subscriptionStartTime = Date.now();
+    
+    console.log("[SocialManager] subscribeDeclinedInbox started for:", myKey.slice(0,8), "at:", subscriptionStartTime);
+
+    const ref = gun
+      .get("declined-inbox")
+      .get(myKey)
+      .map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on((data: any, key: string) => {
+        console.log("[SocialManager] Declined inbox received data:", { key, data, myKey: myKey.slice(0,8) });
+        
+        if (!data || !data.requestId || !data.declinedAt) {
+          console.log("[SocialManager] Declined inbox - invalid data, skipping");
+          return;
+        }
+        
+        // Skip if already processed
+        if (processedRequests.has(key)) {
+          console.log("[SocialManager] Declined inbox - already processed:", key);
+          return;
+        }
+        
+        // Ignore old notifications (older than 60 seconds before subscription started)
+        const cutoffTime = subscriptionStartTime - 60000;
+        if (data.declinedAt < cutoffTime) {
+          console.log("[SocialManager] Ignoring old declined notification, declinedAt:", data.declinedAt, "cutoff:", cutoffTime);
+          return;
+        }
+        
+        processedRequests.add(key);
+        console.log("[SocialManager] Processing declined request:", data.requestId);
+        handler(data.requestId);
+      });
+
+    return () => {
+      ref.off();
+    };
   }
 
   /**
@@ -404,13 +511,200 @@ export class SocialManager {
 
   /**
    * Remove a friend (unfriend).
-   * Removes from our graph. The other user's client should detect this
-   * and clean up their side (or we accept asymmetric unfriending).
+   * Removes from our graph and notifies the other user via unfriend-inbox.
    */
-  async removeFriend(publicKey: string): Promise<void> {
+  async removeFriend(publicKey: string, myKey: string): Promise<void> {
     const user = GunInstanceManager.user();
+    console.log("[SocialManager] removeFriend called:", { publicKey: publicKey.slice(0,8), myKey: myKey.slice(0,8) });
+    
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (user.get("social") as any).get("friends").get(publicKey).put(null);
+
+    // Notify the other user that they've been unfriended
+    await this.writeUnfriendNotification(publicKey, myKey);
+    console.log("[SocialManager] Unfriend notification written");
+  }
+
+  /**
+   * Remove a friend from our Gun graph only (no notification).
+   * Used when processing an unfriend notification from the other user.
+   */
+  async removeFriendFromGraph(publicKey: string): Promise<void> {
+    const user = GunInstanceManager.user();
+    console.log("[SocialManager] removeFriendFromGraph called:", publicKey.slice(0, 8));
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (user.get("social") as any).get("friends").get(publicKey).put(null);
+  }
+
+  /**
+   * Write unfriend notification to recipient's inbox.
+   * When we unfriend someone, write to:
+   *   gun.get("unfriend-inbox").get(recipientKey).get(ourKey)
+   */
+  async writeUnfriendNotification(
+    recipientKey: string,
+    fromKey: string
+  ): Promise<void> {
+    const gun = GunInstanceManager.get();
+
+    return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (gun.get("unfriend-inbox") as any).get(recipientKey).get(fromKey).put(
+        {
+          fromKey,
+          unfriendedAt: Date.now(),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ack: any) => {
+          if (ack.err) {
+            console.error("[SocialManager] Failed to write unfriend notification:", ack.err);
+          }
+          resolve();
+        }
+      );
+      // Timeout fallback in case Gun doesn't acknowledge
+      setTimeout(resolve, 1000);
+    });
+  }
+
+  /**
+   * Subscribe to unfriend-inbox for real-time unfriend detection.
+   * Only processes notifications from the last 60 seconds to avoid
+   * re-triggering old notifications on app restart.
+   */
+  subscribeUnfriendInbox(
+    myKey: string,
+    handler: (fromKey: string) => void
+  ): Unsubscribe {
+    const gun = GunInstanceManager.get();
+    // Track the last processed timestamp for each key to handle repeated unfriend/refriend cycles
+    const processedTimestamps = new Map<string, number>();
+    const subscriptionStartTime = Date.now();
+    
+    console.log("[SocialManager] subscribeUnfriendInbox started for:", myKey.slice(0,8));
+
+    const ref = gun
+      .get("unfriend-inbox")
+      .get(myKey)
+      .map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on((data: any, key: string) => {
+        console.log("[SocialManager] Unfriend inbox data received:", { key: key?.slice(0,8), data });
+        
+        if (!data || !data.fromKey || !data.unfriendedAt) return;
+        
+        // Ignore old notifications (older than 60 seconds before subscription started)
+        // This prevents re-triggering on app restart
+        const cutoffTime = subscriptionStartTime - 60000;
+        if (data.unfriendedAt < cutoffTime) {
+          console.log("[SocialManager] Ignoring old unfriend notification");
+          return;
+        }
+        
+        // Check if this is a new unfriend event (newer timestamp than last processed)
+        const lastProcessed = processedTimestamps.get(key) || 0;
+        if (data.unfriendedAt <= lastProcessed) {
+          console.log("[SocialManager] Already processed this unfriend timestamp");
+          return;
+        }
+        
+        // Mark this timestamp as processed
+        processedTimestamps.set(key, data.unfriendedAt);
+        console.log("[SocialManager] Processing unfriend from:", data.fromKey.slice(0,8));
+        handler(data.fromKey);
+      });
+
+    return () => {
+      ref.off();
+    };
+  }
+
+  /**
+   * Clear unfriend notification after processing.
+   */
+  async clearUnfriendNotification(myKey: string, fromKey: string): Promise<void> {
+    const gun = GunInstanceManager.get();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (gun.get("unfriend-inbox") as any).get(myKey).get(fromKey).put(null);
+  }
+
+  // ── Accepted Inbox (for reliable friend request acceptance notification) ──
+
+  /**
+   * Write acceptance notification to sender's inbox.
+   * When we accept someone's request, write to:
+   *   gun.get("accepted-inbox").get(senderKey).get(requestId)
+   */
+  async writeAcceptedNotification(
+    senderKey: string,
+    acceptorKey: string,
+    requestId: string
+  ): Promise<void> {
+    const gun = GunInstanceManager.get();
+    console.log("[SocialManager] Writing accepted notification:", { senderKey: senderKey.slice(0,8), acceptorKey: acceptorKey.slice(0,8), requestId });
+
+    return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (gun.get("accepted-inbox") as any).get(senderKey).get(requestId).put(
+        {
+          acceptorKey,
+          requestId,
+          acceptedAt: Date.now(),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ack: any) => {
+          if (ack.err) {
+            console.error("[SocialManager] Failed to write accepted notification:", ack.err);
+          }
+          resolve();
+        }
+      );
+      // Timeout fallback
+      setTimeout(resolve, 1000);
+    });
+  }
+
+  /**
+   * Subscribe to accepted-inbox for real-time acceptance detection.
+   * When someone accepts our friend request, we get notified here.
+   */
+  subscribeAcceptedInbox(
+    myKey: string,
+    handler: (acceptorKey: string, requestId: string) => void
+  ): Unsubscribe {
+    const gun = GunInstanceManager.get();
+    const processedRequests = new Set<string>();
+    const subscriptionStartTime = Date.now();
+    
+    console.log("[SocialManager] subscribeAcceptedInbox started for:", myKey.slice(0,8));
+
+    const ref = gun
+      .get("accepted-inbox")
+      .get(myKey)
+      .map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on((data: any, key: string) => {
+        if (!data || !data.acceptorKey || !data.requestId || !data.acceptedAt) return;
+        
+        // Skip if already processed
+        if (processedRequests.has(key)) return;
+        
+        // Ignore old notifications (older than 60 seconds before subscription started)
+        const cutoffTime = subscriptionStartTime - 60000;
+        if (data.acceptedAt < cutoffTime) {
+          console.log("[SocialManager] Ignoring old accepted notification");
+          return;
+        }
+        
+        processedRequests.add(key);
+        console.log("[SocialManager] Processing accepted from:", data.acceptorKey.slice(0,8));
+        handler(data.acceptorKey, data.requestId);
+      });
+
+    return () => {
+      ref.off();
+    };
   }
 
   /**
@@ -560,13 +854,15 @@ export class SocialManager {
    * 3. Creates the DM conversation in the sender's graph
    */
   subscribeOutgoingRequests(
-    _myKey: string,
+    myKey: string,
     onAccepted: (request: FriendRequest) => void,
     onDeclined: (request: FriendRequest) => void
   ): Unsubscribe {
     const user = GunInstanceManager.user();
     const subscriptions: Unsubscribe[] = [];
     const seen = new Set<string>();
+    // Track which request status changes we've already processed
+    const processedStatuses = new Map<string, string>();
     
     // Throttle: collect request data and flush periodically
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -579,7 +875,21 @@ export class SocialManager {
 
       // Subscribe to each request's status in the shared graph
       const sub = this.subscribeRequest(data.requestId, (request) => {
+        // Check if we've already processed this status for this request
+        const lastProcessedStatus = processedStatuses.get(request.id);
+        if (lastProcessedStatus === request.status) {
+          return; // Already processed this status change
+        }
+        
         if (request.status === "accepted") {
+          processedStatuses.set(request.id, "accepted");
+          
+          // Don't add yourself as a friend
+          if (request.toKey === myKey) {
+            console.warn("[SocialManager] Prevented adding self as friend");
+            return;
+          }
+          
           // Add them to our friends list
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (user.get("social") as any).get("friends").get(request.toKey).put({
@@ -593,6 +903,8 @@ export class SocialManager {
 
           onAccepted(request);
         } else if (request.status === "declined") {
+          processedStatuses.set(request.id, "declined");
+          
           // Clean up outgoing request
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (user.get("social") as any).get("outgoingRequests").get(request.id).put(null);
@@ -639,6 +951,10 @@ export class SocialManager {
   async cancelRequest(requestId: string): Promise<void> {
     const gun = GunInstanceManager.get();
     const user = GunInstanceManager.user();
+    const myPub = user?.is?.pub;
+
+    // Get the request to find the recipient
+    const request = await this.getRequest(requestId);
 
     // Mark as cancelled in shared graph (use declined status)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -650,6 +966,94 @@ export class SocialManager {
     // Remove from our outgoing requests
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (user.get("social") as any).get("outgoingRequests").get(requestId).put(null);
+
+    // Notify the recipient that the request was cancelled
+    if (request && myPub) {
+      await this.writeCancelledNotification(request.toKey, requestId, myPub);
+    }
+  }
+
+  /**
+   * Write cancelled notification to recipient's inbox.
+   * When we cancel a request, notify the recipient so they can remove it from incoming.
+   */
+  async writeCancelledNotification(
+    recipientKey: string,
+    requestId: string,
+    fromKey: string
+  ): Promise<void> {
+    const gun = GunInstanceManager.get();
+    console.log("[SocialManager] Writing cancelled notification:", { recipientKey: recipientKey.slice(0,8), requestId });
+
+    return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (gun.get("cancelled-inbox") as any).get(recipientKey).get(requestId).put(
+        {
+          fromKey,
+          requestId,
+          cancelledAt: Date.now(),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ack: any) => {
+          if (ack.err) {
+            console.error("[SocialManager] Failed to write cancelled notification:", ack.err);
+          }
+          resolve();
+        }
+      );
+      // Timeout fallback
+      setTimeout(resolve, 1000);
+    });
+  }
+
+  /**
+   * Subscribe to cancelled-inbox for real-time cancellation detection.
+   * When someone cancels a friend request they sent us, we get notified here.
+   */
+  subscribeCancelledInbox(
+    myKey: string,
+    handler: (requestId: string, fromKey: string) => void
+  ): Unsubscribe {
+    const gun = GunInstanceManager.get();
+    const processedRequests = new Set<string>();
+    const subscriptionStartTime = Date.now();
+    
+    console.log("[SocialManager] subscribeCancelledInbox started for:", myKey.slice(0,8), "at:", subscriptionStartTime);
+
+    const ref = gun
+      .get("cancelled-inbox")
+      .get(myKey)
+      .map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on((data: any, key: string) => {
+        console.log("[SocialManager] Cancelled inbox received data:", { key, data, myKey: myKey.slice(0,8) });
+        
+        if (!data || !data.requestId || !data.cancelledAt) {
+          console.log("[SocialManager] Cancelled inbox - invalid data, skipping");
+          return;
+        }
+        
+        // Skip if already processed
+        if (processedRequests.has(key)) {
+          console.log("[SocialManager] Cancelled inbox - already processed:", key);
+          return;
+        }
+        
+        // Ignore old notifications (older than 60 seconds before subscription started)
+        const cutoffTime = subscriptionStartTime - 60000;
+        if (data.cancelledAt < cutoffTime) {
+          console.log("[SocialManager] Ignoring old cancelled notification, cancelledAt:", data.cancelledAt, "cutoff:", cutoffTime);
+          return;
+        }
+        
+        processedRequests.add(key);
+        console.log("[SocialManager] Processing cancelled request:", data.requestId, "from:", data.fromKey?.slice(0,8));
+        handler(data.requestId, data.fromKey);
+      });
+
+    return () => {
+      ref.off();
+    };
   }
 
   /**

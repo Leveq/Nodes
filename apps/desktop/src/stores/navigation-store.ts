@@ -1,10 +1,13 @@
 import { create } from "zustand";
 
 type ViewMode = "node" | "dm" | "friends" | "discovery";
+type FriendsTab = "friends" | "incoming" | "outgoing" | "blocked";
 
 interface NavigationState {
   viewMode: ViewMode;
+  friendsTab: FriendsTab;
   setViewMode: (mode: ViewMode) => void;
+  setFriendsTab: (tab: FriendsTab) => void;
   reset: () => void;
 }
 
@@ -17,6 +20,8 @@ interface NavigationState {
  */
 export const useNavigationStore = create<NavigationState>((set) => ({
   viewMode: "node",
+  friendsTab: "friends",
   setViewMode: (mode) => set({ viewMode: mode }),
-  reset: () => set({ viewMode: "node" }),
+  setFriendsTab: (tab) => set({ friendsTab: tab }),
+  reset: () => set({ viewMode: "node", friendsTab: "friends" }),
 }));

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSocialStore } from "../../stores/social-store";
+import { useNavigationStore } from "../../stores/navigation-store";
 import { ProfileManager } from "@nodes/transport-gun";
 import { NameSkeleton, Avatar } from "../ui";
 import { setCachedAvatarCid } from "../../hooks/useDisplayName";
@@ -14,7 +15,10 @@ type TabType = "friends" | "incoming" | "outgoing" | "blocked";
  * Provides UI for accepting/declining requests and managing friends.
  */
 export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) => void }) {
-  const [activeTab, setActiveTab] = useState<TabType>("friends");
+  // Use friendsTab from navigation store as initial value
+  const friendsTabFromStore = useNavigationStore((s) => s.friendsTab);
+  const setFriendsTabInStore = useNavigationStore((s) => s.setFriendsTab);
+  const [activeTab, setActiveTab] = useState<TabType>(friendsTabFromStore);
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
   const [avatarCids, setAvatarCids] = useState<Record<string, string>>({});
 
@@ -70,6 +74,20 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
   const getName = (publicKey: string) => resolvedNames[publicKey];
   const isNameLoading = (publicKey: string) => !resolvedNames[publicKey];
 
+  // Sync tab changes to both local state and store
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setFriendsTabInStore(tab);
+  };
+
+  // Sync from store when it changes externally (e.g., from notification click)
+  useEffect(() => {
+    if (friendsTabFromStore !== activeTab) {
+      setActiveTab(friendsTabFromStore);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Only sync when store changes, not local state
+  }, [friendsTabFromStore]);
+
   return (
     <div className="w-70 bg-nodes-surface border-r border-nodes-border flex flex-col shrink-0">
       {/* Header */}
@@ -83,26 +101,26 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
           label="Friends"
           isActive={activeTab === "friends"}
           count={friends.length}
-          onClick={() => setActiveTab("friends")}
+          onClick={() => handleTabChange("friends")}
         />
         <TabButton
           label="Incoming"
           isActive={activeTab === "incoming"}
           count={incomingRequests.length}
           showBadge={incomingRequests.length > 0}
-          onClick={() => setActiveTab("incoming")}
+          onClick={() => handleTabChange("incoming")}
         />
         <TabButton
           label="Pending"
           isActive={activeTab === "outgoing"}
           count={outgoingRequests.length}
-          onClick={() => setActiveTab("outgoing")}
+          onClick={() => handleTabChange("outgoing")}
         />
         <TabButton
           label="Blocked"
           isActive={activeTab === "blocked"}
           count={blockedUsers.length}
-          onClick={() => setActiveTab("blocked")}
+          onClick={() => handleTabChange("blocked")}
         />
       </div>
 

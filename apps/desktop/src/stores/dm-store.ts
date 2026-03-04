@@ -44,6 +44,8 @@ interface DMState {
   clearUnread: (conversationId: string) => void;
   resolveEpub: (publicKey: string) => Promise<string>;
   updateConversation: (conversation: DMConversation) => void;
+  addTypingUser: (conversationId: string, userId: string) => void;
+  removeTypingUser: (conversationId: string, userId: string) => void;
   cleanup: () => void;
   reset: () => void;
 }
@@ -108,6 +110,13 @@ export const useDMStore = create<DMState>((set, get) => ({
   },
 
   startConversation: async (recipientKey, keypair) => {
+    // Check if recipient is blocked
+    const isBlocked = useSocialStore.getState().isBlocked(recipientKey);
+    if (isBlocked) {
+      useToastStore.getState().addToast("error", "Cannot message a blocked user.");
+      throw new Error("Cannot DM blocked user");
+    }
+
     // Check if recipient is a friend (DMs are gated behind friend system)
     const isFriend = useSocialStore.getState().isFriend(recipientKey);
     if (!isFriend) {
@@ -233,6 +242,13 @@ export const useDMStore = create<DMState>((set, get) => ({
     const { activeConversationId } = get();
     if (!activeConversationId) return;
 
+    // Check if recipient is blocked
+    const isBlocked = useSocialStore.getState().isBlocked(recipientKey);
+    if (isBlocked) {
+      useToastStore.getState().addToast("error", "Cannot send message to a blocked user.");
+      return;
+    }
+
     try {
       const epub = await get().resolveEpub(recipientKey);
 
@@ -325,6 +341,31 @@ export const useDMStore = create<DMState>((set, get) => ({
         c.id === conversationId ? { ...c, unreadCount: 0 } : c
       ),
     }));
+  },
+
+  addTypingUser: (conversationId, userId) => {
+    set((state) => {
+      const current = state.typingUsers[conversationId] || [];
+      if (current.includes(userId)) return state;
+      return {
+        typingUsers: {
+          ...state.typingUsers,
+          [conversationId]: [...current, userId],
+        },
+      };
+    });
+  },
+
+  removeTypingUser: (conversationId, userId) => {
+    set((state) => {
+      const current = state.typingUsers[conversationId] || [];
+      return {
+        typingUsers: {
+          ...state.typingUsers,
+          [conversationId]: current.filter((id) => id !== userId),
+        },
+      };
+    });
   },
 
   resolveEpub: async (publicKey) => {

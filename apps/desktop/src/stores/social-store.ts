@@ -1,8 +1,11 @@
 import { create } from "zustand";
-import { SocialManager } from "@nodes/transport-gun";
+import { SocialManager, ProfileManager } from "@nodes/transport-gun";
 import type { FriendRequest, Friend, BlockedUser } from "@nodes/core";
 import type { Unsubscribe } from "@nodes/transport";
 import { useToastStore } from "./toast-store";
+import { processFriendRequestNotification } from "../services/notification-manager";
+
+const profileManager = new ProfileManager();
 
 interface SocialState {
   // State
@@ -17,6 +20,10 @@ interface SocialState {
   friendsSub: Unsubscribe | null;
   outgoingSub: Unsubscribe | null;
   inboxSub: Unsubscribe | null;
+  unfriendSub: Unsubscribe | null;
+  acceptedSub: Unsubscribe | null;
+  cancelledSub: Unsubscribe | null;
+  declinedSub: Unsubscribe | null;
 
   // Actions
   initialize: (myKey: string) => Promise<void>;
@@ -47,6 +54,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   friendsSub: null,
   outgoingSub: null,
   inboxSub: null,
+  unfriendSub: null,
+  acceptedSub: null,
+  cancelledSub: null,
+  declinedSub: null,
 
   initialize: async (myKey) => {
     set({ activeMyKey: myKey });
@@ -57,21 +68,34 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     state.friendsSub?.();
     state.outgoingSub?.();
     state.inboxSub?.();
+    state.unfriendSub?.();
+    state.acceptedSub?.();
+    state.cancelledSub?.();
+    state.declinedSub?.();
 
     set({ isLoading: true });
 
     try {
       // Load initial data
-      const [friends, blockedUsers, outgoingRequests] = await Promise.all([
+      const [friendsRaw, blockedUsers, outgoingRequests] = await Promise.all([
         socialManager.getFriends(),
         socialManager.getBlockedUsers(),
         socialManager.getOutgoingRequests(myKey),
       ]);
 
+      // Filter out self from friends list (guard against corrupt data)
+      const friends = friendsRaw.filter((f) => f.publicKey !== myKey);
+
       set({ friends, blockedUsers, outgoingRequests });
 
       // Subscribe to friends list changes
       const friendsSub = socialManager.subscribeFriends((friend, publicKey) => {
+        // Guard against self being in friends list (corrupt data)
+        if (publicKey === myKey) {
+          console.warn("[SocialStore] Ignoring self in friends list");
+          return;
+        }
+        
         set((state) => {
           if (!friend) {
             // Friend removed
@@ -93,13 +117,12 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       });
 
       // Subscribe to outgoing request status changes
+      // Note: Toasts are shown by acceptedSub/declinedSub to avoid duplicates
       const outgoingSub = socialManager.subscribeOutgoingRequests(
         myKey,
         (request) => {
           // Accepted — friend added automatically by SocialManager
-          useToastStore
-            .getState()
-            .addToast("success", `Friend request accepted!`);
+          // Toast handled by acceptedSub subscription (more reliable)
           // Remove from outgoing
           set((state) => ({
             outgoingRequests: state.outgoingRequests.filter(
@@ -108,10 +131,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           }));
         },
         (request) => {
-          // Declined
-          useToastStore
-            .getState()
-            .addToast("info", `Friend request was declined.`);
+          // Declined — toast handled by declinedSub subscription (more reliable)
           set((state) => ({
             outgoingRequests: state.outgoingRequests.filter(
               (r) => r.id !== request.id
@@ -147,13 +167,119 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           incomingRequests: [...state.incomingRequests, request],
         }));
 
+        // Get sender's display name for notification
+        let senderName = fromKey.slice(0, 8) + "...";
+        try {
+          const profile = await profileManager.getPublicProfile(fromKey);
+          if (profile?.displayName) {
+            senderName = profile.displayName;
+          }
+        } catch {
+          // Use truncated key as fallback
+        }
+
+        // Add to bell icon notifications + show desktop notification
+        await processFriendRequestNotification(fromKey, senderName, request.message);
+
         useToastStore.getState().addToast("info", "You have a new friend request!");
+      });
+
+      // Subscribe to unfriend inbox for real-time unfriend detection
+      const unfriendSub = socialManager.subscribeUnfriendInbox(myKey, async (fromKey) => {
+        if (get().activeMyKey !== myKey) {
+          return; // Stale subscription
+        }
+
+        // Check if this person is actually in our friends list
+        const { friends } = get();
+        const wasFriend = friends.some((f) => f.publicKey === fromKey);
+        
+        if (wasFriend) {
+          // Remove from our friends list (local state)
+          set((state) => ({
+            friends: state.friends.filter((f) => f.publicKey !== fromKey),
+          }));
+          
+          // ALSO remove from our Gun graph so it doesn't come back on reload
+          await socialManager.removeFriendFromGraph(fromKey);
+          
+          useToastStore.getState().addToast("info", "A friend has removed you from their friends list.");
+        }
+        // Note: We don't clear the notification - we rely on timestamp comparison
+        // to detect new unfriend events. Clearing can cause Gun.js to not fire
+        // on subsequent writes to the same path.
+      });
+
+      // Subscribe to accepted-inbox for real-time acceptance detection
+      // This fires when someone accepts our friend request
+      const acceptedSub = socialManager.subscribeAcceptedInbox(myKey, (acceptorKey, requestId) => {
+        if (get().activeMyKey !== myKey) {
+          return; // Stale subscription
+        }
+
+        console.log("[SocialStore] Friend request accepted via inbox:", acceptorKey.slice(0, 8));
+        
+        // Check if we already have them as a friend (avoid duplicates)
+        const { friends, outgoingRequests } = get();
+        const alreadyFriend = friends.some((f) => f.publicKey === acceptorKey);
+        
+        if (!alreadyFriend && acceptorKey !== myKey) {
+          // Add to friends list
+          set((state) => ({
+            friends: [...state.friends, { publicKey: acceptorKey, addedAt: Date.now() }],
+          }));
+        }
+        
+        // Remove from outgoing requests
+        const hadRequest = outgoingRequests.some((r) => r.id === requestId);
+        if (hadRequest) {
+          set((state) => ({
+            outgoingRequests: state.outgoingRequests.filter((r) => r.id !== requestId),
+          }));
+          useToastStore.getState().addToast("success", "Friend request accepted!");
+        }
+      });
+
+      // Subscribe to cancelled-inbox for real-time cancellation detection
+      // This fires when someone cancels a friend request they sent us
+      const cancelledSub = socialManager.subscribeCancelledInbox(myKey, (requestId, _fromKey) => {
+        if (get().activeMyKey !== myKey) {
+          return; // Stale subscription
+        }
+
+        console.log("[SocialStore] Friend request cancelled:", requestId);
+        
+        // Remove from incoming requests
+        set((state) => ({
+          incomingRequests: state.incomingRequests.filter((r) => r.id !== requestId),
+        }));
+      });
+
+      // Subscribe to declined-inbox for real-time decline detection
+      // This fires when someone declines our friend request
+      const declinedSub = socialManager.subscribeDeclinedInbox(myKey, (requestId) => {
+        if (get().activeMyKey !== myKey) {
+          return; // Stale subscription
+        }
+
+        console.log("[SocialStore] Friend request declined:", requestId);
+        
+        // Remove from outgoing requests
+        set((state) => ({
+          outgoingRequests: state.outgoingRequests.filter((r) => r.id !== requestId),
+        }));
+        
+        useToastStore.getState().addToast("info", "Friend request was declined.");
       });
 
       set({
         friendsSub,
         outgoingSub,
         inboxSub,
+        unfriendSub,
+        acceptedSub,
+        cancelledSub,
+        declinedSub,
         isLoading: false,
       });
     } catch (err: unknown) {
@@ -256,8 +382,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   removeFriend: async (publicKey) => {
+    const { activeMyKey } = get();
+    if (!activeMyKey) {
+      useToastStore.getState().addToast("error", "Not authenticated");
+      return;
+    }
+
     try {
-      await socialManager.removeFriend(publicKey);
+      await socialManager.removeFriend(publicKey, activeMyKey);
 
       set((state) => ({
         friends: state.friends.filter((f) => f.publicKey !== publicKey),
@@ -361,10 +493,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   cleanup: () => {
-    const { friendsSub, outgoingSub, inboxSub } = get();
+    const { friendsSub, outgoingSub, inboxSub, unfriendSub, acceptedSub, cancelledSub, declinedSub } = get();
     friendsSub?.();
     outgoingSub?.();
     inboxSub?.();
+    unfriendSub?.();
+    acceptedSub?.();
+    cancelledSub?.();
+    declinedSub?.();
 
     set({
       friends: [],
@@ -375,6 +511,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       friendsSub: null,
       outgoingSub: null,
       inboxSub: null,
+      unfriendSub: null,
+      acceptedSub: null,
+      cancelledSub: null,
+      declinedSub: null,
     });
   },
 }));

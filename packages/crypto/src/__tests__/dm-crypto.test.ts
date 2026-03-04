@@ -123,7 +123,25 @@ describe("DMCrypto", () => {
       expect(result).toBe("hello");
     });
 
-    it("throws if decryption returns null", async () => {
+    it("falls back to legacy (raw ECDH) key when HKDF key fails", async () => {
+      mockSEA.secret.mockResolvedValue("raw-secret");
+      // First call (HKDF key) returns null, second call (raw key) succeeds
+      mockSEA.decrypt
+        .mockResolvedValueOnce(null)      // HKDF-derived key fails
+        .mockResolvedValueOnce("hello");  // Raw legacy key succeeds
+
+      const result = await dmCrypto.decryptMessage("encrypted-ciphertext", bobEpub, aliceKeypair);
+
+      // Should have tried decrypt twice
+      expect(mockSEA.decrypt).toHaveBeenCalledTimes(2);
+      // First call with HKDF-derived key (64 hex chars)
+      expect(mockSEA.decrypt).toHaveBeenNthCalledWith(1, "encrypted-ciphertext", expect.stringMatching(/^[0-9a-f]{64}$/));
+      // Second call with raw secret
+      expect(mockSEA.decrypt).toHaveBeenNthCalledWith(2, "encrypted-ciphertext", "raw-secret");
+      expect(result).toBe("hello");
+    });
+
+    it("throws if both HKDF and legacy decryption fail", async () => {
       mockSEA.secret.mockResolvedValue("raw-secret");
       mockSEA.decrypt.mockResolvedValue(null);
 

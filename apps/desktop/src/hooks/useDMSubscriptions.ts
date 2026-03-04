@@ -3,11 +3,17 @@ import type { Unsubscribe, TransportMessage } from "@nodes/transport";
 import { useDMStore } from "../stores/dm-store";
 import { useIdentityStore } from "../stores/identity-store";
 import { useNavigationStore } from "../stores/navigation-store";
-import { DMManager } from "@nodes/transport-gun";
+import { DMManager, ProfileManager } from "@nodes/transport-gun";
 import type { KeyPair } from "@nodes/crypto";
 import { getSearchIndex } from "../services/search-index";
+import { processDMForNotification } from "../services/notification-manager";
 
 const dmManager = new DMManager();
+const profileManager = new ProfileManager();
+
+// Track conversations we've already sent "new DM" notifications for (persists across effect reruns)
+// This prevents duplicate notifications when the subscription fires after loadConversations
+const notifiedConversationIds = new Set<string>();
 
 // Pending message type for batching
 interface PendingDMMessage {
@@ -83,20 +89,45 @@ export function useDMSubscriptions() {
     const isNotViewing = !isViewingThisConversation;
     
     const initialLoadDone = initialLoadDoneRef.current.has(conversationId);
+    
+    // Check if this is a recent message (within last 60 seconds) - these should always notify
+    const isRecentMessage = Date.now() - message.timestamp < 60_000;
 
     // During initial load: count unread messages (after lastReadAt)
     if (!initialLoadDone) {
       if (isFromOther) {
         const lastReadAt = lastReadAtRef.current.get(conversationId) || 0;
         if (message.timestamp > lastReadAt) {
-          const current = pendingUnreadRef.current.get(conversationId) || 0;
-          pendingUnreadRef.current.set(conversationId, current + 1);
+          // For recent messages, increment unread count immediately AND notify
+          // This ensures the badge shows up right away for new DMs
+          if (isRecentMessage && isNotViewing) {
+            currentState.incrementUnread(conversationId);
+            
+            profileManager.getPublicProfile(message.authorKey).then((profile) => {
+              const senderName = profile?.displayName || message.authorKey.slice(0, 8);
+              processDMForNotification(message, senderName);
+            }).catch(() => {
+              processDMForNotification(message, message.authorKey.slice(0, 8));
+            });
+          } else {
+            // For older messages during initial load, accumulate for batch application
+            const current = pendingUnreadRef.current.get(conversationId) || 0;
+            pendingUnreadRef.current.set(conversationId, current + 1);
+          }
         }
       }
     } else {
       // After initial load: increment unread for real-time messages
       if (isFromOther && isNotViewing) {
         currentState.incrementUnread(conversationId);
+        
+        // Trigger DM notification (desktop + sound)
+        profileManager.getPublicProfile(message.authorKey).then((profile) => {
+          const senderName = profile?.displayName || message.authorKey.slice(0, 8);
+          processDMForNotification(message, senderName);
+        }).catch(() => {
+          processDMForNotification(message, message.authorKey.slice(0, 8));
+        });
       }
     }
 
@@ -146,6 +177,26 @@ export function useDMSubscriptions() {
       rafIdRef.current = requestAnimationFrame(flushPending);
     }
   }, [flushPending]);
+
+  // Track if we've done initial "notified" marking
+  const initialMarkDoneRef = useRef(false);
+
+  // Mark existing conversations as "notified" to prevent spam on startup
+  // This runs once when we first have conversations and are authenticated
+  useEffect(() => {
+    if (!isAuthenticated || !publicKey || initialMarkDoneRef.current) return;
+    if (conversations.length === 0) return; // Wait for conversations to load
+    
+    initialMarkDoneRef.current = true;
+    
+    // Mark conversations that the user has already read as "notified"
+    // (lastReadAt > 0 means they've interacted with it before)
+    for (const conv of conversations) {
+      if (conv.lastReadAt && conv.lastReadAt > 0) {
+        notifiedConversationIds.add(conv.id);
+      }
+    }
+  }, [isAuthenticated, publicKey, conversations]);
 
   useEffect(() => {
     if (!isAuthenticated || !keypair || !publicKey) return;
@@ -277,11 +328,52 @@ export function useDMSubscriptions() {
   useEffect(() => {
     if (!isAuthenticated || !keypair || !publicKey) return;
 
-    const unsub = dmManager.subscribeConversations((newConv) => {
-      // Check if we already have this conversation
-      const existingConvs = useDMStore.getState().conversations;
-      if (!existingConvs.some((c) => c.id === newConv.id)) {
+    const unsub = dmManager.subscribeConversations(async (newConv) => {
+      // Skip if we've already notified for this conversation
+      if (notifiedConversationIds.has(newConv.id)) {
+        // Still update the conversation in case metadata changed
         useDMStore.getState().updateConversation(newConv);
+        return;
+      }
+
+      // Update conversation in store
+      useDMStore.getState().updateConversation(newConv);
+      
+      // Only notify for NEW conversations from others (not conversations we started)
+      // This includes conversations discovered via inbox that loadConversations may have already added
+      if (newConv.recipientKey !== publicKey && !notifiedConversationIds.has(newConv.id)) {
+        notifiedConversationIds.add(newConv.id);
+        
+        // Increment unread count for the new conversation
+        useDMStore.getState().incrementUnread(newConv.id);
+        
+        try {
+          const profile = await profileManager.getPublicProfile(newConv.recipientKey);
+          const senderName = profile?.displayName || newConv.recipientKey.slice(0, 8);
+          
+          // Create a synthetic message for notification purposes
+          const notificationMessage = {
+            id: `inbox-notify-${newConv.id}`,
+            content: newConv.lastMessagePreview || "New message",
+            timestamp: newConv.lastMessageAt || Date.now(),
+            authorKey: newConv.recipientKey,
+            channelId: newConv.id,
+            type: "text" as const,
+          };
+          
+          processDMForNotification(notificationMessage, senderName);
+        } catch {
+          // Still trigger notification even if profile lookup fails
+          const notificationMessage = {
+            id: `inbox-notify-${newConv.id}`,
+            content: newConv.lastMessagePreview || "New message",
+            timestamp: newConv.lastMessageAt || Date.now(),
+            authorKey: newConv.recipientKey,
+            channelId: newConv.id,
+            type: "text" as const,
+          };
+          processDMForNotification(notificationMessage, newConv.recipientKey.slice(0, 8));
+        }
       }
     }, publicKey);
 
@@ -300,8 +392,43 @@ export function useDMSubscriptions() {
         const localConversations = useDMStore.getState().conversations;
         
         for (const serverConv of serverConversations) {
-          if (!localConversations.some((c) => c.id === serverConv.id)) {
+          const isNewToStore = !localConversations.some((c) => c.id === serverConv.id);
+          
+          if (isNewToStore) {
             useDMStore.getState().updateConversation(serverConv);
+          }
+          
+          // Trigger notification for new conversations we haven't notified about yet
+          if (serverConv.recipientKey !== publicKey && !notifiedConversationIds.has(serverConv.id)) {
+            notifiedConversationIds.add(serverConv.id);
+            
+            // Increment unread count for the new conversation
+            useDMStore.getState().incrementUnread(serverConv.id);
+            
+            try {
+              const profile = await profileManager.getPublicProfile(serverConv.recipientKey);
+              const senderName = profile?.displayName || serverConv.recipientKey.slice(0, 8);
+              
+              const notificationMessage = {
+                id: `poll-notify-${serverConv.id}-${Date.now()}`,
+                content: serverConv.lastMessagePreview || "New message",
+                timestamp: serverConv.lastMessageAt || Date.now(),
+                authorKey: serverConv.recipientKey,
+                channelId: serverConv.id,
+                type: "text" as const,
+              };
+              processDMForNotification(notificationMessage, senderName);
+            } catch {
+              const notificationMessage = {
+                id: `poll-notify-${serverConv.id}-${Date.now()}`,
+                content: serverConv.lastMessagePreview || "New message",
+                timestamp: serverConv.lastMessageAt || Date.now(),
+                authorKey: serverConv.recipientKey,
+                channelId: serverConv.id,
+                type: "text" as const,
+              };
+              processDMForNotification(notificationMessage, serverConv.recipientKey.slice(0, 8));
+            }
           }
         }
       } catch (err) {

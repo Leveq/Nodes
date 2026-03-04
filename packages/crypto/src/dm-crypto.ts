@@ -111,8 +111,14 @@ export class DMCrypto {
 
     if (result === undefined || result === null) {
       // Fallback: try legacy key (raw ECDH, no HKDF) for messages encrypted before the HKDF hardening
+      console.log("[DMCrypto] HKDF key failed, trying legacy raw ECDH key fallback");
       const rawSecret = await SEA.secret(recipientEpub, myKeypair);
       result = await SEA.decrypt(encrypted, rawSecret as string);
+      if (result !== undefined && result !== null) {
+        console.log("[DMCrypto] Legacy fallback succeeded");
+      } else {
+        console.warn("[DMCrypto] Both HKDF and legacy keys failed to decrypt");
+      }
     }
 
     if (result === undefined || result === null) {
