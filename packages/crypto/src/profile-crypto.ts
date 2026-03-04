@@ -71,7 +71,11 @@ export class ProfileCrypto {
       case "nobody": {
         const rawSelfSecret = await SEA.secret(keypair.epub, keypair);
         const selfSecret = await deriveEncryptionKey(rawSelfSecret as string, "Nodes:ECDH:profile:v1");
-        const result = await SEA.decrypt(encrypted, selfSecret);
+        let result = await SEA.decrypt(encrypted, selfSecret);
+        if (!result) {
+          // Fallback: try legacy key (raw ECDH, no HKDF) for fields encrypted before PR #45
+          result = await SEA.decrypt(encrypted, rawSelfSecret as string);
+        }
         if (!result) throw new Error("Failed to decrypt field");
         return result as string;
       }

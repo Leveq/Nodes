@@ -5,6 +5,7 @@ import {
   GunAuthProvider,
   ProfileManager,
   GunPresenceTransport,
+  DMManager,
 } from "@nodes/transport-gun";
 import type { EncryptedKeystore, KeyBackup, KeyPair } from "@nodes/crypto";
 import type {
@@ -64,6 +65,7 @@ const keyManager = new KeyManager();
 const authProvider = new GunAuthProvider();
 const profileManager = new ProfileManager();
 const presenceTransport = new GunPresenceTransport();
+const dmManager = new DMManager();
 
 // LocalStorage key for the encrypted keystore
 const KEYSTORE_KEY = "nodes:keystore";
@@ -82,6 +84,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
       (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
     );
   });
+}
+
+/** Publish epub and epubCert — best-effort, non-fatal. Ensures peers can verify MITM protection. */
+async function publishEpubCertSafe(epub: string): Promise<void> {
+  try {
+    const epubCert = await keyManager.generateEpubCert();
+    await dmManager.publishEpubCert(epub, epubCert);
+  } catch (err) {
+    console.warn("[identity] Failed to publish epub cert (non-fatal):", err);
+  }
 }
 
 export const useIdentityStore = create<IdentityState>((set, get) => ({
@@ -131,7 +143,10 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
 
       await profileManager.saveProfile(profile, keypair);
 
-      // 5. Save encrypted keystore locally
+      // 5. Publish epub and epubCert so peers can verify epub MITM protection
+      await publishEpubCertSafe(keypair.epub);
+
+      // 6. Save encrypted keystore locally
       const keystore = await keyManager.saveToLocalStore(passphrase);
       localStorage.setItem(KEYSTORE_KEY, JSON.stringify(keystore));
 
@@ -178,7 +193,10 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (user.get("profile") as any).get("_epub").put(keypair.epub);
 
-      // 6. Load profile from user graph (with timeout)
+      // 6. Publish epubCert so peers can verify epub MITM protection
+      await publishEpubCertSafe(keypair.epub);
+
+      // 7. Load profile from user graph (with timeout)
       let profile: ProfileWithVisibility | null = null;
       try {
         profile = await withTimeout(
@@ -281,10 +299,13 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (user.get("profile") as any).get("_epub").put(keypair.epub);
 
-      // 4. Load existing profile from graph
+      // 4. Publish epubCert so peers can verify epub MITM protection
+      await publishEpubCertSafe(keypair.epub);
+
+      // 5. Load existing profile from graph
       const profile = await profileManager.getOwnProfile(keypair);
 
-      // 5. Save to local keystore with the new local passphrase
+      // 6. Save to local keystore with the new local passphrase
       const keystore = await keyManager.saveToLocalStore(localPassphrase);
       localStorage.setItem(KEYSTORE_KEY, JSON.stringify(keystore));
 

@@ -96,6 +96,10 @@ export class DMCrypto {
 
   /**
    * Decrypt a DM message.
+   *
+   * NOTE: Backwards compatibility fallback — messages encrypted before PR #45 used a raw ECDH
+   * secret (no HKDF). Try the new key first; fall back to the legacy key for older messages.
+   * This fallback can be removed once all messages have been rotated to the new key format.
    */
   async decryptMessage(
     encrypted: string,
@@ -103,7 +107,13 @@ export class DMCrypto {
     myKeypair: KeyPair
   ): Promise<string> {
     const secret = await this.getSharedSecret(recipientEpub, myKeypair);
-    const result = await SEA.decrypt(encrypted, secret);
+    let result = await SEA.decrypt(encrypted, secret);
+
+    if (result === undefined || result === null) {
+      // Fallback: try legacy key (raw ECDH, no HKDF) for messages encrypted before the HKDF hardening
+      const rawSecret = await SEA.secret(recipientEpub, myKeypair);
+      result = await SEA.decrypt(encrypted, rawSecret as string);
+    }
 
     if (result === undefined || result === null) {
       throw new Error("Failed to decrypt message. Wrong key?");
