@@ -2,6 +2,41 @@ import SEA from "gun/sea";
 import type { KeyPair } from "./types";
 
 /**
+ * Derive a cryptographic encryption key from a raw ECDH shared secret using HKDF.
+ * Provides domain separation and formal key derivation on top of the bare SEA.secret() output.
+ *
+ * @param rawSecret - The raw ECDH shared secret (output of SEA.secret())
+ * @param context   - Domain-separation info string (e.g. "Nodes:ECDH:dm:v1")
+ * @returns Hex-encoded 256-bit derived key
+ */
+export async function deriveEncryptionKey(
+  rawSecret: string,
+  context: string
+): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(rawSecret),
+    { name: "HKDF" },
+    false,
+    ["deriveBits"]
+  );
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: encoder.encode("Nodes:v1"),
+      info: encoder.encode(context),
+    },
+    keyMaterial,
+    256
+  );
+  return Array.from(new Uint8Array(derived))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
  * DMCrypto handles encryption/decryption for direct messages.
  *
  * Uses ECDH key exchange: both parties derive the same shared secret
@@ -32,10 +67,12 @@ export class DMCrypto {
       return this.secretCache.get(cacheKey)!;
     }
 
-    const secret = await SEA.secret(recipientEpub, senderKeypair);
-    if (!secret) {
+    const rawSecret = await SEA.secret(recipientEpub, senderKeypair);
+    if (!rawSecret) {
       throw new Error("Failed to derive shared secret");
     }
+
+    const secret = await deriveEncryptionKey(rawSecret as string, "Nodes:ECDH:dm:v1");
 
     this.secretCache.set(cacheKey, secret);
     return secret;

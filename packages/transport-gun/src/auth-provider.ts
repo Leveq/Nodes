@@ -1,6 +1,7 @@
 import type { IAuthProvider, KeyPair, Session } from "@nodes/transport";
 import type { User } from "@nodes/core";
 import { GunInstanceManager } from "./gun-instance";
+import { DMCrypto } from "@nodes/crypto";
 import Gun from "gun";
 import "gun/sea";
 
@@ -15,6 +16,8 @@ const SEA = Gun.SEA as any;
  * (and the other Gun adapters) need to change.
  */
 export class GunAuthProvider implements IAuthProvider {
+  private dmCrypto = new DMCrypto();
+
   /**
    * Create a new identity by generating a SEA keypair.
    * The keypair IS the identity — the public key becomes the user's
@@ -53,7 +56,7 @@ export class GunAuthProvider implements IAuthProvider {
   }
 
   /**
-   * Encrypt data for a specific recipient using ECDH shared secret.
+   * Encrypt data for a specific recipient using ECDH shared secret + HKDF.
    */
   async encrypt(data: string, recipientEpub: string): Promise<string> {
     const gun = GunInstanceManager.get();
@@ -64,8 +67,8 @@ export class GunAuthProvider implements IAuthProvider {
       throw new Error("Not authenticated. Cannot encrypt.");
     }
 
-    const secret = await SEA.secret(recipientEpub, pair);
-    const encrypted = await SEA.encrypt(data, secret as string);
+    const secret = await this.dmCrypto.getSharedSecret(recipientEpub, pair);
+    const encrypted = await SEA.encrypt(data, secret);
     return encrypted as string;
   }
 
@@ -82,8 +85,8 @@ export class GunAuthProvider implements IAuthProvider {
     }
 
     // For self-encrypted data, derive secret from own keys
-    const secret = await SEA.secret(pair.epub, pair);
-    const result = await SEA.decrypt(data, secret as string);
+    const secret = await this.dmCrypto.getSharedSecret(pair.epub, pair);
+    const result = await SEA.decrypt(data, secret);
 
     if (!result) {
       throw new Error("Decryption failed.");

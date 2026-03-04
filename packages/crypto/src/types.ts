@@ -10,6 +10,7 @@ export interface EncryptedKeystore {
   encrypted: string; // SEA.encrypt(keypair, passphrase-derived key)
   pub: string; // Public key stored in plaintext for identification
   createdAt: number;
+  salt?: string; // base64-encoded random salt (added in v2 hardening)
 }
 
 export interface KeyBackup {
@@ -18,4 +19,5 @@ export interface KeyBackup {
   pub: string;
   exportedAt: number;
   label: string; // User-provided label for the backup
+  salt?: string; // base64-encoded random salt (added in v2 hardening)
 }

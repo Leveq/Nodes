@@ -1,6 +1,7 @@
 import Gun from "gun";
 import "gun/sea";
 import type { KeyPair } from "./types";
+import { deriveEncryptionKey } from "./dm-crypto";
 
 // Access SEA from Gun - use any to work around GunJS typing issues
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,8 +34,9 @@ export class ProfileCrypto {
 
       case "nobody": {
         // Encrypt with own secret (self-encrypt)
-        const selfSecret = await SEA.secret(keypair.epub, keypair);
-        const encrypted = await SEA.encrypt(value, selfSecret as string);
+        const rawSelfSecret = await SEA.secret(keypair.epub, keypair);
+        const selfSecret = await deriveEncryptionKey(rawSelfSecret as string, "Nodes:ECDH:profile:v1");
+        const encrypted = await SEA.encrypt(value, selfSecret);
         return encrypted as string;
       }
 
@@ -67,8 +69,9 @@ export class ProfileCrypto {
         return encrypted; // Already plaintext
 
       case "nobody": {
-        const selfSecret = await SEA.secret(keypair.epub, keypair);
-        const result = await SEA.decrypt(encrypted, selfSecret as string);
+        const rawSelfSecret = await SEA.secret(keypair.epub, keypair);
+        const selfSecret = await deriveEncryptionKey(rawSelfSecret as string, "Nodes:ECDH:profile:v1");
+        const result = await SEA.decrypt(encrypted, selfSecret);
         if (!result) throw new Error("Failed to decrypt field");
         return result as string;
       }
@@ -91,14 +94,14 @@ export class ProfileCrypto {
 
   /**
    * Generate a shared secret between two users for DMs or profile access.
-   * Uses ECDH key exchange via SEA.secret.
+   * Uses ECDH key exchange via SEA.secret, then HKDF for domain separation.
    */
   async generateSharedSecret(
     recipientEpub: string,
     senderKeypair: KeyPair,
   ): Promise<string> {
-    const secret = await SEA.secret(recipientEpub, senderKeypair);
-    return secret as string;
+    const rawSecret = await SEA.secret(recipientEpub, senderKeypair);
+    return deriveEncryptionKey(rawSecret as string, "Nodes:ECDH:profile:v1");
   }
 
   /**
