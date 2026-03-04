@@ -27,20 +27,42 @@ Nodes uses GunJS SEA (Security, Encryption, Authorization) for all cryptographic
 | Operation | Algorithm | Purpose |
 |-----------|-----------|---------|
 | Identity keypairs | ECDSA (secp256k1) | Signing, identity verification |
-| Key exchange | ECDH (secp256k1) | Deriving shared secrets for DM encryption |
+| Key exchange | ECDH (secp256k1) | Deriving raw shared secrets for DM encryption |
+| DM key derivation | HKDF (SHA-256) | Formally deriving a 256-bit encryption key from the raw ECDH shared secret; provides domain separation |
 | DM encryption | AES-256-GCM | Symmetric encryption of message content |
 | Message signing | ECDSA | Proving authorship, preventing tampering |
 | Profile encryption | AES-256-GCM | Encrypting private profile fields |
-| Key derivation | PBKDF2 | Deriving encryption keys from ECDH shared secrets |
+| Passphrase key derivation | PBKDF2 | Deriving keystore/backup encryption keys from user passphrases |
+| epub certificate | ECDSA | Binding the ECDH public key (epub) to the identity key to prevent MITM epub substitution |
 
 ### How DM Encryption Works
 
 1. Alice and Bob each have an ECDSA keypair (signing) and an ECDH keypair (encryption).
-2. When Alice sends a DM to Bob, her client performs an ECDH key exchange using her private encryption key and Bob's public encryption key. This derives a shared secret that only Alice and Bob can compute.
-3. The message content is encrypted with AES-256-GCM using the derived shared secret.
-4. The encrypted ciphertext is written to the GunJS graph.
-5. Bob's client performs the same ECDH exchange (his private key + Alice's public key) to derive the same shared secret and decrypt the message.
-6. Relay peers only ever see ciphertext. They cannot decrypt the message content.
+2. When Alice wants to send a DM to Bob, her client first fetches Bob's epub (encryption public key) and verifies the epub certificate (see [epub Certificate Binding](#epub-certificate-binding-mitm-protection) below). If the cert is present and valid, the epub is accepted; if it is missing (legacy identity), a warning is logged and the epub is used without MITM check.
+3. Alice's client performs an ECDH key exchange using her private encryption key and Bob's verified epub. This produces a raw shared secret that only Alice and Bob can compute.
+4. The raw shared secret is passed through HKDF (SHA-256, info `Nodes:ECDH:dm:v1`) to derive a 256-bit encryption key. This provides domain separation and formal key derivation on top of the bare ECDH output.
+5. The message content is encrypted with AES-256-GCM using the HKDF-derived key.
+6. The encrypted ciphertext is written to the GunJS graph.
+7. Bob's client performs the same ECDH exchange (his private key + Alice's epub) and the same HKDF derivation to arrive at the identical encryption key, then decrypts the message.
+8. Relay peers only ever see ciphertext. They cannot decrypt the message content.
+
+### epub Certificate Binding: MITM Protection
+
+In ECDH, each party uses their **epub** (encryption public key) to derive the shared secret. Without additional protection, a man-in-the-middle attacker — for example, a malicious relay — could write a different epub into a user's Gun profile and cause the sender to encrypt to the attacker's key instead of the real recipient's key.
+
+To mitigate this, Nodes binds each epub to its identity keypair via a signed certificate:
+
+1. During identity creation (or cert regeneration), `KeyManager.generateEpubCert()` signs the payload `{ epub, ts }` with the user's ECDSA identity private key using `SEA.sign`.
+2. The certificate is published alongside the epub in the user's Gun profile (`_epubCert` and `_epub`).
+3. Before initiating a DM key exchange, the sender's client (`DMManager.lookupPeerEpub`) fetches both `_epub` and `_epubCert` from the recipient's profile, then calls `SEA.verify(epubCert, recipientPublicKey)`. If the verified payload's `epub` field matches the fetched epub, the epub is accepted.
+4. If the epub does not match, or if verification fails, the key exchange is rejected with an error: `epubCert verification failed — possible MITM attack`.
+5. If no cert is found (legacy identity created before this feature), a warning is logged and the epub is used without MITM check (graceful degradation).
+
+**What this prevents:** A relay or network attacker cannot silently substitute a different epub for a user. Any substituted epub would not have a valid certificate signed by that user's ECDSA identity private key — forging one requires compromising the victim's identity key.
+
+**Current limitation:** epub certs are long-lived — bound to the keypair, not to a session. If a user's identity private key is compromised, an attacker could issue a new epub cert. Session-level epub binding requires per-message ephemeral key ratcheting (planned in the security roadmap).
+
+**Migration / backward compatibility:** Identities created before this feature do not have `_epubCert` published. The client detects this and falls back to using the epub directly, preserving interoperability with legacy identities. New identities and users who regenerate their cert have full MITM protection. Users with legacy identities can re-publish their cert by triggering `generateEpubCert` + `publishEpubCert` in the auth flow.
 
 ### Forward Secrecy: Current Limitation
 
@@ -99,7 +121,8 @@ A graph poisoning attack occurs when a malicious peer writes invalid or maliciou
 | **Centralized data breach** | No central database exists. User data lives in distributed peer graphs, not on a company server. There is no honeypot of PII to steal. |
 | **Corporate data mining** | Nodes collects zero personal data. No analytics, no telemetry, no ad targeting. |
 | **Platform censorship** | A Node ban removes you from that community but does not delete your identity. You retain your keypair, profile, and DM history. |
-| **DM content interception** | DMs are E2E encrypted with AES-256-GCM via ECDH key exchange. Relay peers and network observers see only ciphertext. |
+| **DM content interception** | DMs are E2E encrypted with AES-256-GCM via ECDH key exchange + HKDF key derivation. Relay peers and network observers see only ciphertext. |
+| **DM MITM (epub substitution)** | epub certificates bind each user's encryption public key to their ECDSA identity key. A client verifies the cert before accepting an epub for DM encryption. Relay-level epub substitution is rejected. |
 | **Message forgery** | All messages are ECDSA-signed. A forged message would fail signature verification. |
 | **Single point of failure** | The protocol is peer-to-peer. If a relay goes down, clients can connect to other relays or communicate directly. |
 | **Identity theft via server compromise** | Private keys never leave the user's device. There is no server that holds private keys. |
@@ -115,7 +138,7 @@ A graph poisoning attack occurs when a malicious peer writes invalid or maliciou
 | **Traffic analysis** | Not mitigated | An observer monitoring network traffic can determine that you are using Nodes, estimate message frequency, and identify communication patterns, even without reading message content. |
 | **Key loss** | Not recoverable | If you lose your keypair and have no backup, your identity is permanently inaccessible. There is no password reset, no recovery email, no support team. This is the fundamental tradeoff of self-sovereign identity. |
 | **Relay-level denial of service** | Partially mitigated | The current deployment relies on a single relay cluster. If those relays go down, message persistence is interrupted. The protocol supports multiple relays, and running your own relay mitigates this entirely. |
-| **Compromised relay peer** | Partially mitigated | A malicious relay could drop messages, serve stale data, or log metadata. It cannot forge messages (signature verification prevents this), read DMs (E2E encryption prevents this), or steal identities (private keys are never transmitted). |
+| **Compromised relay peer** | Partially mitigated | A malicious relay could drop messages, serve stale data, or log metadata. It cannot forge messages (signature verification prevents this), read DMs (E2E encryption prevents this), steal identities (private keys are never transmitted), or silently substitute a peer's epub (epub certificate verification prevents this for identities that have published a cert). |
 | **Retroactive DM decryption (no forward secrecy)** | Not mitigated | DMs use static ECDH — the same shared secret encrypts all messages between two users. If a private key is compromised in the future, an attacker who recorded past encrypted traffic could decrypt it. See "Forward Secrecy" section above. |
 | **Message replay** | Mostly mitigated | Message IDs and content-addressed graph storage prevent simple replays. A sophisticated attacker could potentially re-place a valid signed message in a different graph context. See "Replay Protection" section above. |
 | **Graph poisoning** | Mitigated | Malicious peers can write invalid data to the Gun graph, but clients validate signatures, schemas, and permissions before rendering. Invalid data is silently discarded. See "Data Validation" section above. |
@@ -130,14 +153,20 @@ Identity keypairs are generated client-side using GunJS SEA. The private key nev
 
 ### Key Storage
 
-Private keys are stored in an encrypted local keystore on the user's device:
+Private keys are stored in an **encrypted local keystore** on the user's device:
 
 - **Desktop app (Tauri):** Encrypted in the application's local data directory.
 - **Web client:** Encrypted in browser storage.
 
+The keystore is encrypted using a passphrase-derived key (PBKDF2 via `SEA.work`). A cryptographically random 16-byte salt is generated via `crypto.getRandomValues()` for each save operation and stored in the keystore alongside the ciphertext. This salt is the input to PBKDF2, ensuring that the same passphrase produces a unique derived key for each keystore — preventing precomputed dictionary attacks and rainbow-table attacks on the passphrase.
+
 ### Backup and Recovery
 
 Users can export their keypair as an encrypted backup. This is the **only** recovery mechanism. If the backup is lost and the device is inaccessible, the identity is gone.
+
+Backup files use the same encryption scheme as the local keystore: a passphrase-derived key (PBKDF2) with a cryptographically random 16-byte salt. The salt is stored in the backup file. Each backup export generates a fresh random salt, so two exports of the same keypair with the same passphrase produce distinct ciphertexts.
+
+**Backward compatibility:** Backup files exported before the random-salt hardening used the string `backup:{pub}` as the PBKDF2 salt. The client detects the absence of a `salt` field and falls back to this legacy salt automatically, so old backup files can still be restored.
 
 **Recommendations for users:**
 
@@ -154,6 +183,73 @@ If an attacker obtains your private key:
 - There is no centralized "revoke" mechanism. You would need to create a new identity and inform your contacts.
 
 **Planned mitigation:** Key rotation and a revocation announcement mechanism are planned for a future release. This would allow a compromised identity to broadcast a signed revocation notice and link to a new identity.
+
+---
+
+## Crypto Hardening (2026)
+
+The following changes were merged as part of the 2026 cryptographic hardening pass. They are additive — no existing functionality was removed.
+
+### HKDF Key Derivation for DM Encryption
+
+Previously, the raw ECDH shared secret produced by `SEA.secret()` was used directly as the AES-256-GCM encryption key for DMs. The raw output is now passed through HKDF (HMAC-based Key Derivation Function, Web Crypto API) before use:
+
+- **Hash:** SHA-256
+- **Salt:** Fixed ASCII string `Nodes:v1` (domain marker)
+- **Info:** `Nodes:ECDH:dm:v1` (domain separation label)
+- **Output length:** 256 bits (32 bytes), hex-encoded
+
+HKDF ensures the derived key has strong pseudo-random properties and is cleanly separated from any other use of the same ECDH shared secret. This also future-proofs the derivation: if DM encryption is extended to additional contexts (e.g., file keys, group keys), each context will receive a distinct derived key from the same base material.
+
+### Random Salt for Keystore and Backup Encryption
+
+Previously, keystores and backup files used the user's public key as the PBKDF2 salt — a static, predictable value. The salt is now generated as 16 cryptographically random bytes via `crypto.getRandomValues()` for each `saveToLocalStore()` and `exportBackup()` call.
+
+**Effect:** An attacker who obtains two keystore files for the same identity (e.g., from different devices) cannot confirm they share the same passphrase by comparing derived keys, because the salts differ. Dictionary and rainbow-table attacks on the passphrase are also significantly harder.
+
+**Backward compatibility:** The `salt` field is optional in both `EncryptedKeystore` and `KeyBackup`. When restoring a file that has no `salt` field (legacy format), the fallback salt is:
+- **Keystore:** the public key (`pub`)
+- **Backup file:** the string `backup:{pub}`
+
+These match the pre-hardening behavior exactly, so all existing keystores and backup files remain openable with the same passphrase.
+
+### epub Certificate Binding
+
+See ["epub Certificate Binding: MITM Protection"](#epub-certificate-binding-mitm-protection) above for the full description.
+
+**Summary:** A new `generateEpubCert()` + `publishEpubCert()` flow signs the user's epub with their identity ECDSA key and publishes the cert to their Gun profile. The DM handshake now fetches and verifies this cert before accepting an epub. Legacy identities without a cert are handled gracefully with a warning.
+
+### Crypto Test Suite
+
+A new dedicated test suite in `packages/crypto/src/__tests__/` covers all hardened behavior:
+
+| Test file | Coverage |
+|-----------|---------|
+| `dm-crypto.test.ts` | HKDF output format (64-char hex), HKDF determinism, HKDF domain separation (different context → different key), different secrets → different keys, `getSharedSecret` caching (SEA.secret called once), encryption/decryption via HKDF-derived key, error handling for null returns, conversation ID symmetry and format |
+| `key-manager.test.ts` | Random salt is generated (not the pub key), PBKDF2 called with random salt, different salts per call, backward-compat fallback to pub key (keystore) and `backup:pub` (backup), epub cert signing, cert payload includes `ts` timestamp, error if SEA.sign returns falsy, logout clears keypair |
+
+### Current Security Guarantees
+
+- ✅ epub certificates prevent silent epub substitution (MITM) for new identities and any identity that has published a cert
+- ✅ HKDF ensures the DM encryption key is formally derived and domain-separated from the raw ECDH shared secret
+- ✅ Random salt per keystore and backup export prevents precomputed dictionary attacks on the passphrase
+- ✅ All new hardening behavior is covered by automated tests
+- ✅ All backward-compatibility paths are tested (legacy keystore, legacy backup, legacy identity without epub cert)
+
+### Remaining Limitations
+
+- ⚠️ No forward secrecy — static ECDH means the same shared secret encrypts all DMs between two users (planned: ephemeral key ratchet)
+- ⚠️ epub certs are long-lived, not session-scoped — a compromised identity key could issue a new cert
+- ⚠️ Legacy identities without epub certs have no MITM check on DM key exchange (graceful degradation, not rejection)
+- ⚠️ No formal cryptographic audit has been conducted
+
+### Formal Verification Recommendations
+
+For contributors or researchers evaluating the cryptographic model:
+
+1. **HKDF usage** (`deriveEncryptionKey` in `packages/crypto/src/dm-crypto.ts`) follows RFC 5869. The fixed salt `Nodes:v1` is not secret — it is a domain marker. The `info` string provides context binding. This is standard usage and can be analyzed against the RFC.
+2. **epub cert verification** in `packages/transport-gun/src/dm-manager.ts` uses `SEA.verify`, which returns the signed payload if valid or `undefined` if not. The check `verified.epub !== epub` should be evaluated in the context of GunJS SEA's return types.
+3. **PBKDF2 parameterization** (iteration count, hash): GunJS `SEA.work` internals determine these values, and no independent audit has verified them. Formal analysis of the full derivation chain requires auditing GunJS SEA's PBKDF2 implementation.
 
 ---
 
@@ -278,19 +374,23 @@ If you discover a security vulnerability in Nodes, please report it responsibly.
 
 Nodes provides meaningful security and privacy improvements over centralized platforms like Discord:
 
-- No personal information is collected or stored.
-- DMs are end-to-end encrypted.
-- All messages are cryptographically signed.
-- Identity is self-sovereign — no corporation controls your account.
-- The codebase is open source and auditable.
+- ✅ No personal information is collected or stored.
+- ✅ DMs are end-to-end encrypted (ECDH + HKDF + AES-256-GCM).
+- ✅ epub certificate binding prevents relay-level MITM substitution of DM encryption keys (for identities with a published cert).
+- ✅ Keystore and backup files are encrypted with PBKDF2 using a unique random salt per file — dictionary and rainbow-table attacks on passphrases are significantly harder.
+- ✅ All messages are cryptographically signed.
+- ✅ Identity is self-sovereign — no corporation controls your account.
+- ✅ The codebase is open source and auditable.
+- ✅ All cryptographic hardening is covered by automated tests.
 
 Nodes does not yet match the hardened security posture of Signal:
 
-- No formal cryptographic audit has been conducted.
-- DM encryption does not yet implement forward secrecy (static ECDH, no ratcheting).
-- Metadata exposure is higher.
-- GunJS has not been formally verified.
-- Voice channels using LiveKit SFU are not end-to-end encrypted.
+- ⚠️ No formal cryptographic audit has been conducted.
+- ⚠️ DM encryption does not yet implement forward secrecy (static ECDH, no ratcheting).
+- ⚠️ Metadata exposure is higher than Signal.
+- ⚠️ GunJS has not been formally verified.
+- ⚠️ Voice channels using LiveKit SFU are not end-to-end encrypted.
+- ⚠️ Legacy identities without epub certs have no MITM check on DM key exchange.
 
 This document will be updated as the security model evolves. Transparency is not a weakness — it is the foundation of trust.
 
