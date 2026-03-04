@@ -14,10 +14,10 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 
 ## What Works Today (v1.0.0-beta)
 
-- **Self-sovereign identity** — Keypair-based identity with encrypted local keystore and backup/restore
+- **Self-sovereign identity** — Keypair-based identity with encrypted local keystore (PBKDF2 + random salt) and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management
 - **Real-time messaging** — P2P text chat with message grouping, timestamps, history, and typing indicators
-- **E2E encrypted DMs** — ECDH key exchange, messages encrypted before they touch the network
+- **E2E encrypted DMs** — ECDH key exchange with HKDF key derivation (SHA-256), messages encrypted with AES-256-GCM before they touch the network; epub certificate binding prevents relay-level MITM key substitution
 - **Friend system** — Request/accept flow gates all DMs — no unsolicited messages
 - **Voice channels** — P2P WebRTC voice chat with speaking indicators, mute/deafen controls, LiveKit SFU for 7+ participants
 - **File sharing** — Drag-and-drop uploads via IPFS, inline image previews, clipboard paste (Ctrl+V)
@@ -66,7 +66,7 @@ Or use the web client at [app.nodes.services](https://app.nodes.services).
 | Desktop | Tauri v2 (Rust) + React 19 + TypeScript | Native app, ~15MB binary |
 | P2P Data | GunJS + SEA | Real-time sync, cryptographic auth |
 | Identity | Self-Sovereign (SSI) | Users serve their own profile via keypair |
-| Encryption | SEA (ECDSA + ECDH + AES-256) | Signing, key exchange, E2E encryption |
+| Encryption | SEA (ECDSA + ECDH + HKDF + AES-256) | Signing, key exchange, HKDF key derivation, E2E encryption |
 | Voice | WebRTC (P2P mesh) + LiveKit SFU | Real-time voice chat (mesh ≤6, SFU 7+) |
 | File Storage | IPFS (Helia + Kubo gateway) | Decentralized file sharing with server pinning |
 
@@ -188,10 +188,11 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - **No mobile app yet.** Desktop and web only for now.
 - **No E2E encrypted channels.** Only DMs are encrypted. Channel messages are signed but not encrypted.
 - **No push notifications on web.** Desktop notifications require the Tauri app.
-- **Back up your identity keypair.** There is no password recovery — if you lose your keys, your identity is gone.
+- **Back up your identity keypair.** There is no password recovery — if you lose your keys, your identity is gone. Keystores and backups are encrypted with PBKDF2 + a unique random salt.
 - **No message history beyond what relays persist.** If all relays drop a message before you sync, it's gone.
 - **DM metadata is visible.** Who talks to whom and when is observable in the Gun graph. Message content is encrypted.
 - **Single relay dependency.** While the protocol is decentralized, the current deployment uses a single relay server. Running your own relay mitigates this.
+- **Legacy identities lack MITM protection.** Identities created before the epub certificate feature was added do not have a published epub cert. DMs to/from such identities skip the MITM check (a warning is logged). New identities have full epub cert protection. Existing users can re-publish their cert by re-authenticating.
 
 ## Contributing
 
