@@ -165,9 +165,9 @@ Identity, messaging, communities, DMs, friends, presence, profiles, desktop app.
 - ✅ Polish pass & production release — Milestone 3.5
 
 ### Phase 4 — Scale
-- 🔲 Auto-updater (in-app update notifications)
+- ✅ Auto-updater (in-app update notifications)
 - 🔲 Mobile app (React Native)
-- 🔲 Linux & macOS desktop builds
+- ✅ Linux & macOS desktop builds
 - 🔲 Plugin/bot system
 - 🔲 Encrypted channels
 - 🔲 Web PWA

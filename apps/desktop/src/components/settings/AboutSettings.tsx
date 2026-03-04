@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { check } from "@tauri-apps/plugin-updater";
+import { getVersion } from "@tauri-apps/api/app";
 
 type UpdateStatus = "idle" | "checking" | "up-to-date" | "downloading" | "installed" | "error";
 
@@ -7,8 +8,12 @@ type UpdateStatus = "idle" | "checking" | "up-to-date" | "downloading" | "instal
  * About settings section: version, links, philosophy.
  */
 export function AboutSettings() {
-  const version = "1.0.0-beta"; // TODO: pull from package.json or build env
+  const [version, setVersion] = useState<string>("…");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion("unknown"));
+  }, []);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
 
   async function handleCheckForUpdates() {
