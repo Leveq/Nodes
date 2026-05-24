@@ -144,6 +144,17 @@ export async function processAvatarFromBlob(
 }
 
 /**
+ * Process a Node icon from a cropped Blob.
+ * Resizes to 128x128 (single size — no small variant needed).
+ */
+export async function processNodeIconFromBlob(
+  blob: Blob
+): Promise<Uint8Array> {
+  const file = new File([blob], "node-icon.png", { type: blob.type || "image/png" });
+  return resizeImage(file, 128, 128);
+}
+
+/**
  * Generate a thumbnail for an image attachment.
  * Returns the thumbnail as Uint8Array.
  */

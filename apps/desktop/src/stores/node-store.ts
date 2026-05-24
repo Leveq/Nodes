@@ -6,6 +6,7 @@ import { useNotificationStore } from "./notification-store";
 import { useMessageStore } from "./message-store";
 import { useThemeStore } from "./theme-store";
 import { useRoleStore } from "./role-store";
+import { getCache, setCache, CacheKeys } from "../services/app-cache";
 
 // TTL for cached display names (5 minutes)
 const DISPLAY_NAME_CACHE_TTL = 5 * 60 * 1000;
@@ -96,10 +97,25 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   displayNameCache: {},
 
   loadUserNodes: async () => {
-    set({ isLoadingNodes: true });
+    // 1. Load from IndexedDB cache first (instant render)
+    const cached = await getCache<NodeServer[]>(CacheKeys.userNodes());
+    if (cached && cached.length > 0) {
+      set({ nodes: cached, isLoadingNodes: false });
+      // If we have cached nodes but no active one, select the first
+      if (!get().activeNodeId) {
+        get().setActiveNode(cached[0].id);
+      }
+    } else {
+      set({ isLoadingNodes: true });
+    }
+
     try {
+      // 2. Fetch from Gun (network)
       const nodes = await nodeManager.getUserNodes();
       set({ nodes, isLoadingNodes: false });
+
+      // 3. Save to cache
+      await setCache(CacheKeys.userNodes(), nodes);
 
       // If we have nodes but no active one, select the first
       if (nodes.length > 0 && !get().activeNodeId) {
@@ -120,6 +136,9 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         nodes: [...state.nodes, node],
         isCreatingNode: false,
       }));
+
+      // Update cache
+      await setCache(CacheKeys.userNodes(), get().nodes);
 
       // Auto-select the new Node
       get().setActiveNode(node.id);
@@ -147,6 +166,9 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           : [...state.nodes, node],
         isJoiningNode: false,
       }));
+
+      // Update cache
+      await setCache(CacheKeys.userNodes(), get().nodes);
 
       get().setActiveNode(node.id);
 
@@ -191,6 +213,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         return newMembers;
       })(),
     }));
+    // Update cache (fire and forget)
+    setCache(CacheKeys.userNodes(), get().nodes);
   },
 
   deleteNode: async (nodeId) => {
@@ -310,8 +334,20 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   loadChannels: async (nodeId) => {
-    // Mark as loading (only if not already cached)
-    const hasCached = (get().channels[nodeId]?.length ?? 0) > 0;
+    // 1. Load from IndexedDB cache first (instant render)
+    const cached = await getCache<NodeChannel[]>(CacheKeys.channels(nodeId));
+    if (cached && cached.length > 0) {
+      set((state) => ({
+        channels: { ...state.channels, [nodeId]: cached },
+      }));
+      // Set active channel from cache immediately
+      if (get().activeNodeId === nodeId) {
+        set({ activeChannelId: pickChannelId(get().activeChannelByNode[nodeId], cached) });
+      }
+    }
+
+    // Mark as loading (only if not already cached in memory or IndexedDB)
+    const hasCached = cached || (get().channels[nodeId]?.length ?? 0) > 0;
     if (!hasCached) {
       set((state) => ({
         loadingChannels: { ...state.loadingChannels, [nodeId]: true },
@@ -319,11 +355,15 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     }
 
     try {
+      // 2. Fetch from Gun (network)
       const channels = await nodeManager.getChannels(nodeId);
       set((state) => ({
         channels: { ...state.channels, [nodeId]: channels },
         loadingChannels: { ...state.loadingChannels, [nodeId]: false },
       }));
+
+      // 3. Save to cache
+      await setCache(CacheKeys.channels(nodeId), channels);
 
       // If this is the active node, set the active channel to the last-visited or first channel
       if (get().activeNodeId === nodeId && channels.length > 0) {
@@ -359,10 +399,22 @@ export const useNodeStore = create<NodeState>((set, get) => ({
 
   loadMembers: async (nodeId) => {
     try {
+      // 1. Load from IndexedDB cache first (instant render)
+      const cached = await getCache<NodeMember[]>(CacheKeys.members(nodeId));
+      if (cached && cached.length > 0) {
+        set((state) => ({
+          members: { ...state.members, [nodeId]: cached },
+        }));
+      }
+
+      // 2. Fetch from Gun (network)
       const members = await nodeManager.getMembers(nodeId);
       set((state) => ({
         members: { ...state.members, [nodeId]: members },
       }));
+
+      // 3. Save to cache
+      await setCache(CacheKeys.members(nodeId), members);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load members: ${message}`);
@@ -376,6 +428,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       set((state) => ({
         members: { ...state.members, [nodeId]: members },
       }));
+      // Update cache with fresh data
+      await setCache(CacheKeys.members(nodeId), members);
     } catch (err: unknown) {
       // Silent fail for refresh - don't spam user with errors
       console.error("Failed to refresh members:", err);

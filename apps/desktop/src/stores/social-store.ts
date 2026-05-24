@@ -4,6 +4,7 @@ import type { FriendRequest, Friend, BlockedUser } from "@nodes/core";
 import type { Unsubscribe } from "@nodes/transport";
 import { useToastStore } from "./toast-store";
 import { processFriendRequestNotification } from "../services/notification-manager";
+import { getCache, setCache, CacheKeys } from "../services/app-cache";
 
 const profileManager = new ProfileManager();
 
@@ -44,6 +45,24 @@ interface SocialState {
 
 const socialManager = new SocialManager();
 
+// Debounced cache saves for friends and blocked users
+let friendsCacheSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+let blockedCacheSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function saveFriendsToCache(friends: Friend[]): void {
+  if (friendsCacheSaveTimeout) clearTimeout(friendsCacheSaveTimeout);
+  friendsCacheSaveTimeout = setTimeout(() => {
+    setCache(CacheKeys.friends(), friends).catch(() => {});
+  }, 500);
+}
+
+function saveBlockedUsersToCache(blockedUsers: BlockedUser[]): void {
+  if (blockedCacheSaveTimeout) clearTimeout(blockedCacheSaveTimeout);
+  blockedCacheSaveTimeout = setTimeout(() => {
+    setCache(CacheKeys.blockedUsers(), blockedUsers).catch(() => {});
+  }, 500);
+}
+
 export const useSocialStore = create<SocialState>((set, get) => ({
   friends: [],
   incomingRequests: [],
@@ -73,10 +92,26 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     state.cancelledSub?.();
     state.declinedSub?.();
 
-    set({ isLoading: true });
+    // 1. Load from IndexedDB cache first (instant render)
+    const [cachedFriends, cachedBlockedUsers] = await Promise.all([
+      getCache<Friend[]>(CacheKeys.friends()),
+      getCache<BlockedUser[]>(CacheKeys.blockedUsers()),
+    ]);
+    
+    if (cachedFriends && cachedFriends.length > 0) {
+      set({ friends: cachedFriends.filter((f) => f.publicKey !== myKey) });
+    }
+    if (cachedBlockedUsers && cachedBlockedUsers.length > 0) {
+      set({ blockedUsers: cachedBlockedUsers });
+    }
+    
+    // Only show loading if no cache
+    if (!cachedFriends && !cachedBlockedUsers) {
+      set({ isLoading: true });
+    }
 
     try {
-      // Load initial data
+      // 2. Load from Gun (network)
       const [friendsRaw, blockedUsers, outgoingRequests] = await Promise.all([
         socialManager.getFriends(),
         socialManager.getBlockedUsers(),
@@ -87,6 +122,12 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       const friends = friendsRaw.filter((f) => f.publicKey !== myKey);
 
       set({ friends, blockedUsers, outgoingRequests });
+
+      // 3. Save to cache
+      await Promise.all([
+        setCache(CacheKeys.friends(), friends),
+        setCache(CacheKeys.blockedUsers(), blockedUsers),
+      ]);
 
       // Subscribe to friends list changes
       const friendsSub = socialManager.subscribeFriends((friend, publicKey) => {
@@ -114,6 +155,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           }
           return { friends: [...state.friends, friend] };
         });
+        // Update cache
+        saveFriendsToCache(get().friends);
       });
 
       // Subscribe to outgoing request status changes
@@ -200,6 +243,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
             friends: state.friends.filter((f) => f.publicKey !== fromKey),
           }));
           
+          // Update cache
+          saveFriendsToCache(get().friends);
+          
           // ALSO remove from our Gun graph so it doesn't come back on reload
           await socialManager.removeFriendFromGraph(fromKey);
           
@@ -228,6 +274,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           set((state) => ({
             friends: [...state.friends, { publicKey: acceptorKey, addedAt: Date.now() }],
           }));
+          // Update cache
+          saveFriendsToCache(get().friends);
         }
         
         // Remove from outgoing requests
@@ -394,6 +442,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       set((state) => ({
         friends: state.friends.filter((f) => f.publicKey !== publicKey),
       }));
+      
+      // Update cache
+      saveFriendsToCache(get().friends);
 
       useToastStore.getState().addToast("info", "Friend removed.");
     } catch (err: unknown) {
@@ -419,6 +470,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
           (r) => r.toKey !== publicKey
         ),
       }));
+      
+      // Update caches
+      saveFriendsToCache(get().friends);
+      saveBlockedUsersToCache(get().blockedUsers);
 
       useToastStore.getState().addToast("info", "User blocked.");
     } catch (err: unknown) {
@@ -434,6 +489,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       set((state) => ({
         blockedUsers: state.blockedUsers.filter((b) => b.publicKey !== publicKey),
       }));
+      
+      // Update cache
+      saveBlockedUsersToCache(get().blockedUsers);
 
       useToastStore.getState().addToast("info", "User unblocked.");
     } catch (err: unknown) {

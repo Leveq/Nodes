@@ -6,6 +6,8 @@ import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
 import { useVoiceStore } from "../stores/voice-store";
 import { useSearchStore } from "../stores/search-store";
+import { useRelayStore } from "../stores/relay-store";
+import { getHealthMonitor } from "../stores/relay-store";
 import { useNodeSubscriptions } from "../hooks/useNodeSubscriptions";
 import { useMemberSubscription } from "../hooks/useMemberSubscription";
 import { useChannelSubscription } from "../hooks/useChannelSubscription";
@@ -19,9 +21,11 @@ import { useGracefulShutdown } from "../hooks/useGracefulShutdown";
 import { useModerationEvents } from "../hooks/useModerationEvents";
 import { useDirectoryRefresh } from "../hooks/useDirectoryRefresh";
 import { useUpdater } from "../hooks/useUpdater";
+import { useAppVisibility, useAppVisibilityStore } from "../hooks/useAppVisibility";
 import { useTransport } from "../providers/TransportProvider";
 import { initNotificationManager } from "../services/notification-manager";
-import { migrateMemberRoles } from "@nodes/transport-gun";
+import { migrateMemberRoles, GunInstanceManager } from "@nodes/transport-gun";
+import type { GunConnectionMonitor } from "@nodes/transport-gun";
 import { NodeSidebar } from "./NodeSidebar";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { MainContent } from "./MainContent";
@@ -56,8 +60,12 @@ export function AppShell() {
   const [showMembers, setShowMembers] = useState(true);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   
+  // App visibility / sleep-wake detection
+  useAppVisibility();
+  const isVisible = useAppVisibilityStore((s) => s.isVisible);
+  
   // Voice state for keyboard shortcuts
-  const { voice } = useTransport();
+  const { voice, connection } = useTransport();
   const voiceState = useVoiceStore((s) => s.state);
   
   // Search state
@@ -152,6 +160,40 @@ export function AppShell() {
   // Refresh directory listings for owned Nodes periodically
   useDirectoryRefresh();
 
+  // Pause/resume connection monitor and relay health when app visibility changes
+  useEffect(() => {
+    const monitor = connection as GunConnectionMonitor;
+    const healthMonitor = getHealthMonitor();
+    if (isVisible) {
+      monitor.resume?.();
+      healthMonitor?.resume?.();
+    } else {
+      monitor.pause?.();
+      healthMonitor?.pause?.();
+    }
+  }, [isVisible, connection]);
+
+  // Start relay health monitoring
+  const startRelayMonitoring = useRelayStore((s) => s.startMonitoring);
+  useEffect(() => {
+    if (isAuthenticated) {
+      const peers = GunInstanceManager.getPeers();
+      if (peers.length > 0) {
+        // On Tauri desktop, use native HTTP to bypass CORS for health checks
+        const isTauri = !!(window as any).__TAURI_INTERNALS__;
+        if (isTauri) {
+          import("@tauri-apps/plugin-http").then(({ fetch: tauriFetch }) => {
+            startRelayMonitoring(peers, tauriFetch as unknown as typeof fetch);
+          }).catch(() => {
+            startRelayMonitoring(peers);
+          });
+        } else {
+          startRelayMonitoring(peers);
+        }
+      }
+    }
+  }, [isAuthenticated, startRelayMonitoring]);
+
   // Load user's Nodes, DM conversations, and social data on mount
   useEffect(() => {
     if (isAuthenticated && publicKey) {
@@ -160,6 +202,7 @@ export function AppShell() {
         useDMStore.getState().loadConversations(),
         initializeSocial(publicKey),
         initNotificationManager(),
+        useVoiceStore.getState().loadSettings(),
       ]).then(() => {
         // Run member role migration for owned Nodes (fire-and-forget)
         // Only the owner's client writes, to avoid concurrent Gun write races

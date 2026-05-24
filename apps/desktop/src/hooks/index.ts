@@ -5,6 +5,7 @@ export { useMemberSubscription } from "./useMemberSubscription";
 export { useChannelSubscription } from "./useChannelSubscription";
 export { useRoleSubscriptions } from "./useRoleSubscriptions";
 export { useAvatar } from "./useAvatar";
+export { useNodeIcon } from "./useNodeIcon";
 export { useVoiceChannelParticipants } from "./useVoiceChannelParticipants";
 export { useModerationEvents } from "./useModerationEvents";
 export { useSlowMode } from "./useSlowMode";

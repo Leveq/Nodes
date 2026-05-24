@@ -1,25 +1,31 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { BUILT_IN_THEMES, type NodesTheme } from "@nodes/core";
 import { useThemeStore } from "../../stores/theme-store";
 import { useNodeStore } from "../../stores/node-store";
-import { Button } from "../ui";
+import { useToastStore } from "../../stores/toast-store";
+import { Button, NodeIcon } from "../ui";
+import { AvatarCropModal } from "../profile/AvatarCropModal";
+import { processNodeIconFromBlob } from "../../utils/image-processing";
+import { nodeIconManager } from "@nodes/transport-gun";
 
 /**
- * Node Appearance Tab - allows Node owners to set a custom theme for their Node.
- * When members enter a Node with a custom theme, it will override their personal theme
- * (if they have "respect node themes" enabled in their settings).
+ * Node Appearance Tab - allows Node owners to set a custom theme and custom icon.
  */
 export function NodeAppearanceTab() {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const nodes = useNodeStore((s) => s.nodes);
   const updateNode = useNodeStore((s) => s.updateNode);
   const { settings, allThemes } = useThemeStore();
+  const addToast = useToastStore((s) => s.addToast);
 
   const node = nodes.find((n) => n.id === activeNodeId);
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(
     node?.theme?.id || null
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = useCallback(async () => {
     if (!node) return;
@@ -48,12 +54,119 @@ export function NodeAppearanceTab() {
     }
   }, [node, updateNode]);
 
+  const handleIconFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      addToast("error", "Invalid image type. Use PNG, JPG, GIF, or WebP.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      addToast("error", "Image too large. Maximum size is 5MB.");
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    setCropImageUrl(url);
+  };
+
+  const handleIconCrop = useCallback(async (croppedBlob: Blob) => {
+    if (cropImageUrl) {
+      URL.revokeObjectURL(cropImageUrl);
+      setCropImageUrl(null);
+    }
+    if (!node) return;
+
+    setIsUploadingIcon(true);
+    try {
+      const iconBytes = await processNodeIconFromBlob(croppedBlob);
+      const { cid } = await nodeIconManager.uploadIcon(node.id, iconBytes);
+      await updateNode(node.id, { icon: cid });
+      addToast("success", "Node icon updated!");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to upload icon";
+      addToast("error", message);
+    } finally {
+      setIsUploadingIcon(false);
+    }
+  }, [cropImageUrl, node, updateNode, addToast]);
+
+  const handleIconCropCancel = () => {
+    if (cropImageUrl) {
+      URL.revokeObjectURL(cropImageUrl);
+      setCropImageUrl(null);
+    }
+  };
+
+  const handleRemoveIcon = useCallback(async () => {
+    if (!node) return;
+    setIsUploadingIcon(true);
+    try {
+      nodeIconManager.invalidate(node.id);
+      await updateNode(node.id, { icon: node.name.charAt(0).toUpperCase() });
+      addToast("success", "Node icon removed");
+    } finally {
+      setIsUploadingIcon(false);
+    }
+  }, [node, updateNode, addToast]);
+
   if (!node) return null;
 
   const hasChanges = (selectedThemeId || null) !== (node.theme?.id || null);
 
   return (
     <div className="space-y-6">
+      {/* Node Icon Section */}
+      <div>
+        <h3 className="text-sm font-semibold text-nodes-text mb-2">
+          Node Icon
+        </h3>
+        <p className="text-sm text-nodes-text-muted mb-4">
+          Upload a custom image for your Node's icon. It will appear in the sidebar,
+          directory, and invite previews.
+        </p>
+
+        <div className="flex items-center gap-4">
+          {/* Icon preview */}
+          <div className="w-16 h-16 rounded-2xl bg-nodes-bg border border-nodes-border flex items-center justify-center overflow-hidden">
+            <NodeIcon nodeId={node.id} icon={node.icon} name={node.name} size="lg" />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <input
+              ref={iconInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              onChange={handleIconFileChange}
+              className="hidden"
+            />
+            <Button
+              variant="ghost"
+              onClick={() => iconInputRef.current?.click()}
+              disabled={isUploadingIcon}
+            >
+              {isUploadingIcon ? "Uploading..." : "Upload Image"}
+            </Button>
+            {node.icon && (node.icon.startsWith("Qm") || node.icon.startsWith("bafy")) && (
+              <Button
+                variant="ghost"
+                onClick={handleRemoveIcon}
+                disabled={isUploadingIcon}
+              >
+                Remove Icon
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Separator */}
+      <div className="border-t border-nodes-border" />
+
+      {/* Theme Section */}
       <div>
         <h3 className="text-sm font-semibold text-nodes-text mb-2">
           Node Theme
@@ -152,6 +265,17 @@ export function NodeAppearanceTab() {
           </li>
         </ul>
       </div>
+
+      {/* Crop Modal */}
+      {cropImageUrl && (
+        <AvatarCropModal
+          imageUrl={cropImageUrl}
+          onCrop={handleIconCrop}
+          onCancel={handleIconCropCancel}
+          cropShape="rect"
+          title="Crop Node Icon"
+        />
+      )}
     </div>
   );
 }

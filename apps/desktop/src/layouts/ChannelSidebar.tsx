@@ -8,6 +8,7 @@ import { ChannelListSkeleton } from "../components/ui";
 import { VoiceChannelEntry, VoiceConnectionBar } from "../components/voice";
 import { usePermissions, useCanViewChannel, useCanSendInChannel, useIsAdmin } from "../hooks/usePermissions";
 import { useVoiceTransport } from "../providers/TransportProvider";
+import { NodeIcon } from "../components/ui";
 
 /**
  * ChannelSidebar displays the channel list for the active Node.
@@ -84,9 +85,14 @@ export function ChannelSidebar() {
         onClick={() => setShowSettings(true)}
         className="h-12 px-4 flex items-center justify-between border-b border-surface-border hover:bg-surface-hover transition-colors"
       >
-        <span className="font-semibold text-nodes-text truncate">
-          {node.name}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded flex items-center justify-center overflow-hidden shrink-0">
+            <NodeIcon nodeId={node.id} icon={node.icon} name={node.name} size="sm" />
+          </div>
+          <span className="font-semibold text-nodes-text truncate">
+            {node.name}
+          </span>
+        </div>
         <svg
           className="w-4 h-4 text-nodes-text-muted shrink-0"
           fill="none"

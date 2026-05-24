@@ -5,6 +5,7 @@ import { useTransport } from "../providers/TransportProvider";
 import { useNodeStore } from "../stores/node-store";
 import { useSocialStore } from "../stores/social-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { useAppVisibilityStore } from "./useAppVisibility";
 
 const OFFLINE_THRESHOLD = 60_000; // 60 seconds
 const STALENESS_CHECK_INTERVAL = 15_000; // Check every 15 seconds
@@ -23,6 +24,7 @@ export function usePresenceSubscriptions() {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const members = useNodeStore((s) => s.members);
   const friends = useSocialStore((s) => s.friends);
+  const isVisible = useAppVisibilityStore((s) => s.isVisible);
 
   // Memoize the member keys for the active node to avoid unnecessary re-renders
   const activeMemberKeys = useMemo(() => {
@@ -75,7 +77,7 @@ export function usePresenceSubscriptions() {
     // Clear lastSeen when node changes
     lastSeenRef.current.clear();
 
-    if (!isAuthenticated || !publicKey || !transport) return;
+    if (!isAuthenticated || !publicKey || !transport || !isVisible) return;
 
     // Collect public keys: node members + friends
     const publicKeySet = new Set<string>();
@@ -125,5 +127,5 @@ export function usePresenceSubscriptions() {
         stalenessIntervalRef.current = null;
       }
     };
-  }, [transport, isAuthenticated, publicKey, activeNodeId, activeMemberKeys, friends, updateMemberStatus]);
+  }, [transport, isAuthenticated, publicKey, activeNodeId, activeMemberKeys, friends, updateMemberStatus, isVisible]);
 }

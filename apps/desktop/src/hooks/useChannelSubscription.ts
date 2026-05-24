@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { NodeManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../stores/node-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { useAppVisibilityStore } from "./useAppVisibility";
 
 const nodeManager = new NodeManager();
 
@@ -17,6 +18,7 @@ export function useChannelSubscription() {
   const isAuthenticated = useIdentityStore((s) => s.isAuthenticated);
   const publicKey = useIdentityStore((s) => s.publicKey);
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
+  const isVisible = useAppVisibilityStore((s) => s.isVisible);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function useChannelSubscription() {
       intervalRef.current = null;
     }
 
-    if (!isAuthenticated || !publicKey || !activeNodeId) return;
+    if (!isAuthenticated || !publicKey || !activeNodeId || !isVisible) return;
 
     const pollChannels = async () => {
       try {
@@ -86,5 +88,5 @@ export function useChannelSubscription() {
         intervalRef.current = null;
       }
     };
-  }, [isAuthenticated, publicKey, activeNodeId]);
+  }, [isAuthenticated, publicKey, activeNodeId, isVisible]);
 }

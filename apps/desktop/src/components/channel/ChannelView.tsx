@@ -136,6 +136,8 @@ export function ChannelView({
       clearUnread,
       clearChannel,
       setLoading,
+      loadFromCache,
+      saveToCache,
       messages: existingMessages,
     } = useMessageStore.getState();
 
@@ -151,15 +153,26 @@ export function ChannelView({
       setLoading(channelId, true);
     }
 
-    // Load message history
+    // Load message history - cache first, then network
     const nodeId = useNodeStore.getState().activeNodeId;
     const searchIndex = getSearchIndex();
     
+    // 1. Load from IndexedDB cache (instant)
+    loadFromCache(channelId).then((hadCache) => {
+      if (hadCache) {
+        setLoading(channelId, false);
+      }
+    });
+
+    // 2. Fetch from Gun (network)
     transport.message
       .getHistory(channelId, { limit: 50 })
       .then((history: TransportMessage[]) => {
         setMessages(channelId, history);
         setLoading(channelId, false);
+        
+        // 3. Save to cache for next startup
+        saveToCache(channelId);
         
         // Index all history messages for search
         if (nodeId) {

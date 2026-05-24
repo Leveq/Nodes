@@ -177,10 +177,12 @@ export class NodeManager {
   subscribeToNodeMeta(
     nodeId: string,
     onDeleted: () => void,
-    onThemeChange?: (theme: import("@nodes/core").NodesTheme | null) => void
+    onThemeChange?: (theme: import("@nodes/core").NodesTheme | null) => void,
+    onIconChange?: (icon: string | null) => void
   ): () => void {
     const gun = GunInstanceManager.get();
     let lastThemeJson: string | undefined;
+    let lastIcon: string | undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ref = gun.get("nodes").get(nodeId).on((data: any) => {
       if (!data) return;
@@ -197,6 +199,11 @@ export class NodeManager {
           try { theme = JSON.parse(data.themeJson); } catch { /* ignore */ }
         }
         onThemeChange(theme);
+      }
+      // Detect icon changes for live update on other clients
+      if (onIconChange && data.icon !== lastIcon) {
+        lastIcon = data.icon;
+        onIconChange(data.icon || null);
       }
     });
     return () => ref.off();

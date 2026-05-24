@@ -8,6 +8,7 @@ import { useToastStore } from "./toast-store";
 import { useSocialStore } from "./social-store";
 import { useIdentityStore } from "./identity-store";
 import { useNavigationStore } from "./navigation-store";
+import { getCache, setCache, CacheKeys } from "../services/app-cache";
 
 interface DMState {
   // State
@@ -52,6 +53,18 @@ interface DMState {
 
 const dmManager = new DMManager();
 
+// Debounced DM message cache save (per conversation)
+const dmCacheSaveTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
+function saveDMMessagesToCache(conversationId: string, messages: TransportMessage[]): void {
+  if (dmCacheSaveTimeouts[conversationId]) {
+    clearTimeout(dmCacheSaveTimeouts[conversationId]);
+  }
+  dmCacheSaveTimeouts[conversationId] = setTimeout(async () => {
+    const toCache = messages.slice(-100); // Keep last 100
+    await setCache(CacheKeys.dmMessages(conversationId), toCache);
+  }, 1000); // Debounce 1 second
+}
+
 export const useDMStore = create<DMState>((set, get) => ({
   conversations: [],
   activeConversationId: null,
@@ -64,8 +77,16 @@ export const useDMStore = create<DMState>((set, get) => ({
   activeTypingSub: null,
 
   loadConversations: async () => {
-    set({ isLoading: true });
+    // 1. Load from IndexedDB cache first (instant render)
+    const cached = await getCache<DMConversation[]>(CacheKeys.dmConversations());
+    if (cached && cached.length > 0) {
+      set({ conversations: cached, isLoading: false });
+    } else {
+      set({ isLoading: true });
+    }
+
     try {
+      // 2. Fetch from Gun (network)
       const newConversations = await dmManager.getConversations();
       
       // Merge with existing conversations to preserve preview data
@@ -102,6 +123,9 @@ export const useDMStore = create<DMState>((set, get) => ({
         return { conversations: deduped, isLoading: false };
 
       });
+
+      // 3. Save to cache
+      await setCache(CacheKeys.dmConversations(), get().conversations);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       useToastStore.getState().addToast("error", `Failed to load DMs: ${message}`);
@@ -173,17 +197,29 @@ export const useDMStore = create<DMState>((set, get) => ({
 
     if (!conversationId || !recipientKey || !keypair) return;
 
-    set({ isLoading: true });
+    // 1. Load from IndexedDB cache first (instant render)
+    const cached = await getCache<TransportMessage[]>(CacheKeys.dmMessages(conversationId));
+    if (cached && cached.length > 0) {
+      set((state) => ({
+        messages: { ...state.messages, [conversationId]: cached },
+      }));
+    } else {
+      set({ isLoading: true });
+    }
 
     try {
       const epub = await get().resolveEpub(recipientKey);
 
-      // Load history
+      // 2. Load history from Gun (network)
       const history = await dmManager.getHistory(conversationId, epub, keypair, 50);
       set((state) => ({
         messages: { ...state.messages, [conversationId]: history },
         isLoading: false,
       }));
+
+      // 3. Save to cache (last 100 messages)
+      const toCache = history.slice(-100);
+      await setCache(CacheKeys.dmMessages(conversationId), toCache);
 
       // Subscribe to new messages
       const messageSub = dmManager.subscribe(
@@ -298,12 +334,17 @@ export const useDMStore = create<DMState>((set, get) => ({
           : c
       );
 
+      const newMessages = [...existing, message].sort(
+        (a, b) => a.timestamp - b.timestamp
+      );
+
+      // Save to IndexedDB cache (debounced)
+      saveDMMessagesToCache(conversationId, newMessages);
+
       return {
         messages: {
           ...state.messages,
-          [conversationId]: [...existing, message].sort(
-            (a, b) => a.timestamp - b.timestamp
-          ),
+          [conversationId]: newMessages,
         },
         conversations: updatedConversations,
       };
@@ -393,6 +434,8 @@ export const useDMStore = create<DMState>((set, get) => ({
         conversations: [conversation, ...state.conversations],
       };
     });
+    // Update cache (fire and forget)
+    setCache(CacheKeys.dmConversations(), get().conversations);
   },
 
   cleanup: () => {

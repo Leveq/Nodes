@@ -20,6 +20,9 @@ import { useMessageStore } from "./message-store";
 import { useNavigationStore } from "./navigation-store";
 import { useSearchStore } from "./search-store";
 import { useDiscoveryStore } from "./discovery-store";
+import { useRelayStore } from "./relay-store";
+import { clearCache } from "../services/app-cache";
+import { nodeIconManager } from "@nodes/transport-gun";
 
 interface IdentityState {
   // State
@@ -235,8 +238,15 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
     useNavigationStore.getState().reset();
     useSearchStore.getState().reset();
     useDiscoveryStore.getState().reset();
+    useRelayStore.getState().reset();
 
-    // 3. Clear identity
+    // 3. Clear IndexedDB cache
+    await clearCache();
+
+    // 4. Clear node icon memory cache
+    nodeIconManager.clearCache();
+
+    // 5. Clear identity
     keyManager.logout();
     set({
       isAuthenticated: false,
@@ -362,8 +372,15 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
     useNavigationStore.getState().reset();
     useSearchStore.getState().reset();
     useDiscoveryStore.getState().reset();
+    useRelayStore.getState().reset();
 
-    // 4. Clear identity
+    // 4. Clear IndexedDB cache
+    await clearCache();
+
+    // Clear node icon memory cache
+    nodeIconManager.clearCache();
+
+    // 5. Clear identity
     keyManager.logout();
 
     set({

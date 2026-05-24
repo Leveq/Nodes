@@ -6,6 +6,7 @@ import { NodeManager, ModerationManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../../stores/node-store";
 import { useIdentityStore } from "../../stores/identity-store";
 import { useToastStore } from "../../stores/toast-store";
+import { NodeIcon } from "../ui";
 
 const nodeManager = new NodeManager();
 const moderationManager = new ModerationManager();
@@ -74,24 +75,6 @@ export function NodePreviewModal({ listing, onClose }: NodePreviewModalProps) {
     }
   };
 
-  // Get icon to display
-  const getNodeIcon = () => {
-    if (listing.icon?.startsWith("Qm") || listing.icon?.startsWith("bafy")) {
-      return (
-        <img
-          src={`https://ipfs.io/ipfs/${listing.icon}`}
-          alt={listing.name}
-          className="w-full h-full object-cover"
-        />
-      );
-    }
-    return (
-      <span className="text-4xl">
-        {listing.icon || listing.name.charAt(0).toUpperCase()}
-      </span>
-    );
-  };
-
   // Format date
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString("en-US", {
@@ -122,7 +105,7 @@ export function NodePreviewModal({ listing, onClose }: NodePreviewModalProps) {
         <div className="flex items-start gap-4 p-6 border-b border-surface-border">
           {/* Icon */}
           <div className="w-16 h-16 rounded-xl bg-surface-dark flex items-center justify-center overflow-hidden flex-shrink-0">
-            {getNodeIcon()}
+            <NodeIcon nodeId={listing.nodeId} icon={listing.icon || ""} name={listing.name} size="lg" />
           </div>
 
           {/* Title */}

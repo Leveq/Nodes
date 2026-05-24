@@ -1,15 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useDMStore } from "../../stores/dm-store";
 import { useIdentityStore } from "../../stores/identity-store";
-import { ProfileManager } from "@nodes/transport-gun";
+import { useDisplayNames } from "../../hooks/useDisplayNames";
 import { formatRelativeTime } from "../../utils/time";
 import { MemberListSkeleton, NameSkeleton, Avatar } from "../ui";
 import { NewDMModal } from "./NewDMModal";
-import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import type { DMConversation } from "@nodes/core";
 import type { KeyPair } from "@nodes/crypto";
-
-const profileManager = new ProfileManager();
 
 /**
  * DMSidebar displays the user's DM conversations.
@@ -26,41 +23,20 @@ export function DMSidebar({ onUserClick }: { onUserClick?: (userId: string) => v
   const keypair = useIdentityStore((s) => s.keypair);
   
   const [showNewDM, setShowNewDM] = useState(false);
-  const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+
+  // Collect all recipient keys for batch name resolution
+  const recipientKeys = useMemo(
+    () => conversations.map((c) => c.recipientKey),
+    [conversations]
+  );
+  
+  // Use shared IndexedDB-backed cache for display names and avatars
+  const { displayNames: resolvedNames, avatarCids, isLoading: namesLoading } = useDisplayNames(recipientKeys);
 
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
-
-  // Resolve display names for conversation recipients
-  useEffect(() => {
-    async function resolveNames() {
-      const names: Record<string, string> = { ...resolvedNames };
-      let hasNew = false;
-
-      for (const conv of conversations) {
-        if (!names[conv.recipientKey]) {
-          hasNew = true;
-          try {
-            const profile = await profileManager.getPublicProfile(conv.recipientKey);
-            names[conv.recipientKey] = profile?.displayName || conv.recipientKey.slice(0, 8);
-            // Cache avatar CID for use by Avatar components
-            if (profile?.avatar) {
-              setCachedAvatarCid(conv.recipientKey, profile.avatar);
-            }
-          } catch {
-            names[conv.recipientKey] = conv.recipientKey.slice(0, 8);
-          }
-        }
-      }
-
-      if (hasNew) {
-        setResolvedNames(names);
-      }
-    }
-    resolveNames();
-  }, [conversations]);
 
   const handleSelectConversation = (conv: DMConversation) => {
     if (keypair) {
@@ -133,6 +109,7 @@ export function DMSidebar({ onUserClick }: { onUserClick?: (userId: string) => v
               key={conv.id}
               conversation={conv}
               displayName={resolvedNames[conv.recipientKey]}
+              avatarCid={avatarCids[conv.recipientKey]}
               isNameLoading={!resolvedNames[conv.recipientKey]}
               isActive={conv.id === activeConversationId}
               unreadCount={unreadCounts[conv.id] || 0}
@@ -152,6 +129,7 @@ export function DMSidebar({ onUserClick }: { onUserClick?: (userId: string) => v
 interface ConversationItemProps {
   conversation: DMConversation;
   displayName?: string;
+  avatarCid?: string;
   isNameLoading: boolean;
   isActive: boolean;
   unreadCount: number;
@@ -162,6 +140,7 @@ interface ConversationItemProps {
 function ConversationItem({
   conversation,
   displayName,
+  avatarCid,
   isNameLoading,
   isActive,
   unreadCount,
@@ -188,6 +167,7 @@ function ConversationItem({
         <Avatar
           publicKey={conversation.recipientKey}
           displayName={displayName}
+          avatarCid={avatarCid}
           size="md"
         />
       </div>

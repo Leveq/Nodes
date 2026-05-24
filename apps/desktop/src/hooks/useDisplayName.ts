@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ProfileManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../stores/node-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { getCache, setCache, CacheKeys, deleteCache } from "../services/app-cache";
 
 // Module-level cache to avoid repeated lookups
 const displayNameCache = new Map<string, string>();
@@ -10,6 +11,45 @@ const displayNameCache = new Map<string, string>();
 const avatarCidCache = new Map<string, string>();
 
 const profileManager = new ProfileManager();
+
+// Flag to track if we've loaded from IndexedDB
+let cacheLoaded = false;
+
+// Load display name cache from IndexedDB on module init
+async function loadDisplayNameCacheFromDb(): Promise<void> {
+  if (cacheLoaded) return;
+  try {
+    const cached = await getCache<Record<string, string>>(CacheKeys.displayNames());
+    if (cached) {
+      Object.entries(cached).forEach(([key, value]) => {
+        displayNameCache.set(key, value);
+      });
+    }
+    cacheLoaded = true;
+  } catch {
+    // Non-fatal, continue without cache
+  }
+}
+
+// Save display name cache to IndexedDB (debounced)
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+function saveDisplayNameCacheToDb(): void {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async () => {
+    try {
+      const obj: Record<string, string> = {};
+      displayNameCache.forEach((value, key) => {
+        obj[key] = value;
+      });
+      await setCache(CacheKeys.displayNames(), obj);
+    } catch {
+      // Non-fatal
+    }
+  }, 1000); // Debounce 1 second
+}
+
+// Initialize cache on module load
+loadDisplayNameCacheFromDb();
 
 /**
  * Hook to resolve a public key to a display name.
@@ -57,6 +97,7 @@ export function useDisplayName(publicKey: string | undefined): {
     // Check if it's the current user
     if (publicKey === identityPublicKey && identityDisplayName) {
       displayNameCache.set(publicKey, identityDisplayName);
+      saveDisplayNameCacheToDb();
       setDisplayName(identityDisplayName);
       setIsLoading(false);
       return;
@@ -66,6 +107,7 @@ export function useDisplayName(publicKey: string | undefined): {
     const nodeStoreCache = useNodeStore.getState().displayNameCache;
     if (nodeStoreCache[publicKey]?.name) {
       displayNameCache.set(publicKey, nodeStoreCache[publicKey].name);
+      saveDisplayNameCacheToDb();
       setDisplayName(nodeStoreCache[publicKey].name);
       setIsLoading(false);
       return;
@@ -79,6 +121,7 @@ export function useDisplayName(publicKey: string | undefined): {
       );
       if (member?.displayName) {
         displayNameCache.set(publicKey, member.displayName);
+        saveDisplayNameCacheToDb();
         setDisplayName(member.displayName);
         setIsLoading(false);
         return;
@@ -94,6 +137,7 @@ export function useDisplayName(publicKey: string | undefined): {
         const name =
           profile?.displayName || `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
         displayNameCache.set(publicKey, name);
+        saveDisplayNameCacheToDb();
         setDisplayName(name);
         
         // Also cache avatar CID if present
@@ -105,6 +149,7 @@ export function useDisplayName(publicKey: string | undefined): {
         if (cancelled) return;
         const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
         displayNameCache.set(publicKey, fallback);
+        saveDisplayNameCacheToDb();
         setDisplayName(fallback);
       })
       .finally(() => {
@@ -117,6 +162,21 @@ export function useDisplayName(publicKey: string | undefined): {
   }, [publicKey, activeNodeId, identityPublicKey, identityDisplayName]);
 
   return { displayName, isLoading };
+}
+
+/**
+ * Get a cached display name for a public key.
+ */
+export function getCachedDisplayName(publicKey: string): string | undefined {
+  return displayNameCache.get(publicKey);
+}
+
+/**
+ * Set a cached display name for a public key (also saves to IndexedDB).
+ */
+export function setCachedDisplayName(publicKey: string, name: string): void {
+  displayNameCache.set(publicKey, name);
+  saveDisplayNameCacheToDb();
 }
 
 /**
@@ -139,4 +199,7 @@ export function setCachedAvatarCid(publicKey: string, cid: string): void {
 export function clearDisplayNameCache(): void {
   displayNameCache.clear();
   avatarCidCache.clear();
+  // Also clear IndexedDB cache
+  deleteCache(CacheKeys.displayNames()).catch(() => {});
+  cacheLoaded = false;
 }

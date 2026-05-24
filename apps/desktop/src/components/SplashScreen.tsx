@@ -47,20 +47,17 @@ export function SplashScreen({ onDone, onFirstPaint, duration = 2800 }: SplashSc
     resize();
     window.addEventListener("resize", resize);
 
-    nodesRef.current = Array.from({ length: NODE_COUNT }, () => {
-      const radius = 1.8 + Math.random() * 2.2;
-      return {
-        x: Math.random() * window.innerWidth,
-        y: Math.random() * window.innerHeight,
-        vx: (Math.random() - 0.5) * 0.22,
-        vy: (Math.random() - 0.54) * 0.22,
-        radius,
-        glowRadius: radius * 4 + Math.random() * 8, // proportional, max ~26px
-        phase: Math.random() * Math.PI * 2,
-        brightness: 0.3 + Math.random() * 0.7,
-        color: ([0, 0, 1, 2, 1] as const)[Math.floor(Math.random() * 5)],
-      };
-    });
+    nodesRef.current = Array.from({ length: NODE_COUNT }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.22,
+      vy: (Math.random() - 0.54) * 0.22, // slight upward drift, PS2-style
+      radius: 1.8 + Math.random() * 2.2,
+      glowRadius: 30 + Math.random() * 50,
+      phase: Math.random() * Math.PI * 2,
+      brightness: 0.3 + Math.random() * 0.7,
+      color: ([0, 0, 1, 2, 1] as const)[Math.floor(Math.random() * 5)],
+    }));
 
     const draw = (now: number) => {
       const t = now / 1000;
