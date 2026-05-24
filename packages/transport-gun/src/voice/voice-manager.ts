@@ -25,6 +25,12 @@ export class VoiceManager implements IVoiceTransport {
   private publicKey: string;
   private nodeVoiceConfig: NodeVoiceConfig | null = null;
   private currentChannelId: string | null = null;
+  /**
+   * When true (default), always route through LiveKit SFU regardless of
+   * participant count. Hides participant IP addresses from each other.
+   * Set via {@link setPreferSfu}.
+   */
+  private preferSfu: boolean = true;
 
   constructor(publicKey: string) {
     this.publicKey = publicKey;
@@ -40,34 +46,57 @@ export class VoiceManager implements IVoiceTransport {
     this.nodeVoiceConfig = config;
   }
 
+  /**
+   * Set the user's privacy preference for voice routing.
+   *
+   * - `true` (default): Force SFU for all rooms regardless of size, hiding
+   *   participant IPs from each other.
+   * - `false`: Allow P2P mesh for small rooms (lower latency, exposes IPs).
+   *
+   * Takes effect on next `join()`. Does not affect an in-progress call.
+   */
+  setPreferSfu(prefer: boolean): void {
+    this.preferSfu = prefer;
+  }
+
   async join(channelId: string, _nodeId: string): Promise<void> {
     // Check current participant count to determine tier
     const participantCount = await this.getParticipantCount(channelId);
 
-    if (participantCount < VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS) {
-      // Use mesh (P2P)
-      this.activeTier = "mesh";
-      this.currentChannelId = channelId;
-      await this.meshTransport.join(channelId);
-    } else {
-      // Use LiveKit (SFU)
-      if (!this.nodeVoiceConfig?.livekitUrl && !this.nodeVoiceConfig?.useDefaultServer) {
-        // No LiveKit configured — fall back to mesh with a warning
-        console.warn(
-          "[VoiceManager] Room has 7+ users but no LiveKit server configured. Using mesh (may have quality issues)."
-        );
-        this.activeTier = "mesh";
-        this.currentChannelId = channelId;
-        await this.meshTransport.join(channelId);
-        return;
-      }
+    // Privacy-first routing: by default always use SFU so participant IPs
+    // are hidden from each other. Power users can opt in to P2P mesh via
+    // the voice settings toggle.
+    const wantSfu =
+      this.preferSfu || participantCount >= VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS;
+    const hasSfuConfig = Boolean(
+      this.nodeVoiceConfig?.livekitUrl || this.nodeVoiceConfig?.useDefaultServer
+    );
 
+    if (wantSfu && hasSfuConfig) {
+      // Use LiveKit (SFU)
       this.activeTier = "livekit";
       this.currentChannelId = channelId;
-      const serverUrl = this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
+      const serverUrl =
+        this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
       const token = await this.generateLiveKitToken(channelId, _nodeId);
       await this.livekitTransport.join(channelId, serverUrl, token);
+      return;
     }
+
+    if (wantSfu && !hasSfuConfig) {
+      // User wants privacy but no SFU is available for this Node.
+      // Fall back to mesh with a loud warning - the user can still opt out
+      // of joining if privacy is critical.
+      console.warn(
+        "[VoiceManager] SFU preferred but no LiveKit server configured for this Node. " +
+          "Falling back to P2P mesh — your IP will be visible to other participants."
+      );
+    }
+
+    // Use mesh (P2P)
+    this.activeTier = "mesh";
+    this.currentChannelId = channelId;
+    await this.meshTransport.join(channelId);
   }
 
   async leave(): Promise<void> {

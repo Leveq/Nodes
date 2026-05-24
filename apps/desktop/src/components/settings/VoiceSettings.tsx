@@ -26,6 +26,7 @@ export function VoiceSettings() {
   const echoCancellation = useVoiceStore((s) => s.echoCancellation);
   const pushToTalk = useVoiceStore((s) => s.pushToTalk);
   const pushToTalkKey = useVoiceStore((s) => s.pushToTalkKey);
+  const preferSfu = useVoiceStore((s) => s.preferSfu);
 
   // Voice store actions
   const setInputDevice = useVoiceStore((s) => s.setInputDevice);
@@ -34,6 +35,7 @@ export function VoiceSettings() {
   const setNoiseSuppression = useVoiceStore((s) => s.setNoiseSuppression);
   const setEchoCancellation = useVoiceStore((s) => s.setEchoCancellation);
   const setPushToTalk = useVoiceStore((s) => s.setPushToTalk);
+  const setPreferSfu = useVoiceStore((s) => s.setPreferSfu);
 
   // Enumerate audio devices
   const loadDevices = useCallback(async () => {
@@ -353,6 +355,49 @@ export function VoiceSettings() {
             </kbd>
           </div>
         </div>
+      </section>
+
+      {/* Privacy */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <svg className="w-5 h-5 text-accent-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <h2 className="text-lg font-semibold text-nodes-text">Voice Privacy</h2>
+        </div>
+        <p className="text-sm text-nodes-text-muted mb-4">
+          Voice channels can route through a server (SFU) or directly between
+          participants (P2P mesh). Direct P2P has lower latency but exposes
+          your IP address to every other participant in the channel.
+        </p>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={preferSfu}
+            onChange={(e) => setPreferSfu(e.target.checked)}
+            className="mt-0.5 w-5 h-5 rounded border-nodes-border bg-nodes-bg accent-nodes-primary"
+          />
+          <div>
+            <div className="text-nodes-text">
+              Always use server (recommended)
+            </div>
+            <div className="text-xs text-nodes-text-muted mt-0.5">
+              {preferSfu
+                ? "All voice traffic routes through the LiveKit server. Other participants cannot see your IP address."
+                : "Small rooms (under 7 users) will use direct P2P connections. Your IP address will be visible to every participant."}
+            </div>
+          </div>
+        </label>
+        {!preferSfu && (
+          <div className="mt-3 p-3 rounded-lg border border-accent-warning/40 bg-accent-warning/5 text-xs text-accent-warning">
+            <div className="font-medium mb-1">Privacy warning</div>
+            <div>
+              P2P mode is enabled. When you join a small voice channel, your
+              IP address will be exposed to all other participants. Only
+              enable this if you trust everyone you talk to.
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -189,6 +189,19 @@ export function TransportProvider({ children }: { children: ReactNode }) {
     };
   }, [voiceManager, setVoiceState, setVoiceParticipants, updateParticipantSpeaking]);
 
+  // Sync the user's SFU privacy preference into the VoiceManager.
+  // Applies on next `join()`; an in-progress call is unaffected.
+  useEffect(() => {
+    if (!voiceManager) return;
+    // Apply current value, then subscribe to changes.
+    voiceManager.setPreferSfu(useVoiceStore.getState().preferSfu);
+    return useVoiceStore.subscribe((state, prev) => {
+      if (state.preferSfu !== prev.preferSfu) {
+        voiceManager.setPreferSfu(state.preferSfu);
+      }
+    });
+  }, [voiceManager]);
+
   // Convenience method for reconnecting
   const reconnect = useCallback(async () => {
     await transports.connection.reconnect();

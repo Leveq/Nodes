@@ -1,4 +1,4 @@
-import { Mic, MicOff, Volume2, VolumeX, PhoneOff } from "lucide-react";
+import { Mic, MicOff, Volume2, VolumeX, PhoneOff, Shield, ShieldAlert } from "lucide-react";
 import { useVoiceStore } from "../../stores/voice-store";
 import { useNodeStore } from "../../stores/node-store";
 
@@ -49,8 +49,19 @@ export function VoiceConnectionBar({
           <div className="text-sm font-medium text-text-primary truncate">
             {channelName}
           </div>
-          <div className="text-xs text-text-muted">
-            {getStatusText()}
+          <div className="text-xs text-text-muted flex items-center gap-1">
+            {tier === "livekit" ? (
+              <Shield
+                className="w-3 h-3 text-accent-success shrink-0"
+                aria-label="IP hidden via server"
+              />
+            ) : tier === "mesh" ? (
+              <ShieldAlert
+                className="w-3 h-3 text-accent-warning shrink-0"
+                aria-label="IP visible to other participants"
+              />
+            ) : null}
+            <span className="truncate">{getStatusText()}</span>
           </div>
         </div>
       </div>
