@@ -75,3 +75,43 @@ jobs:
           tauriScript: pnpm tauri
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+  deploy-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build web client
+        working-directory: apps/desktop
+        env:
+          VITE_GUN_RELAY_URL: ${{ secrets.VITE_GUN_RELAY_URL }}
+          VITE_LIVEKIT_URL: ${{ secrets.VITE_LIVEKIT_URL }}
+          VITE_LIVEKIT_API_KEY: ${{ secrets.VITE_LIVEKIT_API_KEY }}
+          VITE_IPFS_GATEWAY_URL: ${{ secrets.VITE_IPFS_GATEWAY_URL }}
+          VITE_IPFS_API_URL: ${{ secrets.VITE_IPFS_API_URL }}
+          VITE_GIPHY_API_KEY: ${{ secrets.VITE_GIPHY_API_KEY }}
+        run: pnpm exec vite build
+
+      - name: Deploy to production
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          source: "apps/desktop/dist/*"
+          target: "/opt/nodes-prod/web/"
+          strip_components: 3

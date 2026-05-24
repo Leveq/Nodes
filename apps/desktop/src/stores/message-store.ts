@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { TransportMessage, Unsubscribe } from "@nodes/transport";
+import { getCache, setCache, CacheKeys, MAX_CACHED_MESSAGES } from "../services/app-cache";
 
 interface MessageState {
   // Messages keyed by channelId
@@ -31,6 +32,11 @@ interface MessageState {
   clearUnread: (channelId: string) => void;
   clearChannel: (channelId: string) => void;
   clearAllChannels: () => void;
+  
+  // Cache actions
+  loadFromCache: (channelId: string) => Promise<boolean>; // Returns true if cache hit
+  saveToCache: (channelId: string) => Promise<void>;
+  
   reset: () => void;
 }
 
@@ -237,6 +243,26 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       activeSubscription: null,
       activeTypingSub: null,
     });
+  },
+
+  loadFromCache: async (channelId) => {
+    const cached = await getCache<TransportMessage[]>(CacheKeys.messages(channelId));
+    if (cached && cached.length > 0) {
+      set((state) => ({
+        messages: { ...state.messages, [channelId]: cached },
+      }));
+      return true;
+    }
+    return false;
+  },
+
+  saveToCache: async (channelId) => {
+    const messages = get().messages[channelId];
+    if (!messages || messages.length === 0) return;
+    
+    // Only cache the last N messages to keep cache size manageable
+    const toCache = messages.slice(-MAX_CACHED_MESSAGES);
+    await setCache(CacheKeys.messages(channelId), toCache);
   },
 
   reset: () => {

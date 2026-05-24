@@ -4,40 +4,35 @@ import "gun/sea";
 type GunInstance = ReturnType<typeof Gun>;
 type GunUser = ReturnType<GunInstance["user"]>;
 
-// Local relay for development (run: node scripts/gun-relay.mjs)
-const LOCAL_RELAY = "http://localhost:8765/gun";
-
-// Staging relay - set VITE_GUN_RELAY_URL env var to your deployed relay
-const STAGING_RELAY = import.meta.env.VITE_GUN_RELAY_URL as string | undefined;
-
-// Public relays - these change frequently, local relay is most reliable
-const PUBLIC_PEERS = [
-  "https://gun-manhattan.herokuapp.com/gun",
-  "https://gun-us.herokuapp.com/gun",
+const PRODUCTION_RELAYS = [
+  'wss://relay.nodes.services/gun',
+  'wss://relay2.nodes.services/gun',
 ];
 
-/**
- * Get the list of Gun relay peers based on environment.
- * Priority: VITE_GUN_RELAY_URL > local relay > public peers
- */
-function getDefaultPeers(): string[] {
-  const peers: string[] = [];
+const STAGING_RELAYS = [
+  import.meta.env.VITE_GUN_RELAY_URL as string,
+].filter(Boolean);
 
-  if (STAGING_RELAY) {
-    console.log("[Gun] Using relay:", STAGING_RELAY);
-    peers.push(STAGING_RELAY);
-    // When a relay is explicitly configured, use ONLY that relay.
-    // No public peer fallback — prevents cross-environment data contamination.
+const LOCAL_RELAY = 'http://localhost:8765/gun';
+
+function getDefaultPeers(): string[] {
+  if (STAGING_RELAYS.length > 0) {
+    // Production/staging: use configured relays + backup
+    const peers = [...STAGING_RELAYS];
+    // Add production backup relays if primary is a production relay
+    if (STAGING_RELAYS[0]?.includes('nodes.services')) {
+      for (const relay of PRODUCTION_RELAYS) {
+        if (!peers.includes(relay)) peers.push(relay);
+      }
+    }
     return peers;
   }
-
-  // No relay configured — dev fallback only
+  
   if (import.meta.env.DEV) {
-    peers.push(LOCAL_RELAY);
+    return [LOCAL_RELAY];
   }
-
-  peers.push(...PUBLIC_PEERS);
-  return peers;
+  
+  return PRODUCTION_RELAYS;
 }
 
 /**
@@ -62,6 +57,7 @@ console.warn = (...args: unknown[]) => {
  */
 
 let gunInstance: GunInstance | null = null;
+let activePeers: string[] = [];
 
 export class GunInstanceManager {
   /**
@@ -73,7 +69,7 @@ export class GunInstanceManager {
     if (gunInstance) return gunInstance;
 
     // Use provided peers, or get defaults based on environment
-    const activePeers = peers ?? getDefaultPeers();
+    activePeers = peers ?? getDefaultPeers();
     console.log("[Gun] Connecting to peers:", activePeers);
 
     gunInstance = Gun({
@@ -121,5 +117,12 @@ export class GunInstanceManager {
    */
   static reset(): void {
     gunInstance = null;
+  }
+
+  /**
+   * Get the peer URLs that Gun is connected to.
+   */
+  static getPeers(): string[] {
+    return activePeers;
   }
 }

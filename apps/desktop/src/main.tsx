@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { getSearchIndex } from "./services/search-index";
 import { ThemeEngine } from "./services/theme-engine";
-import { configureAvatarManager, configureFileTransport } from "@nodes/transport-gun";
+import { configureAvatarManager, configureFileTransport, configureNodeIconManager } from "@nodes/transport-gun";
 
 // Detect if running in Tauri
 const isTauri = !!(window as any).__TAURI_INTERNALS__;
@@ -25,6 +25,11 @@ if (isTauri) {
       ipfsApiUrl: import.meta.env.VITE_IPFS_API_URL,
       serverPinFetch: tauriFetch as unknown as typeof fetch,
     });
+    configureNodeIconManager({
+      ipfsApiUrl: import.meta.env.VITE_IPFS_API_URL,
+      ipfsGatewayUrl: import.meta.env.VITE_IPFS_GATEWAY_URL,
+      serverPinFetch: tauriFetch as unknown as typeof fetch,
+    });
   });
 } else {
   // Web: use regular fetch for server pinning
@@ -34,6 +39,10 @@ if (isTauri) {
   });
   configureFileTransport({
     ipfsApiUrl: import.meta.env.VITE_IPFS_API_URL,
+  });
+  configureNodeIconManager({
+    ipfsApiUrl: import.meta.env.VITE_IPFS_API_URL,
+    ipfsGatewayUrl: import.meta.env.VITE_IPFS_GATEWAY_URL,
   });
 }
 

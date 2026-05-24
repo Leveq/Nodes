@@ -7,13 +7,15 @@ interface AvatarCropModalProps {
   imageUrl: string;
   onCrop: (croppedBlob: Blob) => void;
   onCancel: () => void;
+  cropShape?: "round" | "rect";
+  title?: string;
 }
 
 /**
  * Modal for cropping an avatar image to a square.
  * Uses react-easy-crop for drag/zoom cropping with circular preview.
  */
-export function AvatarCropModal({ imageUrl, onCrop, onCancel }: AvatarCropModalProps) {
+export function AvatarCropModal({ imageUrl, onCrop, onCancel, cropShape = "round", title = "Crop Avatar" }: AvatarCropModalProps) {
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
@@ -42,7 +44,7 @@ export function AvatarCropModal({ imageUrl, onCrop, onCancel }: AvatarCropModalP
       <div className="bg-nodes-surface border border-nodes-border rounded-xl w-full max-w-lg shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3 border-b border-nodes-border">
-          <h2 className="text-lg font-semibold text-nodes-text">Crop Avatar</h2>
+          <h2 className="text-lg font-semibold text-nodes-text">{title}</h2>
           <p className="text-sm text-nodes-text-muted">
             Drag to reposition, scroll to zoom
           </p>
@@ -55,7 +57,7 @@ export function AvatarCropModal({ imageUrl, onCrop, onCancel }: AvatarCropModalP
             crop={crop}
             zoom={zoom}
             aspect={1}
-            cropShape="round"
+            cropShape={cropShape}
             showGrid={false}
             onCropChange={setCrop}
             onCropComplete={onCropComplete}

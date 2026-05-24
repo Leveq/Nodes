@@ -1,5 +1,5 @@
 import { useIdentityStore } from "../stores/identity-store";
-import { ConnectionStatus, Badge, Avatar } from "../components/ui";
+import { ConnectionStatus, Badge, Avatar, RelayStatusIndicator } from "../components/ui";
 import { CopyablePublicKey } from "../components/ui/CopyablePublicKey";
 import { NotificationCenter } from "../components/notifications";
 import { getStatusColor } from "../utils/status";
@@ -26,7 +26,10 @@ export function StatusBar({ onOpenSettings, onOpenProfile, updateAvailable }: St
 
   return (
     <div className="h-8 bg-nodes-surface border-t border-nodes-border flex items-center justify-between px-4 text-xs shrink-0">
-      <ConnectionStatus />
+      <div className="flex items-center gap-3">
+        <ConnectionStatus />
+        <RelayStatusIndicator />
+      </div>
       <div className="flex items-center gap-3">
         {/* Clickable profile avatar and name */}
         <button

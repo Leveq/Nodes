@@ -5,9 +5,10 @@ import { SocialSettings } from "./SocialSettings";
 import { VoiceSettings } from "./VoiceSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { NotificationSettings } from "./NotificationSettings";
+import { NetworkSettings } from "./NetworkSettings";
 import { AboutSettings } from "./AboutSettings";
 
-type SettingsSection = "account" | "privacy" | "social" | "voice" | "appearance" | "notifications" | "about";
+type SettingsSection = "account" | "privacy" | "social" | "voice" | "appearance" | "notifications" | "network" | "about";
 
 interface SettingsPageProps {
   onClose: () => void;
@@ -69,6 +70,15 @@ const sections: { id: SettingsSection; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    id: "network",
+    label: "Network",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+      </svg>
+    ),
+  },
+  {
     id: "about",
     label: "About",
     icon: (
@@ -108,6 +118,8 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
         return <AppearanceSettings />;
       case "notifications":
         return <NotificationSettings />;
+      case "network":
+        return <NetworkSettings />;
       case "about":
         return <AboutSettings />;
       default:

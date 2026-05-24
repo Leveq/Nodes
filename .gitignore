@@ -34,6 +34,9 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 
+# Deploy scripts with server IPs
+scripts/deploy-prod.sh
+
 # TypeScript
 *.tsbuildinfo
 

@@ -2,6 +2,7 @@ import { Users, Clock } from "lucide-react";
 import type { DirectoryListing } from "@nodes/core";
 import { CATEGORY_LABELS, CATEGORY_ICONS } from "@nodes/core";
 import { useDiscoveryStore } from "../../stores/discovery-store";
+import { NodeIcon } from "../ui";
 
 interface NodeCardProps {
   listing: DirectoryListing;
@@ -21,25 +22,7 @@ export function NodeCard({ listing, onClick, variant = "grid" }: NodeCardProps) 
   );
   const isStale = daysSinceRefresh > 7;
 
-  // Get icon to display (IPFS image or emoji/letter)
-  const getNodeIcon = () => {
-    if (listing.icon?.startsWith("Qm") || listing.icon?.startsWith("bafy")) {
-      // IPFS CID - render as image
-      return (
-        <img
-          src={`https://ipfs.io/ipfs/${listing.icon}`}
-          alt={listing.name}
-          className="w-full h-full object-cover"
-        />
-      );
-    }
-    // Emoji or fallback to first letter
-    return (
-      <span className="text-2xl">
-        {listing.icon || listing.name.charAt(0).toUpperCase()}
-      </span>
-    );
-  };
+  const nodeIcon = <NodeIcon nodeId={listing.nodeId} icon={listing.icon || ""} name={listing.name} size="md" />;
 
   // Handle tag click (filter by tag)
   const handleTagClick = (e: React.MouseEvent, tag: string) => {
@@ -57,7 +40,7 @@ export function NodeCard({ listing, onClick, variant = "grid" }: NodeCardProps) 
       >
         {/* Icon */}
         <div className="w-12 h-12 rounded-lg bg-surface-dark flex items-center justify-center overflow-hidden flex-shrink-0">
-          {getNodeIcon()}
+          {nodeIcon}
         </div>
 
         {/* Content */}
@@ -105,7 +88,7 @@ export function NodeCard({ listing, onClick, variant = "grid" }: NodeCardProps) 
       <div className="flex items-start gap-3 mb-3">
         {/* Icon */}
         <div className="w-12 h-12 rounded-lg bg-surface-dark flex items-center justify-center overflow-hidden flex-shrink-0">
-          {getNodeIcon()}
+          {nodeIcon}
         </div>
 
         {/* Name & category */}

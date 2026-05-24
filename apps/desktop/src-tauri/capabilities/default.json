@@ -33,6 +33,12 @@
           "url": "wss://relay.nodes.services/*"
         },
         {
+          "url": "https://relay2.nodes.services/*"
+        },
+        {
+          "url": "wss://relay2.nodes.services/*"
+        },
+        {
           "url": "wss://voice.nodes.services/*"
         },
         {

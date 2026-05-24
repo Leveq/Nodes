@@ -5,5 +5,7 @@ export { Badge } from "./Badge";
 export { CopyablePublicKey } from "./CopyablePublicKey";
 export { PassphraseStrength } from "./PassphraseStrength";
 export { ConnectionStatus, ConnectionIndicator } from "./ConnectionStatus";
+export { RelayStatusIndicator } from "./RelayStatusIndicator";
 export { Skeleton, ChannelSkeleton, ChannelListSkeleton, MemberSkeleton, MemberListSkeleton, NameSkeleton } from "./Skeleton";
 export { Avatar, getAvatarColor } from "./Avatar";
+export { NodeIcon } from "./NodeIcon";

@@ -53,6 +53,16 @@ export function useNodeDeletionGuard() {
           } else {
             themeStore.clearNodeTheme();
           }
+        },
+        // onIconChange — update active node's icon live for other members
+        (icon) => {
+          const activeNodeId = useNodeStore.getState().activeNodeId;
+          if (activeNodeId !== node.id) return; // only update active node
+          useNodeStore.setState((state) => ({
+            nodes: state.nodes.map((n) =>
+              n.id === node.id ? { ...n, icon: icon ?? "" } : n
+            ),
+          }));
         }
       );
 

@@ -1,12 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSocialStore } from "../../stores/social-store";
 import { useNavigationStore } from "../../stores/navigation-store";
-import { ProfileManager } from "@nodes/transport-gun";
+import { useDisplayNames } from "../../hooks/useDisplayNames";
 import { NameSkeleton, Avatar } from "../ui";
-import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import type { FriendRequest, Friend } from "@nodes/core";
-
-const profileManager = new ProfileManager();
 
 type TabType = "friends" | "incoming" | "outgoing" | "blocked";
 
@@ -19,8 +16,6 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
   const friendsTabFromStore = useNavigationStore((s) => s.friendsTab);
   const setFriendsTabInStore = useNavigationStore((s) => s.setFriendsTab);
   const [activeTab, setActiveTab] = useState<TabType>(friendsTabFromStore);
-  const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
-  const [avatarCids, setAvatarCids] = useState<Record<string, string>>({});
 
   const friends = useSocialStore((s) => s.friends);
   const incomingRequests = useSocialStore((s) => s.incomingRequests);
@@ -33,43 +28,17 @@ export function RequestsPanel({ onUserClick }: { onUserClick?: (userId: string) 
   const unblockUser = useSocialStore((s) => s.unblockUser);
 
   // Collect all public keys that need name resolution
-  useEffect(() => {
-    async function resolveNames() {
-      const allKeys = new Set<string>();
-      
-      friends.forEach((f) => allKeys.add(f.publicKey));
-      incomingRequests.forEach((r) => allKeys.add(r.fromKey));
-      outgoingRequests.forEach((r) => allKeys.add(r.toKey));
-      blockedUsers.forEach((b) => allKeys.add(b.publicKey));
-
-      const names: Record<string, string> = { ...resolvedNames };
-      let hasNew = false;
-
-      for (const key of allKeys) {
-        if (!names[key]) {
-          hasNew = true;
-          try {
-            const profile = await profileManager.getPublicProfile(key);
-            names[key] = profile?.displayName || key.slice(0, 8);
-            // Cache avatar CID for use by Avatar components
-            const avatarCid = profile?.avatar;
-            if (avatarCid) {
-              setCachedAvatarCid(key, avatarCid);
-              setAvatarCids((prev) => ({ ...prev, [key]: avatarCid }));
-            }
-          } catch {
-            names[key] = key.slice(0, 8);
-          }
-        }
-      }
-
-      if (hasNew) {
-        setResolvedNames(names);
-      }
-    }
-    resolveNames();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- resolvedNames is intentionally excluded to prevent infinite loops
+  const allKeys = useMemo(() => {
+    const keys = new Set<string>();
+    friends.forEach((f) => keys.add(f.publicKey));
+    incomingRequests.forEach((r) => keys.add(r.fromKey));
+    outgoingRequests.forEach((r) => keys.add(r.toKey));
+    blockedUsers.forEach((b) => keys.add(b.publicKey));
+    return Array.from(keys);
   }, [friends, incomingRequests, outgoingRequests, blockedUsers]);
+
+  // Use shared IndexedDB-backed cache for display names and avatars
+  const { displayNames: resolvedNames, avatarCids, isLoading: namesLoading } = useDisplayNames(allKeys);
 
   const getName = (publicKey: string) => resolvedNames[publicKey];
   const isNameLoading = (publicKey: string) => !resolvedNames[publicKey];

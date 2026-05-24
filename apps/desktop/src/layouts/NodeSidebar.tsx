@@ -6,6 +6,7 @@ import { useNavigationStore } from "../stores/navigation-store";
 import { useDMStore } from "../stores/dm-store";
 import { useSocialStore } from "../stores/social-store";
 import { useNotificationStore } from "../stores/notification-store";
+import { NodeIcon } from "../components/ui";
 import { CreateNodeModal } from "../components/modals/CreateNodeModal";
 import { JoinNodeModal } from "../components/modals/JoinNodeModal";
 
@@ -72,7 +73,7 @@ export function NodeSidebar() {
 
       {/* Node icons */}
       {nodes.map((node) => (
-        <NodeIcon
+        <SidebarNodeIcon
           key={node.id}
           nodeId={node.id}
           icon={node.icon}
@@ -139,7 +140,7 @@ export function NodeSidebar() {
   );
 }
 
-interface NodeIconProps {
+interface SidebarNodeIconProps {
   nodeId: string;
   icon: string;
   name: string;
@@ -150,7 +151,11 @@ interface NodeIconProps {
 // Empty array constant to prevent re-renders from new array references
 const EMPTY_CHANNELS: Channel[] = [];
 
-function NodeIcon({ nodeId, icon, name, isActive, onClick }: NodeIconProps) {
+function isIpfsCid(value: string): boolean {
+  return value.startsWith("Qm") || value.startsWith("bafy");
+}
+
+function SidebarNodeIcon({ nodeId, icon, name, isActive, onClick }: SidebarNodeIconProps) {
   // Get channels for this node to sum mention counts
   const channelsMap = useNodeStore((s) => s.channels);
   const channels = channelsMap[nodeId] ?? EMPTY_CHANNELS;
@@ -160,8 +165,6 @@ function NodeIcon({ nodeId, icon, name, isActive, onClick }: NodeIconProps) {
   const totalMentions = channels.reduce((sum, channel) => {
     return sum + (mentionCounts[channel.id] || 0);
   }, 0);
-  
-  console.log("[NodeIcon] Rendering", name, "totalMentions:", totalMentions, "mentionCounts:", mentionCounts, "channels:", channels.map(c => c.id));
   
   // Generate a consistent color from the node name
   const colors = [
@@ -179,6 +182,8 @@ function NodeIcon({ nodeId, icon, name, isActive, onClick }: NodeIconProps) {
     colors.length;
   const bgColor = colors[colorIndex];
 
+  const hasCustomImage = icon && isIpfsCid(icon);
+
   return (
     <div className="relative group">
       {/* Active indicator */}
@@ -190,12 +195,14 @@ function NodeIcon({ nodeId, icon, name, isActive, onClick }: NodeIconProps) {
 
       <button
         onClick={onClick}
-        className={`w-12 h-12 flex items-center justify-center text-white text-lg font-semibold transition-all duration-200 ${bgColor} ${
+        className={`w-12 h-12 flex items-center justify-center text-white text-lg font-semibold transition-all duration-200 overflow-hidden ${
+          hasCustomImage ? "" : bgColor
+        } ${
           isActive ? "rounded-2xl" : "rounded-full hover:rounded-2xl"
         }`}
         title={name}
       >
-        {icon.length === 1 ? icon : icon.charAt(0)}
+        <NodeIcon nodeId={nodeId} icon={icon} name={name} size="md" />
       </button>
       
       {/* Mention badge */}

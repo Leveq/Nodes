@@ -68,6 +68,29 @@ export class GunConnectionMonitor implements IConnectionMonitor {
   }
 
   /**
+   * Pause monitoring (e.g. when app goes to background / system sleeps).
+   * Clears the interval but keeps `started` true so `resume()` can restart it.
+   */
+  pause(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  /**
+   * Resume monitoring after a pause. Does an immediate connection check
+   * and restarts the periodic ping.
+   */
+  resume(): void {
+    if (!this.started || this.pingTimer) return;
+    this.checkConnection();
+    this.pingTimer = setInterval(() => {
+      this.checkConnection();
+    }, PING_INTERVAL);
+  }
+
+  /**
    * Get current connection state.
    */
   getState(): ConnectionState {

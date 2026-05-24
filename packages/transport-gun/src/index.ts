@@ -3,6 +3,10 @@ export { GunInstanceManager } from "./gun-instance";
 export { ProfileManager } from "./profile-manager";
 export type { ProfileData, ProfileWithVisibility } from "./profile-manager";
 
+// Relay health monitoring
+export { RelayHealthMonitor } from "./relay-health";
+export type { RelayStatus } from "./relay-health";
+
 // Transport implementations
 export { GunMessageTransport, generateMessageId } from "./message-transport";
 export { GunPresenceTransport } from "./presence-transport";
@@ -13,6 +17,7 @@ export { LocalFileTransport } from "./file-transport";
 export { IPFSService, getCachedDownload, setCachedDownload } from "./ipfs-service";
 export { IPFSFileTransport, configureFileTransport } from "./ipfs-file-transport";
 export { AvatarManager, avatarManager, configureAvatarManager } from "./avatar-manager";
+export { nodeIconManager, configureNodeIconManager } from "./node-icon-manager";
 export { IPFSPeerAdvertiser, getIPFSPeerAdvertiser } from "./ipfs-peer-advertiser";
 
 // Node management
