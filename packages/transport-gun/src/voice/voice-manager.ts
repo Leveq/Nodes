@@ -26,9 +26,12 @@ export class VoiceManager implements IVoiceTransport {
   private nodeVoiceConfig: NodeVoiceConfig | null = null;
   private currentChannelId: string | null = null;
   /**
-   * When true (default), prefer routing through LiveKit SFU regardless of
-   * participant count to hide participant IP addresses from each other.
-   * May fall back to P2P mesh if no SFU is configured or the SFU join fails.
+   * When true (default, "privacy mode"), route through the LiveKit SFU
+   * regardless of participant count so participant IPs stay hidden from
+   * each other. Fails closed if no SFU is configured or the SFU join
+   * fails, rather than silently exposing IPs by falling back to mesh.
+   * When false, use size-based routing (mesh below the participant limit,
+   * SFU above it, with mesh as a quality-warned fallback).
    * Set via {@link setPreferSfu}.
    */
   private preferSfu: boolean = true;
@@ -50,12 +53,14 @@ export class VoiceManager implements IVoiceTransport {
   /**
    * Set the user's privacy preference for voice routing.
    *
-   * - `true` (default): Prefer SFU for all rooms regardless of size to hide
-   *   participant IPs from each other. Falls back to P2P mesh (exposing IPs)
-   *   if no SFU is configured for the Node or the SFU join fails.
+   * - `true` (default, "privacy mode"): Route through the SFU for all rooms
+   *   regardless of size to hide participant IPs from each other. Fails
+   *   closed on join if no SFU is configured or the SFU join fails; does
+   *   NOT fall back to P2P mesh, because that would expose the user's IP
+   *   after the UI told them the SFU would protect it.
    * - `false`: Allow P2P mesh for small rooms (lower latency, exposes IPs).
-   *   Rooms that exceed the mesh size limit still escalate to SFU when
-   *   available.
+   *   Rooms that exceed the mesh size limit escalate to SFU when available,
+   *   or fall back to mesh with a quality warning if no SFU is configured.
    *
    * Takes effect on next `join()`. Does not affect an in-progress call.
    */
@@ -68,33 +73,63 @@ export class VoiceManager implements IVoiceTransport {
       this.nodeVoiceConfig?.livekitUrl || this.nodeVoiceConfig?.useDefaultServer
     );
 
-    // Determine desired tier.
+    // Two distinct routing modes:
     //
-    // If preferSfu is true (the default), we always want SFU regardless of
-    // room size. This is the common path and skipping the participant-count
-    // probe avoids ~300ms of unnecessary latency on join.
+    // 1. preferSfu = true (default, "privacy mode"): the user has been told in
+    //    the UI that voice will route through the SFU so their IP stays hidden
+    //    from other participants. We MUST NOT silently fall back to P2P mesh
+    //    here \u2014 that would expose their IP without prior consent, defeating
+    //    the whole point of the preference. So we fail closed: if the SFU is
+    //    unavailable or the join fails, throw and let the caller surface an
+    //    actionable error to the user.
     //
-    // Otherwise we need the count to know whether the room has grown past
-    // the mesh limit and must be pushed to SFU for quality reasons.
-    let participantCount = 0;
-    let wantSfu: boolean;
+    // 2. preferSfu = false: the user explicitly opted into P2P mesh for lower
+    //    latency in small rooms and accepted the IP-exposure tradeoff. We
+    //    keep the pre-existing size-based routing (mesh below the participant
+    //    limit, SFU above it) and fall back to mesh when SFU is unavailable,
+    //    since mesh is already an acceptable outcome for this user.
     if (this.preferSfu) {
-      wantSfu = true;
-    } else {
-      participantCount = await this.getParticipantCount(channelId);
-      wantSfu = participantCount >= VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS;
+      if (!hasSfuConfig) {
+        throw new Error(
+          "Voice privacy mode requires an SFU, but this Node has no LiveKit server configured. " +
+            "Ask the Node owner to configure LiveKit, or disable \u201CAlways use server\u201D " +
+            "in Settings \u2192 Voice \u2192 Voice Privacy to allow P2P mesh."
+        );
+      }
+
+      const serverUrl =
+        this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
+      this.activeTier = "livekit";
+      this.currentChannelId = channelId;
+      try {
+        const token = await this.generateLiveKitToken(channelId, _nodeId);
+        await this.livekitTransport.join(channelId, serverUrl, token);
+        return;
+      } catch (err) {
+        // Best-effort cleanup in case room.connect() succeeded but a later
+        // step (track publish, mic permission, token accept, etc.) threw.
+        try {
+          await this.livekitTransport.leave();
+        } catch {
+          /* ignore \u2014 already in error path */
+        }
+        this.activeTier = null;
+        this.currentChannelId = null;
+        throw new Error(
+          "Voice privacy mode is enabled but the SFU join failed. " +
+            "Not falling back to P2P mesh because that would expose your IP. " +
+            "Disable \u201CAlways use server\u201D in Settings \u2192 Voice \u2192 Voice Privacy " +
+            "if you accept that risk.",
+          { cause: err }
+        );
+      }
     }
 
+    // preferSfu = false. Size-based routing with mesh as an acceptable fallback.
+    const participantCount = await this.getParticipantCount(channelId);
+    const wantSfu = participantCount >= VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS;
+
     if (wantSfu && hasSfuConfig) {
-      // Attempt LiveKit (SFU). If token generation or the transport join
-      // fails, defensively tear down any partial LiveKit session and fall
-      // through to mesh below rather than leaving the manager in an
-      // inconsistent state or dropping the user with no voice.
-      //
-      // We set activeTier/currentChannelId BEFORE awaiting so that user
-      // actions during the connecting phase (mute, deafen, leave) route
-      // to the right transport. On failure we reset them and let the
-      // mesh fallback path own the final state.
       const serverUrl =
         this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
       this.activeTier = "livekit";
@@ -106,15 +141,9 @@ export class VoiceManager implements IVoiceTransport {
       } catch (err) {
         console.warn(
           "[VoiceManager] LiveKit SFU join failed, falling back to P2P mesh. " +
-            (this.preferSfu
-              ? "Your IP will be visible to other participants."
-              : "Voice quality may degrade in large rooms."),
+            "Voice quality may degrade in large rooms.",
           err
         );
-        // Best-effort cleanup: if room.connect() succeeded but a later step
-        // (track publish, mic permission, etc.) threw, the underlying Room
-        // may still be alive. Ignore errors here — we're already in an
-        // error path and about to hand control to the mesh transport.
         try {
           await this.livekitTransport.leave();
         } catch {
@@ -124,33 +153,20 @@ export class VoiceManager implements IVoiceTransport {
         this.currentChannelId = null;
       }
     } else if (wantSfu && !hasSfuConfig) {
-      // No LiveKit server is configured for this Node. Fall back to mesh,
-      // but the warning message depends on WHY we wanted SFU in the first place:
-      // - If the user opted into SFU-first for privacy, this fallback re-exposes
-      //   their IP - a security concern they should know about.
-      // - If SFU was forced by room size (>= MESH_MAX_PARTICIPANTS), this is
-      //   the pre-existing quality-degradation path with no privacy regression.
-      if (this.preferSfu) {
-        console.warn(
-          "[VoiceManager] SFU preferred for privacy but no LiveKit server is configured for this Node. " +
-            "Falling back to P2P mesh \u2014 your IP will be visible to other participants " +
-            "and voice quality may degrade in large rooms."
-        );
-      } else {
-        // participantCount from getParticipantCount() excludes the local user;
-        // add 1 so the log matches the total room size the user will see.
-        const totalWithSelf = participantCount + 1;
-        console.warn(
-          `[VoiceManager] Room will have ${totalWithSelf} users (limit ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} for P2P mesh) ` +
-            "and no LiveKit server is configured. Using P2P mesh anyway; voice quality may degrade."
-        );
-      }
+      // Large room but no SFU configured. participantCount from
+      // getParticipantCount() excludes the local user; add 1 so the log
+      // matches the total room size the user will see.
+      const totalWithSelf = participantCount + 1;
+      console.warn(
+        `[VoiceManager] Room will have ${totalWithSelf} users (limit ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} for P2P mesh) ` +
+          "and no LiveKit server is configured. Using P2P mesh anyway; voice quality may degrade."
+      );
     }
 
-    // Use mesh (P2P). Set tier before awaiting so mute/deafen/leave
-    // route correctly during the connecting phase. If the mesh join
-    // itself throws, clear state and re-raise so the caller sees the
-    // real failure instead of a phantom-connected session.
+    // Use mesh (P2P). Set tier before awaiting so mute/deafen/leave route
+    // correctly during the connecting phase. If the mesh join itself throws,
+    // clear state and re-raise so the caller sees the real failure instead
+    // of a phantom-connected session.
     this.activeTier = "mesh";
     this.currentChannelId = channelId;
     try {
@@ -304,69 +320,31 @@ export class VoiceManager implements IVoiceTransport {
   }
 
   private async generateLiveKitToken(
-    channelId: string,
-    nodeId: string
+    _channelId: string,
+    _nodeId: string
   ): Promise<string> {
-    // For self-hosted Nodes the Node owner configures the LiveKit API key and
-    // secret in NodeVoiceConfig, and tokens are minted client-side. This is
-    // the trust model documented in SECURITY.md: the Node owner controls the
-    // infrastructure and all users of that Node have access to the secret in
-    // the client bundle. If you're running a Node with untrusted users, you
-    // must run a server-side token endpoint instead and set `useDefaultServer`.
-    const apiKey = this.nodeVoiceConfig?.livekitApiKey;
-    const apiSecret = this.nodeVoiceConfig?.livekitApiSecret;
-    if (!apiKey || !apiSecret) {
-      throw new Error(
-        "LiveKit API key and secret must be configured in Node settings to use SFU mode."
-      );
-    }
-
-    // Room name format: nodeId_channelId (matches the room the SFU expects).
-    const roomName = `${nodeId}_${channelId}`;
-    const now = Math.floor(Date.now() / 1000);
-    const ttlSeconds = 6 * 60 * 60; // 6h; a rejoin refreshes.
-
-    // LiveKit uses a standard JWT (HS256) with a `video` grant. See
-    // https://docs.livekit.io/home/get-started/authentication/ for the shape.
-    const header = { alg: "HS256", typ: "JWT" };
-    const payload = {
-      iss: apiKey,
-      sub: this.publicKey,
-      nbf: now,
-      exp: now + ttlSeconds,
-      name: this.publicKey,
-      video: {
-        room: roomName,
-        roomJoin: true,
-        canPublish: true,
-        canSubscribe: true,
-        canPublishData: true,
-      },
-    };
-
-    const enc = new TextEncoder();
-    const b64url = (bytes: Uint8Array): string => {
-      let str = "";
-      for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
-      return btoa(str)
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/, "");
-    };
-    const b64urlJson = (obj: unknown): string =>
-      b64url(enc.encode(JSON.stringify(obj)));
-
-    const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
-    const key = await crypto.subtle.importKey(
-      "raw",
-      enc.encode(apiSecret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
+    // Token generation is intentionally NOT implemented client-side.
+    //
+    // A previous iteration of this method minted HS256 JWTs directly in the
+    // client using the Node's LiveKit API secret. That approach is unsafe:
+    // distributing the API secret to every Node member means any member can
+    // mint tokens for arbitrary identities, rooms, and grants \u2014 the SFU
+    // has no way to distinguish a legitimate participant from a malicious
+    // one. Encrypting the secret at rest does not help, because the client
+    // needs the plaintext to sign.
+    //
+    // The correct design is a trusted token endpoint (either the community's
+    // default server or a Node-provided endpoint) that:
+    //   1. authenticates the caller (e.g., via a signed Gun-graph challenge),
+    //   2. validates that the caller is allowed to join the requested room,
+    //   3. returns a short-lived, identity- and room-scoped token.
+    //
+    // Until that endpoint exists, SFU joins fail closed \u2014 which for users
+    // with preferSfu=true (the default) is surfaced by join() as a hard
+    // error rather than a silent mesh fallback that would expose their IP.
+    // Tracked in the follow-up issue.
+    throw new Error(
+      "SFU token endpoint not implemented. Nodes does not mint LiveKit tokens client-side because that would require distributing the API secret to every member."
     );
-    const sig = new Uint8Array(
-      await crypto.subtle.sign("HMAC", key, enc.encode(signingInput))
-    );
-    return `${signingInput}.${b64url(sig)}`;
   }
 }
