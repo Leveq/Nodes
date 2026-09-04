@@ -133,7 +133,8 @@ export class VoiceManager implements IVoiceTransport {
       if (this.preferSfu) {
         console.warn(
           "[VoiceManager] SFU preferred for privacy but no LiveKit server is configured for this Node. " +
-            "Falling back to P2P mesh \u2014 your IP will be visible to other participants."
+            "Falling back to P2P mesh \u2014 your IP will be visible to other participants " +
+            "and voice quality may degrade in large rooms."
         );
       } else {
         // participantCount from getParticipantCount() excludes the local user;
@@ -306,37 +307,66 @@ export class VoiceManager implements IVoiceTransport {
     channelId: string,
     nodeId: string
   ): Promise<string> {
-    // For alpha: This is a placeholder.
-    // In production, this would either:
-    // 1. Call a token service endpoint
-    // 2. Generate client-side using livekit-server-sdk (requires API secret exposure)
-    //
-    // For self-hosted Nodes, the Node owner configures their LiveKit API key/secret
-    // and tokens are generated client-side. This is acceptable because all users
-    // are trusted community members and the Node owner controls the infrastructure.
-
-    if (!this.nodeVoiceConfig?.livekitApiKey || !this.nodeVoiceConfig?.livekitApiSecret) {
+    // For self-hosted Nodes the Node owner configures the LiveKit API key and
+    // secret in NodeVoiceConfig, and tokens are minted client-side. This is
+    // the trust model documented in SECURITY.md: the Node owner controls the
+    // infrastructure and all users of that Node have access to the secret in
+    // the client bundle. If you're running a Node with untrusted users, you
+    // must run a server-side token endpoint instead and set `useDefaultServer`.
+    const apiKey = this.nodeVoiceConfig?.livekitApiKey;
+    const apiSecret = this.nodeVoiceConfig?.livekitApiSecret;
+    if (!apiKey || !apiSecret) {
       throw new Error(
         "LiveKit API key and secret must be configured in Node settings to use SFU mode."
       );
     }
 
-    // Room name format: nodeId_channelId
+    // Room name format: nodeId_channelId (matches the room the SFU expects).
     const roomName = `${nodeId}_${channelId}`;
+    const now = Math.floor(Date.now() / 1000);
+    const ttlSeconds = 6 * 60 * 60; // 6h; a rejoin refreshes.
 
-    // For now, throw an error indicating token generation isn't implemented
-    // In a real implementation, you'd use livekit-server-sdk or a JWT library:
-    //
-    // import { AccessToken } from "livekit-server-sdk";
-    // const token = new AccessToken(apiKey, apiSecret, { identity: this.publicKey });
-    // token.addGrant({ room: roomName, roomJoin: true, canPublish: true, canSubscribe: true });
-    // return token.toJwt();
+    // LiveKit uses a standard JWT (HS256) with a `video` grant. See
+    // https://docs.livekit.io/home/get-started/authentication/ for the shape.
+    const header = { alg: "HS256", typ: "JWT" };
+    const payload = {
+      iss: apiKey,
+      sub: this.publicKey,
+      nbf: now,
+      exp: now + ttlSeconds,
+      name: this.publicKey,
+      video: {
+        room: roomName,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      },
+    };
 
-    // Placeholder - will be implemented with proper token generation
-    console.warn(
-      `[VoiceManager] Token generation not yet implemented for room ${roomName}. ` +
-        "Falling back to mesh mode."
+    const enc = new TextEncoder();
+    const b64url = (bytes: Uint8Array): string => {
+      let str = "";
+      for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+      return btoa(str)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+    };
+    const b64urlJson = (obj: unknown): string =>
+      b64url(enc.encode(JSON.stringify(obj)));
+
+    const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(apiSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
     );
-    throw new Error("LiveKit token generation requires server-side implementation.");
+    const sig = new Uint8Array(
+      await crypto.subtle.sign("HMAC", key, enc.encode(signingInput))
+    );
+    return `${signingInput}.${b64url(sig)}`;
   }
 }
