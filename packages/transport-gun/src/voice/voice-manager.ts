@@ -26,8 +26,9 @@ export class VoiceManager implements IVoiceTransport {
   private nodeVoiceConfig: NodeVoiceConfig | null = null;
   private currentChannelId: string | null = null;
   /**
-   * When true (default), always route through LiveKit SFU regardless of
-   * participant count. Hides participant IP addresses from each other.
+   * When true (default), prefer routing through LiveKit SFU regardless of
+   * participant count to hide participant IP addresses from each other.
+   * May fall back to P2P mesh if no SFU is configured or the SFU join fails.
    * Set via {@link setPreferSfu}.
    */
   private preferSfu: boolean = true;
@@ -49,9 +50,12 @@ export class VoiceManager implements IVoiceTransport {
   /**
    * Set the user's privacy preference for voice routing.
    *
-   * - `true` (default): Force SFU for all rooms regardless of size, hiding
-   *   participant IPs from each other.
+   * - `true` (default): Prefer SFU for all rooms regardless of size to hide
+   *   participant IPs from each other. Falls back to P2P mesh (exposing IPs)
+   *   if no SFU is configured for the Node or the SFU join fails.
    * - `false`: Allow P2P mesh for small rooms (lower latency, exposes IPs).
+   *   Rooms that exceed the mesh size limit still escalate to SFU when
+   *   available.
    *
    * Takes effect on next `join()`. Does not affect an in-progress call.
    */
@@ -115,8 +119,11 @@ export class VoiceManager implements IVoiceTransport {
             "Falling back to P2P mesh \u2014 your IP will be visible to other participants."
         );
       } else {
+        // participantCount from getParticipantCount() excludes the local user;
+        // add 1 so the log matches the total room size the user will see.
+        const totalWithSelf = participantCount + 1;
         console.warn(
-          `[VoiceManager] Room already has ${participantCount} users (limit ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} for P2P mesh) ` +
+          `[VoiceManager] Room will have ${totalWithSelf} users (limit ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} for P2P mesh) ` +
             "and no LiveKit server is configured. Using P2P mesh anyway; voice quality may degrade."
         );
       }

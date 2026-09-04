@@ -384,7 +384,7 @@ export function VoiceSettings() {
             </div>
             <div className="text-xs text-nodes-text-muted mt-0.5">
               {preferSfu
-                ? "All voice traffic routes through the LiveKit server. Other participants cannot see your IP address."
+                ? "Voice prefers routing through the LiveKit server so other participants cannot see your IP address. If the server is unavailable, Nodes may fall back to P2P mesh (IP visible)."
                 : `Small rooms (up to ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} users) will use direct P2P connections. Your IP address will be visible to every participant.`}
             </div>
           </div>

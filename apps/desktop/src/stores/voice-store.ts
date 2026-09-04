@@ -12,8 +12,10 @@ interface VoiceSettings {
   noiseSuppression: boolean;
   echoCancellation: boolean;
   /**
-   * When true (default), voice always routes through LiveKit SFU regardless
-   * of participant count. This hides participant IP addresses from each other.
+   * When true (default), voice prefers routing through LiveKit SFU regardless
+   * of participant count to hide participant IP addresses from each other.
+   * May fall back to P2P mesh (exposing IPs) if no SFU is configured or the
+   * SFU join fails.
    * When false, small rooms (up to MESH_MAX_PARTICIPANTS users) use P2P mesh
    * for lower latency, at the cost of exposing IPs to other participants.
    */
