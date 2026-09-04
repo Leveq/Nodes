@@ -97,8 +97,8 @@ export class VoiceManager implements IVoiceTransport {
         );
       } else {
         console.warn(
-          `[VoiceManager] Room has ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS}+ users but no LiveKit server is configured. ` +
-            "Using P2P mesh (voice quality may degrade with more participants)."
+          `[VoiceManager] Room already has ${participantCount} users (limit ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} for P2P mesh) ` +
+            "and no LiveKit server is configured. Using P2P mesh anyway; voice quality may degrade."
         );
       }
     }

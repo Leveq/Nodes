@@ -14,8 +14,8 @@ interface VoiceSettings {
   /**
    * When true (default), voice always routes through LiveKit SFU regardless
    * of participant count. This hides participant IP addresses from each other.
-   * When false, small rooms (< MESH_MAX_PARTICIPANTS) use P2P mesh for lower
-   * latency, at the cost of exposing IPs to other participants.
+   * When false, small rooms (up to MESH_MAX_PARTICIPANTS users) use P2P mesh
+   * for lower latency, at the cost of exposing IPs to other participants.
    */
   preferSfu: boolean;
 }

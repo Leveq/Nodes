@@ -361,7 +361,7 @@ export function VoiceSettings() {
       {/* Privacy */}
       <section>
         <div className="flex items-center gap-2 mb-3">
-          <svg className="w-5 h-5 text-accent-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg aria-hidden="true" focusable="false" className="w-5 h-5 text-accent-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
           <h2 className="text-lg font-semibold text-nodes-text">Voice Privacy</h2>
