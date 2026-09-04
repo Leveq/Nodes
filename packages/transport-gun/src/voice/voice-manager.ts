@@ -84,13 +84,23 @@ export class VoiceManager implements IVoiceTransport {
     }
 
     if (wantSfu && !hasSfuConfig) {
-      // User wants privacy but no SFU is available for this Node.
-      // Fall back to mesh with a loud warning - the user can still opt out
-      // of joining if privacy is critical.
-      console.warn(
-        "[VoiceManager] SFU preferred but no LiveKit server configured for this Node. " +
-          "Falling back to P2P mesh — your IP will be visible to other participants."
-      );
+      // No LiveKit server is configured for this Node. Fall back to mesh,
+      // but the warning message depends on WHY we wanted SFU in the first place:
+      // - If the user opted into SFU-first for privacy, this fallback re-exposes
+      //   their IP - a security concern they should know about.
+      // - If SFU was forced by room size (>= MESH_MAX_PARTICIPANTS), this is
+      //   the pre-existing quality-degradation path with no privacy regression.
+      if (this.preferSfu) {
+        console.warn(
+          "[VoiceManager] SFU preferred for privacy but no LiveKit server is configured for this Node. " +
+            "Falling back to P2P mesh \u2014 your IP will be visible to other participants."
+        );
+      } else {
+        console.warn(
+          `[VoiceManager] Room has ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS}+ users but no LiveKit server is configured. ` +
+            "Using P2P mesh (voice quality may degrade with more participants)."
+        );
+      }
     }
 
     // Use mesh (P2P)

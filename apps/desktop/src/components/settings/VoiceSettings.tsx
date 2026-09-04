@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { VOICE_CONSTANTS } from "@nodes/core";
 import { useVoiceStore } from "../../stores/voice-store";
 
 interface AudioDevice {
@@ -384,7 +385,7 @@ export function VoiceSettings() {
             <div className="text-xs text-nodes-text-muted mt-0.5">
               {preferSfu
                 ? "All voice traffic routes through the LiveKit server. Other participants cannot see your IP address."
-                : "Small rooms (under 7 users) will use direct P2P connections. Your IP address will be visible to every participant."}
+                : `Small rooms (fewer than ${VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS} users) will use direct P2P connections. Your IP address will be visible to every participant.`}
             </div>
           </div>
         </label>
