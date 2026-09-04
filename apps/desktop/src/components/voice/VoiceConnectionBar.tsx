@@ -51,15 +51,25 @@ export function VoiceConnectionBar({
           </div>
           <div className="text-xs text-text-muted flex items-center gap-1">
             {tier === "livekit" ? (
-              <Shield
-                className="w-3 h-3 text-accent-success shrink-0"
-                aria-label="IP hidden via server"
-              />
+              <>
+                <Shield
+                  className="w-3 h-3 text-accent-success shrink-0"
+                  aria-hidden="true"
+                  focusable="false"
+                />
+                <span className="sr-only">IP hidden via server.</span>
+              </>
             ) : tier === "mesh" ? (
-              <ShieldAlert
-                className="w-3 h-3 text-accent-warning shrink-0"
-                aria-label="IP visible to other participants"
-              />
+              <>
+                <ShieldAlert
+                  className="w-3 h-3 text-accent-warning shrink-0"
+                  aria-hidden="true"
+                  focusable="false"
+                />
+                <span className="sr-only">
+                  IP visible to other participants.
+                </span>
+              </>
             ) : null}
             <span className="truncate">{getStatusText()}</span>
           </div>

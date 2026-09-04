@@ -87,15 +87,21 @@ export class VoiceManager implements IVoiceTransport {
 
     if (wantSfu && hasSfuConfig) {
       // Attempt LiveKit (SFU). If token generation or the transport join
-      // fails, fall through to mesh below rather than leaving the manager
-      // in an inconsistent state or dropping the user with no voice.
+      // fails, defensively tear down any partial LiveKit session and fall
+      // through to mesh below rather than leaving the manager in an
+      // inconsistent state or dropping the user with no voice.
+      //
+      // We set activeTier/currentChannelId BEFORE awaiting so that user
+      // actions during the connecting phase (mute, deafen, leave) route
+      // to the right transport. On failure we reset them and let the
+      // mesh fallback path own the final state.
       const serverUrl =
         this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
+      this.activeTier = "livekit";
+      this.currentChannelId = channelId;
       try {
         const token = await this.generateLiveKitToken(channelId, _nodeId);
         await this.livekitTransport.join(channelId, serverUrl, token);
-        this.activeTier = "livekit";
-        this.currentChannelId = channelId;
         return;
       } catch (err) {
         console.warn(
@@ -105,6 +111,17 @@ export class VoiceManager implements IVoiceTransport {
               : "Voice quality may degrade in large rooms."),
           err
         );
+        // Best-effort cleanup: if room.connect() succeeded but a later step
+        // (track publish, mic permission, etc.) threw, the underlying Room
+        // may still be alive. Ignore errors here — we're already in an
+        // error path and about to hand control to the mesh transport.
+        try {
+          await this.livekitTransport.leave();
+        } catch {
+          /* ignore */
+        }
+        this.activeTier = null;
+        this.currentChannelId = null;
       }
     } else if (wantSfu && !hasSfuConfig) {
       // No LiveKit server is configured for this Node. Fall back to mesh,
@@ -129,10 +146,19 @@ export class VoiceManager implements IVoiceTransport {
       }
     }
 
-    // Use mesh (P2P)
-    await this.meshTransport.join(channelId);
+    // Use mesh (P2P). Set tier before awaiting so mute/deafen/leave
+    // route correctly during the connecting phase. If the mesh join
+    // itself throws, clear state and re-raise so the caller sees the
+    // real failure instead of a phantom-connected session.
     this.activeTier = "mesh";
     this.currentChannelId = channelId;
+    try {
+      await this.meshTransport.join(channelId);
+    } catch (err) {
+      this.activeTier = null;
+      this.currentChannelId = null;
+      throw err;
+    }
   }
 
   async leave(): Promise<void> {
