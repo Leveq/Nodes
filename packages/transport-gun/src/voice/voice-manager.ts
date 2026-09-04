@@ -60,30 +60,49 @@ export class VoiceManager implements IVoiceTransport {
   }
 
   async join(channelId: string, _nodeId: string): Promise<void> {
-    // Check current participant count to determine tier
-    const participantCount = await this.getParticipantCount(channelId);
-
-    // Privacy-first routing: by default always use SFU so participant IPs
-    // are hidden from each other. Power users can opt in to P2P mesh via
-    // the voice settings toggle.
-    const wantSfu =
-      this.preferSfu || participantCount >= VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS;
     const hasSfuConfig = Boolean(
       this.nodeVoiceConfig?.livekitUrl || this.nodeVoiceConfig?.useDefaultServer
     );
 
-    if (wantSfu && hasSfuConfig) {
-      // Use LiveKit (SFU)
-      this.activeTier = "livekit";
-      this.currentChannelId = channelId;
-      const serverUrl =
-        this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
-      const token = await this.generateLiveKitToken(channelId, _nodeId);
-      await this.livekitTransport.join(channelId, serverUrl, token);
-      return;
+    // Determine desired tier.
+    //
+    // If preferSfu is true (the default), we always want SFU regardless of
+    // room size. This is the common path and skipping the participant-count
+    // probe avoids ~300ms of unnecessary latency on join.
+    //
+    // Otherwise we need the count to know whether the room has grown past
+    // the mesh limit and must be pushed to SFU for quality reasons.
+    let participantCount = 0;
+    let wantSfu: boolean;
+    if (this.preferSfu) {
+      wantSfu = true;
+    } else {
+      participantCount = await this.getParticipantCount(channelId);
+      wantSfu = participantCount >= VOICE_CONSTANTS.MESH_MAX_PARTICIPANTS;
     }
 
-    if (wantSfu && !hasSfuConfig) {
+    if (wantSfu && hasSfuConfig) {
+      // Attempt LiveKit (SFU). If token generation or the transport join
+      // fails, fall through to mesh below rather than leaving the manager
+      // in an inconsistent state or dropping the user with no voice.
+      const serverUrl =
+        this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
+      try {
+        const token = await this.generateLiveKitToken(channelId, _nodeId);
+        await this.livekitTransport.join(channelId, serverUrl, token);
+        this.activeTier = "livekit";
+        this.currentChannelId = channelId;
+        return;
+      } catch (err) {
+        console.warn(
+          "[VoiceManager] LiveKit SFU join failed, falling back to P2P mesh. " +
+            (this.preferSfu
+              ? "Your IP will be visible to other participants."
+              : "Voice quality may degrade in large rooms."),
+          err
+        );
+      }
+    } else if (wantSfu && !hasSfuConfig) {
       // No LiveKit server is configured for this Node. Fall back to mesh,
       // but the warning message depends on WHY we wanted SFU in the first place:
       // - If the user opted into SFU-first for privacy, this fallback re-exposes
@@ -104,9 +123,9 @@ export class VoiceManager implements IVoiceTransport {
     }
 
     // Use mesh (P2P)
+    await this.meshTransport.join(channelId);
     this.activeTier = "mesh";
     this.currentChannelId = channelId;
-    await this.meshTransport.join(channelId);
   }
 
   async leave(): Promise<void> {
