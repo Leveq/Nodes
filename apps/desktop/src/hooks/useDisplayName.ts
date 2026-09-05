@@ -87,18 +87,22 @@ export function useDisplayName(publicKey: string | undefined): {
       return;
     }
 
-    // Check local cache first
-    if (displayNameCache.has(publicKey)) {
-      setDisplayName(displayNameCache.get(publicKey)!);
+    // Current user: always prefer the live identity display name (and refresh
+    // the cache) so a self name change is reflected immediately, before the
+    // possibly-stale module cache is consulted.
+    if (publicKey === identityPublicKey && identityDisplayName) {
+      if (displayNameCache.get(publicKey) !== identityDisplayName) {
+        displayNameCache.set(publicKey, identityDisplayName);
+        saveDisplayNameCacheToDb();
+      }
+      setDisplayName(identityDisplayName);
       setIsLoading(false);
       return;
     }
 
-    // Check if it's the current user
-    if (publicKey === identityPublicKey && identityDisplayName) {
-      displayNameCache.set(publicKey, identityDisplayName);
-      saveDisplayNameCacheToDb();
-      setDisplayName(identityDisplayName);
+    // Check local cache first
+    if (displayNameCache.has(publicKey)) {
+      setDisplayName(displayNameCache.get(publicKey)!);
       setIsLoading(false);
       return;
     }
