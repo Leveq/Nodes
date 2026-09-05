@@ -106,7 +106,7 @@ function ImageAttachment({
       const cachedBytes = await getCachedDownload(cid);
       if (cachedBytes) {
         console.log('[MessageAttachment] IndexedDB cache hit for CID:', cid, 'Size:', cachedBytes.length);
-        const blob = new Blob([cachedBytes]);
+        const blob = new Blob([cachedBytes as BlobPart]);
         const objectUrl = URL.createObjectURL(blob);
         loadedImageCache.set(cid, objectUrl); // Populate memory cache too
         setImageUrl(objectUrl);

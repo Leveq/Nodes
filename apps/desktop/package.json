@@ -8,6 +8,7 @@
     "build": "tauri build",
     "preview": "vite preview",
     "lint": "eslint src/",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "clean": "rm -rf dist"
   },

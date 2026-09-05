@@ -79,7 +79,7 @@ export async function resizeImageFromBytes(
   maxWidth: number,
   maxHeight: number
 ): Promise<Uint8Array> {
-  const blob = new Blob([data], { type: mimeType });
+  const blob = new Blob([data as BlobPart], { type: mimeType });
   const file = new File([blob], "image", { type: mimeType });
   return resizeImage(file, maxWidth, maxHeight);
 }
@@ -169,7 +169,7 @@ export async function generateThumbnailFromBytes(
   data: Uint8Array,
   mimeType: string
 ): Promise<Uint8Array> {
-  const blob = new Blob([data], { type: mimeType });
+  const blob = new Blob([data as BlobPart], { type: mimeType });
   const file = new File([blob], "image", { type: mimeType });
   return generateThumbnail(file);
 }
@@ -206,7 +206,7 @@ export async function getImageDimensionsFromBytes(
   mimeType: string
 ): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([data], { type: mimeType });
+    const blob = new Blob([data as BlobPart], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const img = new Image();
 
@@ -276,7 +276,7 @@ export function uint8ArrayToDataUrl(
   mimeType: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([data], { type: mimeType });
+    const blob = new Blob([data as BlobPart], { type: mimeType });
     const reader = new FileReader();
 
     reader.onload = () => {
@@ -299,6 +299,6 @@ export function uint8ArrayToObjectUrl(
   data: Uint8Array,
   mimeType: string
 ): string {
-  const blob = new Blob([data], { type: mimeType });
+  const blob = new Blob([data as BlobPart], { type: mimeType });
   return URL.createObjectURL(blob);
 }

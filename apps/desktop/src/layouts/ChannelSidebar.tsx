@@ -3,6 +3,7 @@ import { useNodeStore } from "../stores/node-store";
 import { useMessageStore } from "../stores/message-store";
 import { useVoiceStore } from "../stores/voice-store";
 import { useNotificationStore } from "../stores/notification-store";
+import { useToastStore } from "../stores/toast-store";
 import { CreateChannelModal, NodeSettingsModal, ChannelSettingsModal } from "../components/modals";
 import { ChannelListSkeleton } from "../components/ui";
 import { VoiceChannelEntry, VoiceConnectionBar } from "../components/voice";
@@ -27,6 +28,7 @@ export function ChannelSidebar() {
   // Voice state and transport
   const voiceTransport = useVoiceTransport();
   const voiceState = useVoiceStore((s) => s.state);
+  const addToast = useToastStore((s) => s.addToast);
   
   // Permission checks
   const { canManageChannels, canConnectVoice } = usePermissions();
@@ -48,8 +50,12 @@ export function ChannelSidebar() {
       await voiceTransport.join(channelId, activeNodeId);
     } catch (err) {
       console.error("[Voice] Failed to join channel:", err);
+      addToast(
+        "error",
+        err instanceof Error ? err.message : "Failed to join voice channel"
+      );
     }
-  }, [voiceTransport, activeNodeId, voiceState.channelId]);
+  }, [voiceTransport, activeNodeId, voiceState.channelId, addToast]);
   
   const handleMuteToggle = useCallback(async () => {
     if (!voiceTransport) return;

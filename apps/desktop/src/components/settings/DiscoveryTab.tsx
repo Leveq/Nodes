@@ -19,7 +19,7 @@ export function DiscoveryTab() {
   const channels = useNodeStore((s) => s.channels);
   const members = useNodeStore((s) => s.members);
   const publicKey = useIdentityStore((s) => s.publicKey);
-  const displayName = useIdentityStore((s) => s.displayName);
+  const displayName = useIdentityStore((s) => s.profile?.data.displayName);
   const addToast = useToastStore((s) => s.addToast);
 
   const node = nodes.find((n) => n.id === activeNodeId);

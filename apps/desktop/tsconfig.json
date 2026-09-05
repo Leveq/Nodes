@@ -5,8 +5,8 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["vite/client"]
+    "types": ["vite/client", "@testing-library/jest-dom"]
   },
-  "include": ["src"],
+  "include": ["src", "../../packages/transport-gun/src/gun.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

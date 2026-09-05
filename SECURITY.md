@@ -1,6 +1,6 @@
 # Nodes Security Model
 
-**Version:** 1.0.0-beta · **Last Updated:** March 2026
+**Version:** 1.2.0 · **Last Updated:** September 2026
 
 This document describes the security architecture, threat model, and known limitations of Nodes. It is intended for users who want to understand what Nodes protects against, what it does not, and what is planned for future hardening.
 
@@ -54,7 +54,7 @@ To mitigate this, Nodes binds each epub to its identity keypair via a signed cer
 
 1. During identity creation (or cert regeneration), `KeyManager.generateEpubCert()` signs the payload `{ epub, ts }` with the user's ECDSA identity private key using `SEA.sign`.
 2. The certificate is published alongside the epub in the user's Gun profile (`_epubCert` and `_epub`).
-3. Before initiating a DM key exchange, the sender's client (`DMManager.lookupPeerEpub`) fetches both `_epub` and `_epubCert` from the recipient's profile, then calls `SEA.verify(epubCert, recipientPublicKey)`. If the verified payload's `epub` field matches the fetched epub, the epub is accepted.
+3. Before initiating a DM key exchange, the sender's client (`DMManager.getRecipientEpub`) fetches both `_epub` and `_epubCert` from the recipient's profile, then calls `SEA.verify(epubCert, recipientPublicKey)`. If the verified payload's `epub` field matches the fetched epub, the epub is accepted.
 4. If the epub does not match, or if verification fails, the key exchange is rejected with an error: `epubCert verification failed — possible MITM attack`.
 5. If no cert is found (legacy identity created before this feature), a warning is logged and the epub is used without MITM check (graceful degradation).
 
@@ -78,11 +78,27 @@ Nodes currently uses **static ECDH** for DM encryption. This means the shared se
 
 ### How Message Signing Works
 
-All channel messages are signed with the author's ECDSA private key. When a message is received, the client verifies the signature against the author's public key. This ensures:
+All channel messages are signed with the author's ECDSA private key at the
+time they are written. The signature covers the message id, channel id,
+author key, timestamp, and content.
 
-- Messages cannot be forged by other users or relay peers.
-- Messages cannot be silently modified in transit.
-- Every message has provable authorship.
+**Current limitation — signatures are not yet verified on read.** The
+client generates a signature on send, but the receive paths
+(`subscribe` / `getHistory` in `message-transport.ts`) do **not** call
+`SEA.verify` before rendering. They copy the claimed `authorKey` and
+`signature` straight into the UI. This means:
+
+- A peer or relay with write access to the Gun graph can publish a
+  message with any `authorKey` and it will render as that author.
+- The signature currently proves authorship only to a client that chooses
+  to verify it — which no client does today.
+
+Verifying signatures on read (and expanding the signed envelope to cover
+attachments and reply metadata) is the highest-priority integrity item on
+the roadmap. Until it lands, treat channel-message authorship as
+**unverified**. Note that DMs are different: the DM receive path *does*
+verify signatures (see below), and DM confidentiality does not depend on
+the channel signing path.
 
 ### Replay Protection: Current Status
 
@@ -98,17 +114,42 @@ A replay attack occurs when an attacker captures a valid signed message and re-i
 
 A graph poisoning attack occurs when a malicious peer writes invalid or malicious data to the GunJS graph, hoping other clients will accept and render it.
 
-**How Nodes defends against this:**
+**Current reality — the shared graph is world-writable and largely
+unverified.** Almost all application data (Nodes, channels, channel
+messages, moderation actions, social requests, presence, voice signaling,
+directory listings) lives at root-level public Gun paths, **not** under
+SEA-signed user space. Any connected peer or relay can write to these
+paths with arbitrary content, and clients do not verify a signature on
+read before acting. The permission and ownership checks that exist
+(ban-on-join, owner-only edits, role hierarchy, friend gating, author-only
+edit/delete) run **client-side in the writer's own code path** — a peer
+that writes the graph directly bypasses all of them.
 
-1. **Signature verification on all messages.** Every message includes an ECDSA signature. When a client receives a message, it verifies the signature against the claimed author's public key before rendering. Unsigned messages or messages with invalid signatures are discarded.
+Concretely, a script with a relay WebSocket connection and no private key
+can, today: impersonate any user in any channel; edit or "delete" other
+users' messages; add itself to a Node as owner; kick/ban/unban users;
+rename or delete Nodes and channels; force two users into a friendship;
+DM a user past the friend gate; and spoof presence or typing. A relay can
+do all of the above passively.
 
-2. **Schema validation.** The client validates message structure before processing. Malformed data (missing fields, wrong types, unexpected content) is rejected.
+**What *is* enforced cryptographically:**
 
-3. **Author verification for mutations.** Operations like message editing and deletion verify that the requesting user's public key matches the original author's key. A malicious peer cannot edit or delete another user's messages.
+1. **DM confidentiality and DM authorship.** DMs are E2E encrypted, and the
+   DM receive path verifies signatures. A forged DM cannot be decrypted by
+   the victim unless the attacker is the real counterparty.
+2. **User-space profile data.** Data written under `gun.user()` (the user's
+   own profile and index lists) is SEA-signed and verified by Gun on read.
+3. **epub certificates** bind a user's encryption key to their identity key
+   (MITM protection for DM key exchange).
 
-4. **Permission checks for moderation actions.** Kick, ban, role changes, and channel modifications verify the actor's role and permissions within the Node's permission hierarchy before applying.
-
-**What this means:** A malicious relay or peer can write garbage to the Gun graph, but Nodes clients will ignore it. The graph may contain invalid data, but it won't be rendered or acted upon. The security boundary is at the client's validation layer, not at the network layer — which is the correct design for a trustless P2P system.
+**Planned mitigation.** Phase 1: wrap every shared-graph write in a signed
+envelope (`{ payload, sig }`) and verify it on every read, dropping
+anything whose signature doesn't match the claimed author. Phase 2: move
+Node data under the owner's user space and issue SEA certificates to
+members for the paths they may write, so relays reject unauthorized writes
+outright. Until Phase 1 lands, the security boundary described in older
+versions of this document ("clients validate everything, malicious writes
+are ignored") does **not** hold for channel, moderation, or social data.
 
 ---
 
@@ -123,7 +164,7 @@ A graph poisoning attack occurs when a malicious peer writes invalid or maliciou
 | **Platform censorship** | A Node ban removes you from that community but does not delete your identity. You retain your keypair, profile, and DM history. |
 | **DM content interception** | DMs are E2E encrypted with AES-256-GCM via ECDH key exchange + HKDF key derivation. Relay peers and network observers see only ciphertext. |
 | **DM MITM (epub substitution)** | epub certificates bind each user's encryption public key to their ECDSA identity key. A client verifies the cert before accepting an epub for DM encryption. Relay-level epub substitution is rejected. |
-| **Message forgery** | All messages are ECDSA-signed. A forged message would fail signature verification. |
+| **DM forgery** | DM messages are ECDSA-signed and the signature is verified on receive. A forged DM cannot be decrypted by the recipient. (Channel messages are signed but **not yet verified on read** — see "Data Validation" below.) |
 | **Single point of failure** | The protocol is peer-to-peer. If a relay goes down, clients can connect to other relays or communicate directly. |
 | **Identity theft via server compromise** | Private keys never leave the user's device. There is no server that holds private keys. |
 
@@ -133,15 +174,18 @@ A graph poisoning attack occurs when a malicious peer writes invalid or maliciou
 |--------|---------------|-------|
 | **Device compromise / malware** | Not mitigated | If an attacker has access to your device, they can extract your private key and impersonate you. This is true of all systems that use local key storage, including Signal. |
 | **DM metadata exposure** | Partially mitigated | Message *content* is encrypted, but the GunJS graph structure reveals who communicates with whom and when. Timestamps and participant public keys are visible to anyone who can read the graph. |
-| **Channel message confidentiality** | Not encrypted | Channel messages are signed (authenticity is verified) but not encrypted. Anyone with access to the channel's Gun graph path can read them. This is by design — channels are community spaces, not private conversations. |
+| **Channel message confidentiality** | Not encrypted | Channel messages are signed on send (but not yet verified on read) and not encrypted. Anyone with access to the channel's Gun graph path can read them. This is by design — channels are community spaces, not private conversations. |
 | **IP address exposure** | Partially mitigated | Your IP is always visible to relay peers (Nodes does not route through anonymizing networks). For voice channels, the client defaults to a privacy mode that refuses to connect if the SFU is unavailable rather than silently falling back to P2P mesh, so other participants cannot see your IP without your explicit opt-in. Users who prefer lower latency in small rooms can opt in to P2P mesh in Settings \u2192 Voice \u2192 Voice Privacy, which exposes their IP to other participants. Note that the SFU token endpoint is not yet implemented; until it lands, privacy mode surfaces a configuration error on join. Use a VPN or Tor if relay-level IP privacy is also required. |
 | **Traffic analysis** | Not mitigated | An observer monitoring network traffic can determine that you are using Nodes, estimate message frequency, and identify communication patterns, even without reading message content. |
 | **Key loss** | Not recoverable | If you lose your keypair and have no backup, your identity is permanently inaccessible. There is no password reset, no recovery email, no support team. This is the fundamental tradeoff of self-sovereign identity. |
 | **Relay-level denial of service** | Partially mitigated | The current deployment relies on a single relay cluster. If those relays go down, message persistence is interrupted. The protocol supports multiple relays, and running your own relay mitigates this entirely. |
-| **Compromised relay peer** | Partially mitigated | A malicious relay could drop messages, serve stale data, or log metadata. It cannot forge messages (signature verification prevents this), read DMs (E2E encryption prevents this), steal identities (private keys are never transmitted), or silently substitute a peer's epub (epub certificate verification prevents this for identities that have published a cert). |
+| **Compromised relay peer** | Partially mitigated | A malicious relay could drop messages, serve stale data, or log metadata. It **cannot** read DMs (E2E encryption), steal identities (private keys are never transmitted), or silently substitute a peer's epub (cert verification, for identities with a published cert). It **can**, however, forge or delete channel messages and moderation/social events, because those shared-graph writes are not verified on read (see "Data Validation"). |
 | **Retroactive DM decryption (no forward secrecy)** | Not mitigated | DMs use static ECDH — the same shared secret encrypts all messages between two users. If a private key is compromised in the future, an attacker who recorded past encrypted traffic could decrypt it. See "Forward Secrecy" section above. |
 | **Message replay** | Mostly mitigated | Message IDs and content-addressed graph storage prevent simple replays. A sophisticated attacker could potentially re-place a valid signed message in a different graph context. See "Replay Protection" section above. |
-| **Graph poisoning** | Mitigated | Malicious peers can write invalid data to the Gun graph, but clients validate signatures, schemas, and permissions before rendering. Invalid data is silently discarded. See "Data Validation" section above. |
+| **Graph poisoning / write forgery** | Not mitigated (channel, moderation, social, presence, voice, directory) | Shared-graph paths are world-writable and not verified on read. Any peer or relay can impersonate users, forge or delete channel messages, and forge moderation/social events. Permission checks are client-side in the writer's path and are bypassed by a direct writer. Signed-envelope verification is the top roadmap item. DM content and user-space profile data are **not** affected. |
+| **Channel authorship spoofing** | Not mitigated | Channel messages are signed on send but signatures are not checked on receive, so a claimed `authorKey` is trusted for display, mentions, and permission decisions. See "How Message Signing Works". |
+| **Link-preview / remote-image IP disclosure** | Not mitigated | When link previews are enabled, viewing a message auto-fetches the first URL and loads remote images from author-chosen hosts, revealing every viewer's IP and read time to those hosts. Consider this before posting or opening links from untrusted authors. |
+| **Local plaintext cache** | Not mitigated | Decrypted DMs, message history, and the search index are cached unencrypted in local IndexedDB, protected only by your OS user account. On a shared device, clear app data or use separate OS accounts. |
 
 ---
 
@@ -155,7 +199,7 @@ Identity keypairs are generated client-side using GunJS SEA. The private key nev
 
 Private keys are stored in an **encrypted local keystore** on the user's device:
 
-- **Desktop app (Tauri):** Encrypted in the application's local data directory.
+- **Desktop app (Tauri):** Encrypted in the WebView's `localStorage`, under the application's local data directory (not an OS keychain).
 - **Web client:** Encrypted in browser storage.
 
 The keystore is encrypted using a passphrase-derived key (PBKDF2 via `SEA.work`). A cryptographically random 16-byte salt is generated via `crypto.getRandomValues()` for each save operation and stored in the keystore alongside the ciphertext. This salt is the input to PBKDF2, ensuring that the same passphrase produces a unique derived key for each keystore — preventing precomputed dictionary attacks and rainbow-table attacks on the passphrase.
@@ -249,7 +293,7 @@ For contributors or researchers evaluating the cryptographic model:
 
 1. **HKDF usage** (`deriveEncryptionKey` in `packages/crypto/src/dm-crypto.ts`) follows RFC 5869. The fixed salt `Nodes:v1` is not secret — it is a domain marker. The `info` string provides context binding. This is standard usage and can be analyzed against the RFC.
 2. **epub cert verification** in `packages/transport-gun/src/dm-manager.ts` uses `SEA.verify`, which returns the signed payload if valid or `undefined` if not. The check `verified.epub !== epub` should be evaluated in the context of GunJS SEA's return types.
-3. **PBKDF2 parameterization** (iteration count, hash): GunJS `SEA.work` internals determine these values, and no independent audit has verified them. Formal analysis of the full derivation chain requires auditing GunJS SEA's PBKDF2 implementation.
+3. **PBKDF2 parameterization** (iteration count, hash): GunJS `SEA.work` uses PBKDF2 with SHA-256 at 100,000 iterations (readable in `sea.js`). Formal analysis of the full derivation chain still requires auditing GunJS SEA's PBKDF2 implementation.
 
 ---
 
@@ -330,9 +374,9 @@ Files are shared via IPFS (InterPlanetary File System).
 | Aspect | Current Implementation |
 |--------|----------------------|
 | Upload | Files are uploaded to an IPFS node. The resulting CID (Content Identifier) is shared in the message. |
-| Access control | Anyone with the CID can retrieve the file. CIDs are shared in channel messages (public) or DMs (encrypted). |
+| Access control | Anyone with the CID can retrieve the file. CIDs are shared in channel messages (public). DM file attachments are not implemented, so no file CIDs are shared in DMs today. |
 | Persistence | Files are pinned on the server's IPFS node for availability. Without pinning, files may be garbage collected. |
-| Encryption at rest | Files uploaded in DMs benefit from the CID being inside an encrypted message — but the file itself is not individually encrypted on IPFS. Anyone who obtains the CID can retrieve the file. |
+| Encryption at rest | Files are not individually encrypted on IPFS — anyone who obtains the CID can retrieve the file. (DM file attachments are not implemented; when added they will require client-side encryption before upload.) |
 
 ### Planned Improvements
 
@@ -352,7 +396,7 @@ Files are shared via IPFS (InterPlanetary File System).
 | **Formal audits** | Extensive, peer-reviewed | None (beta, solo developer) | Internal corporate |
 | **Metadata protection** | Sealed sender, minimal metadata | Limited — graph structure exposes patterns | Full metadata access by Discord |
 | **Identity model** | Phone number required | Cryptographic keypair (no PII) | Email + phone + gov ID |
-| **Data storage** | Encrypted on-device only | Encrypted on-device + encrypted in P2P graph | Plaintext on corporate servers |
+| **Data storage** | Encrypted on-device only | Keystore encrypted on-device; local message/DM/search caches are plaintext; channel content is unencrypted in the graph | Plaintext on corporate servers |
 | **Infrastructure** | Centralized Signal servers | Peer-to-peer with optional relays | Centralized corporate servers |
 | **Key management** | Automatic, tied to phone | Manual backup required | N/A (server-managed auth) |
 | **Open source** | Yes (client + server) | Yes (AGPL-3.0) | No |
@@ -373,7 +417,8 @@ These are planned security improvements, roughly ordered by priority.
 
 ### Near-Term
 
-- **Forward secrecy for DMs.** Implement an ephemeral key ratchet so each message (or message chain) uses a unique encryption key derived from short-lived ECDH keypairs. Spent keys are deleted, ensuring past messages cannot be decrypted if a long-term key is later compromised. This is the single highest-priority cryptographic improvement.
+- **Shared-graph write authorization.** Sign every shared-graph write (channels, moderation, social, presence, voice signaling, directory) and verify it on read, then move Node data under the owner's user space with SEA certificates so relays reject unauthorized writes. This closes the impersonation and forged-moderation gap in "Data Validation" and is the highest-priority **integrity** item.
+- **Forward secrecy for DMs.** Implement an ephemeral key ratchet so each message (or message chain) uses a unique encryption key derived from short-lived ECDH keypairs. Spent keys are deleted, ensuring past messages cannot be decrypted if a long-term key is later compromised. This is the highest-priority **confidentiality** improvement.
 - **Replay protection.** Add a monotonic sequence number or channel-scoped nonce to the signed message payload, allowing clients to detect and reject replayed messages placed in unintended graph contexts.
 - **Client-side file encryption.** Encrypt files before IPFS upload so that CID possession alone does not grant access.
 - **Key rotation mechanism.** Allow users to rotate their keypair and broadcast a signed migration notice linking old and new identities.
@@ -411,7 +456,7 @@ Nodes provides meaningful security and privacy improvements over centralized pla
 - ✅ DMs are end-to-end encrypted (ECDH + HKDF + AES-256-GCM).
 - ✅ epub certificate binding prevents relay-level MITM substitution of DM encryption keys (for identities with a published cert).
 - ✅ Keystore and backup files are encrypted with PBKDF2 using a unique random salt per file — dictionary and rainbow-table attacks on passphrases are significantly harder.
-- ✅ All messages are cryptographically signed.
+- ⚠️ Channel messages are signed on send, but signatures are **not yet verified on read** — channel authorship is currently unverified (see Data Validation).
 - ✅ Identity is self-sovereign — no corporation controls your account.
 - ✅ The codebase is open source and auditable.
 - ✅ All cryptographic hardening is covered by automated tests.
