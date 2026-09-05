@@ -1,6 +1,5 @@
 import type { DirectoryListing } from "@nodes/core";
-import { GunInstanceManager } from "./gun-instance";
-
+import { GunInstanceManager } from "./gun-instance";import { ackErrorMessage } from "./gun-write";
 /**
  * DirectoryManager handles listing and browsing public Nodes.
  *
@@ -47,7 +46,7 @@ export class DirectoryManager {
         .get(listing.nodeId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .put(data, (ack: any) => {
-          if (ack.err) reject(new Error(ack.err));
+          if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
           else resolve();
         });
     });

@@ -1,5 +1,6 @@
 import { GunInstanceManager } from "./gun-instance";
 import { IPFSService } from "./ipfs-service";
+import { ackErrorMessage } from "./gun-write";
 
 /**
  * AvatarManager handles avatar upload, storage, and retrieval.
@@ -157,21 +158,21 @@ export class AvatarManager {
 
     await new Promise<void>((resolve, reject) => {
       user.get("profile").get("avatar").put(fullCid, (ack: GunAck) => {
-        if (ack.err) reject(new Error(ack.err));
+        if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
         else resolve();
       });
     });
 
     await new Promise<void>((resolve, reject) => {
       user.get("profile").get("avatarSmall").put(smallCid, (ack: GunAck) => {
-        if (ack.err) reject(new Error(ack.err));
+        if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
         else resolve();
       });
     });
 
     await new Promise<void>((resolve, reject) => {
       user.get("profile").get("_updatedAt").put(Date.now(), (ack: GunAck) => {
-        if (ack.err) reject(new Error(ack.err));
+        if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
         else resolve();
       });
     });

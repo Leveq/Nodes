@@ -8,6 +8,25 @@ interface GunPuttable {
 }
 
 /**
+ * Normalize a Gun ack error into a readable string. Gun types `ack.err` as a
+ * string, but at runtime it is sometimes an object, so `new Error(ack.err)`
+ * (and string interpolation) produced the "[object Object]" seen in toasts.
+ */
+export function ackErrorMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+
+/**
  * Put and wait for the relay's acknowledgement, bounded by a timeout. Gun's
  * plain `.put(data, cb)` never fires the callback if the ack is dropped, which
  * leaves callers hanging forever (e.g. the "stuck on Creating…" bug). This
@@ -29,7 +48,7 @@ export function putWithAck(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (ack && ack.err) reject(new Error(ack.err));
+      if (ack && ack.err) reject(new Error(ackErrorMessage(ack.err)));
       else resolve();
     });
   });

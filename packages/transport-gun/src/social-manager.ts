@@ -1,4 +1,5 @@
 import { GunInstanceManager } from "./gun-instance";
+import { ackErrorMessage } from "./gun-write";
 import type { FriendRequest, Friend, BlockedUser } from "@nodes/core";
 import type { Unsubscribe } from "@nodes/transport";
 
@@ -87,7 +88,7 @@ export class SocialManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to send request: ${ack.err}`));
+            reject(new Error(`Failed to send request: ${ackErrorMessage(ack.err)}`));
             return;
           }
 

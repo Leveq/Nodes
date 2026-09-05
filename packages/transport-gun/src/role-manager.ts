@@ -7,6 +7,7 @@
  */
 
 import { GunInstanceManager } from "./gun-instance";
+import { ackErrorMessage } from "./gun-write";
 import type { Role, RolePermissions, ChannelPermissionOverride } from "@nodes/core";
 import { BUILT_IN_ROLE_IDS, createDefaultRoles, DEFAULT_PERMISSIONS } from "@nodes/core";
 
@@ -192,7 +193,7 @@ export class RoleManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to create role: ${ack.err}`));
+            reject(new Error(`Failed to create role: ${ackErrorMessage(ack.err)}`));
             return;
           }
           resolve(role);
@@ -233,7 +234,7 @@ export class RoleManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to update role: ${ack.err}`));
+            reject(new Error(`Failed to update role: ${ackErrorMessage(ack.err)}`));
             return;
           }
           resolve();
@@ -263,7 +264,7 @@ export class RoleManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to delete role: ${ack.err}`));
+            reject(new Error(`Failed to delete role: ${ackErrorMessage(ack.err)}`));
             return;
           }
           resolve();
@@ -372,7 +373,7 @@ export class RoleManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to set member roles: ${ack.err}`));
+            reject(new Error(`Failed to set member roles: ${ackErrorMessage(ack.err)}`));
             return;
           }
           resolve();
@@ -453,7 +454,7 @@ export class RoleManager {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (ack: any) => {
             if (ack.err) {
-              reject(new Error(`Failed to set channel override: ${ack.err}`));
+              reject(new Error(`Failed to set channel override: ${ackErrorMessage(ack.err)}`));
               return;
             }
             resolve();

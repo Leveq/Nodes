@@ -1,5 +1,6 @@
 import Gun from "gun";
 import "gun/sea";
+import { ackErrorMessage } from "./gun-write";
 
 type GunInstance = ReturnType<typeof Gun>;
 type GunUser = ReturnType<GunInstance["user"]>;
@@ -106,7 +107,7 @@ export class GunInstanceManager {
   static recall(): Promise<unknown> {
     return new Promise((resolve, reject) => {
       GunInstanceManager.user().recall({ sessionStorage: true }, (ack) => {
-        if (ack.err) reject(new Error(ack.err));
+        if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
         else resolve(ack);
       });
     });
