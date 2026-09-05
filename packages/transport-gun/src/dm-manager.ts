@@ -1,6 +1,7 @@
 import Gun from "gun";
 import "gun/sea";
 import { GunInstanceManager } from "./gun-instance";
+import { ackErrorMessage } from "./gun-write";
 import { DMCrypto } from "@nodes/crypto";
 import type { KeyPair } from "@nodes/crypto";
 import type { DMConversation } from "@nodes/core";
@@ -58,7 +59,7 @@ export class DMManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to start conversation: ${ack.err}`));
+            reject(new Error(`Failed to start conversation: ${ackErrorMessage(ack.err)}`));
             return;
           }
           // Record the conversation in the sender's own graph so they see it
@@ -127,7 +128,7 @@ export class DMManager {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .put(message as any, (ack: any) => {
           if (ack.err) {
-            reject(new Error(`Failed to send DM: ${ack.err}`));
+            reject(new Error(`Failed to send DM: ${ackErrorMessage(ack.err)}`));
             return;
           }
 
@@ -650,7 +651,7 @@ export class DMManager {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       user.get("profile").get("_epub").put(epub, (ack: any) => {
         if (ack.err) {
-          reject(new Error(`Failed to publish epub: ${ack.err}`));
+          reject(new Error(`Failed to publish epub: ${ackErrorMessage(ack.err)}`));
           return;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -677,7 +678,7 @@ export class DMManager {
         { lastReadAt: now },
         (ack: { err?: string }) => {
           if (ack.err) {
-            reject(new Error(`Failed to mark conversation as read: ${ack.err}`));
+            reject(new Error(`Failed to mark conversation as read: ${ackErrorMessage(ack.err)}`));
           } else {
             resolve();
           }

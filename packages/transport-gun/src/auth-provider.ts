@@ -1,6 +1,7 @@
 import type { IAuthProvider, KeyPair, Session } from "@nodes/transport";
 import type { User } from "@nodes/core";
 import { GunInstanceManager } from "./gun-instance";
+import { ackErrorMessage } from "./gun-write";
 import { DMCrypto } from "@nodes/crypto";
 import Gun from "gun";
 import "gun/sea";
@@ -39,7 +40,7 @@ export class GunAuthProvider implements IAuthProvider {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       gun.user().auth(keypair as any, (ack: any) => {
         if (ack.err) {
-          reject(new Error(`Authentication failed: ${ack.err}`));
+          reject(new Error(`Authentication failed: ${ackErrorMessage(ack.err)}`));
           return;
         }
 

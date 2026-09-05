@@ -2,7 +2,7 @@ import type { NodeServer, NodeMember, NodeChannel, NodeInvite } from "@nodes/cor
 import { BUILT_IN_ROLE_IDS } from "@nodes/core";
 import { GunInstanceManager } from "./gun-instance";
 import { roleManager } from "./role-manager";
-import { putWithAck } from "./gun-write";
+import { putWithAck, ackErrorMessage } from "./gun-write";
 
 /**
  * NodeManager handles CRUD operations for Nodes (community servers).
@@ -150,7 +150,7 @@ export class NodeManager {
     return new Promise((resolve, reject) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       gun.get("nodes").get(nodeId).put(gunUpdates, (ack: any) => {
-        if (ack.err) reject(new Error(ack.err));
+        if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
         else resolve();
       });
     });

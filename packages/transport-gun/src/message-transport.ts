@@ -7,6 +7,7 @@ import type {
 } from "@nodes/transport";
 import { GunInstanceManager } from "./gun-instance";
 import { signMessage, verifyMessage } from "./message-signing";
+import { ackErrorMessage } from "./gun-write";
 
 /**
  * GunMessageTransport implements IMessageTransport using GunJS.
@@ -120,7 +121,7 @@ export class GunMessageTransport implements IMessageTransport {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (ack: any) => {
             if (ack.err) {
-              reject(new Error(`Failed to send message: ${ack.err}`));
+              reject(new Error(`Failed to send message: ${ackErrorMessage(ack.err)}`));
             } else {
               resolve(fullMessage);
             }
@@ -426,7 +427,7 @@ export class GunMessageTransport implements IMessageTransport {
               },
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (ack: any) => {
-                if (ack.err) reject(new Error(ack.err));
+                if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
                 else resolve();
               }
             );
@@ -524,7 +525,7 @@ export class GunMessageTransport implements IMessageTransport {
               },
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (ack: any) => {
-                if (ack.err) reject(new Error(ack.err));
+                if (ack.err) reject(new Error(ackErrorMessage(ack.err)));
                 else
                   resolve({
                     ...existing,

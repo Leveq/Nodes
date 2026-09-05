@@ -270,6 +270,13 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
 
     await profileManager.saveProfile(newProfile, keypair);
     set({ profile: newProfile, profileVersion: profileVersion + 1 });
+
+    // Refresh the member-sidebar name cache so a self display-name change shows
+    // immediately instead of keeping the previously-resolved value.
+    const publicKey = get().publicKey;
+    if (updates.displayName && publicKey) {
+      useNodeStore.getState().setDisplayNames({ [publicKey]: updates.displayName });
+    }
   },
 
   updateFieldVisibility: async (field, visibility) => {
