@@ -2,6 +2,7 @@ import type { NodeServer, NodeMember, NodeChannel, NodeInvite } from "@nodes/cor
 import { BUILT_IN_ROLE_IDS } from "@nodes/core";
 import { GunInstanceManager } from "./gun-instance";
 import { roleManager } from "./role-manager";
+import { putWithAck } from "./gun-write";
 
 /**
  * NodeManager handles CRUD operations for Nodes (community servers).
@@ -43,46 +44,36 @@ export class NodeManager {
       inviteKey,
     };
 
-    // Store Node in shared graph
-    return new Promise((resolve, reject) => {
-      gun.get("nodes").get(id).put(
-        {
-          id: node.id,
-          name: node.name,
-          description: node.description,
-          icon: node.icon,
-          owner: node.owner,
-          createdAt: node.createdAt,
-          inviteKey: node.inviteKey,
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async (ack: any) => {
-          if (ack.err) {
-            reject(new Error(`Failed to create Node: ${ack.err}`));
-            return;
-          }
-
-          // Initialize built-in roles
-          await roleManager.initializeRoles(id, creatorPublicKey);
-
-          // Add creator as owner member (with owner role)
-          await this.addMember(id, creatorPublicKey, [BUILT_IN_ROLE_IDS.OWNER]);
-
-          // Create default channels
-          await this.createChannel(id, "general", "text", "General discussion", 0);
-          await this.createChannel(id, "welcome", "text", "Welcome new members!", 1);
-
-          // Add to user's Node list
-          user.get("nodes").get(id).put({
-            nodeId: id,
-            joinedAt: now,
-            lastVisited: now,
-          });
-
-          resolve(node);
-        }
-      );
+    // Store Node in shared graph. putWithAck bounds the wait so a dropped ack
+    // fails loudly instead of leaving the UI stuck on "Creating…".
+    await putWithAck(gun.get("nodes").get(id), {
+      id: node.id,
+      name: node.name,
+      description: node.description,
+      icon: node.icon,
+      owner: node.owner,
+      createdAt: node.createdAt,
+      inviteKey: node.inviteKey,
     });
+
+    // Initialize built-in roles
+    await roleManager.initializeRoles(id, creatorPublicKey);
+
+    // Add creator as owner member (with owner role)
+    await this.addMember(id, creatorPublicKey, [BUILT_IN_ROLE_IDS.OWNER]);
+
+    // Create default channels
+    await this.createChannel(id, "general", "text", "General discussion", 0);
+    await this.createChannel(id, "welcome", "text", "Welcome new members!", 1);
+
+    // Add to user's Node list (best-effort)
+    user.get("nodes").get(id).put({
+      nodeId: id,
+      joinedAt: now,
+      lastVisited: now,
+    });
+
+    return node;
   }
 
   /**
@@ -447,21 +438,15 @@ export class NodeManager {
       }
     }
 
-    return new Promise((resolve, reject) => {
-      gun.get("nodes").get(nodeId).get("members").get(publicKey).put(
-        {
-          publicKey,
-          joinedAt: Date.now(),
-          roles: JSON.stringify(roleIds),
-          role: legacyRole,  // Keep legacy field for backwards compat
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (ack: any) => {
-          if (ack.err) reject(new Error(`Failed to add member: ${ack.err}`));
-          else resolve();
-        }
-      );
-    });
+    return putWithAck(
+      gun.get("nodes").get(nodeId).get("members").get(publicKey),
+      {
+        publicKey,
+        joinedAt: Date.now(),
+        roles: JSON.stringify(roleIds),
+        role: legacyRole, // Keep legacy field for backwards compat
+      }
+    );
   }
 
   async getMember(nodeId: string, publicKey: string): Promise<NodeMember | null> {
@@ -554,24 +539,17 @@ export class NodeManager {
       position,
     };
 
-    return new Promise((resolve, reject) => {
-      gun.get("nodes").get(nodeId).get("channels").get(id).put(
-        {
-          id: channel.id,
-          name: channel.name,
-          type: channel.type,
-          topic: channel.topic,
-          nodeId: channel.nodeId,
-          createdAt: channel.createdAt,
-          position: channel.position,
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (ack: any) => {
-          if (ack.err) reject(new Error(ack.err));
-          else resolve(channel);
-        }
-      );
+    // Bounded write so a dropped ack fails instead of hanging the create flow.
+    await putWithAck(gun.get("nodes").get(nodeId).get("channels").get(id), {
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      topic: channel.topic,
+      nodeId: channel.nodeId,
+      createdAt: channel.createdAt,
+      position: channel.position,
     });
+    return channel;
   }
 
   async getChannels(nodeId: string): Promise<NodeChannel[]> {
