@@ -91,33 +91,52 @@ export class NodeManager {
   async getNode(nodeId: string): Promise<NodeServer | null> {
     const gun = GunInstanceManager.get();
 
-    return new Promise((resolve) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      gun.get("nodes").get(nodeId).once((data: any) => {
-        if (!data || !data.id) {
-          resolve(null);
-          return;
-        }
-
-        // Parse theme from JSON string (stored as themeJson to avoid Gun nested-node issues)
-        let theme = undefined;
-        if (data.themeJson) {
-          try { theme = JSON.parse(data.themeJson); } catch { /* ignore */ }
-        }
-
-        resolve({
-          id: data.id,
-          name: data.name || "",
-          description: data.description || "",
-          icon: data.icon || "",
-          owner: data.owner || "",
-          createdAt: data.createdAt || 0,
-          inviteKey: data.inviteKey || "",
-          defaultRoleId: data.defaultRoleId || undefined,
-          theme,
+    // A single .once resolves with undefined before a non-local node has
+    // replicated, which is why joining a fresh invite sometimes throws
+    // "Node not found" and only succeeds on retry. Retry .once until the
+    // node's data arrives (the read itself triggers replication).
+    const readOnce = (): Promise<Record<string, unknown> | null> =>
+      new Promise((resolve) => {
+        let done = false;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        gun.get("nodes").get(nodeId).once((data: any) => {
+          if (done) return;
+          done = true;
+          resolve(data ?? null);
         });
+        setTimeout(() => {
+          if (!done) {
+            done = true;
+            resolve(null);
+          }
+        }, 1500);
       });
-    });
+
+    let data = await readOnce();
+    for (let attempt = 0; (!data || !data.id) && attempt < 3; attempt++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      data = await readOnce();
+    }
+
+    if (!data || !data.id) return null;
+
+    // Parse theme from JSON string (stored as themeJson to avoid Gun nested-node issues)
+    let theme = undefined;
+    if (data.themeJson) {
+      try { theme = JSON.parse(data.themeJson as string); } catch { /* ignore */ }
+    }
+
+    return {
+      id: data.id as string,
+      name: (data.name as string) || "",
+      description: (data.description as string) || "",
+      icon: (data.icon as string) || "",
+      owner: (data.owner as string) || "",
+      createdAt: (data.createdAt as number) || 0,
+      inviteKey: (data.inviteKey as string) || "",
+      defaultRoleId: (data.defaultRoleId as string) || undefined,
+      theme,
+    };
   }
 
   /**
