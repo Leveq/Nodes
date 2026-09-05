@@ -156,48 +156,67 @@ export class ProfileManager {
   ): Promise<Partial<ProfileData> | null> {
     const gun = GunInstanceManager.get();
 
-    return new Promise((resolve) => {
-      gun
-        .user(publicKey)
-        .get("profile")
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .once(async (data: any) => {
-          if (!data) {
+    // A single .once resolves with undefined after Gun's short internal wait,
+    // before a non-local profile has replicated. Retry .once a few times (no
+    // persistent listener, so no shared-chain .off() collision) — the read
+    // itself triggers replication, and a later attempt hits the synced data.
+    const readOnce = (): Promise<Record<string, unknown> | null> =>
+      new Promise((resolve) => {
+        let done = false;
+        gun
+          .user(publicKey)
+          .get("profile")
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .once((data: any) => {
+            if (done) return;
+            done = true;
+            resolve(data ?? null);
+          });
+        setTimeout(() => {
+          if (!done) {
+            done = true;
             resolve(null);
-            return;
           }
+        }, 1500);
+      });
 
-          const fields: (keyof ProfileData)[] = [
-            "displayName",
-            "bio",
-            "avatar",
-            "banner",
-            "status",
-            "visibility",
-          ];
+    let data = await readOnce();
+    for (let attempt = 0; !data && attempt < 3; attempt++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      data = await readOnce();
+    }
 
-          const profileData: Record<string, string> = {};
-          const accountType = (data._accountType as string) || "public";
+    if (!data) return null;
 
-          for (const field of fields) {
-            const rawValue = data[field] as string | undefined;
-            const visibilityData = data._visibility as Record<string, string> | undefined;
-            const vis = visibilityData?.[field] || "public";
+    const fields: (keyof ProfileData)[] = [
+      "displayName",
+      "bio",
+      "avatar",
+      "banner",
+      "status",
+      "visibility",
+    ];
 
-            // We can only read public fields of other users without a shared key
-            if (vis === "public" && rawValue) {
-              profileData[field] = rawValue;
-            }
-            // For non-public fields, we'd need a shared key (implemented in Milestone 1.6)
-            // For now, these fields are simply not included in the response
-          }
+    const profileData: Record<string, string> = {};
+    const accountType = (data._accountType as string) || "public";
 
-          // Always include account type so UI knows to show "Request Access" for private accounts
-          profileData.visibility = accountType;
+    for (const field of fields) {
+      const rawValue = data[field] as string | undefined;
+      const visibilityData = data._visibility as Record<string, string> | undefined;
+      const vis = visibilityData?.[field] || "public";
 
-          resolve(profileData as unknown as Partial<ProfileData>);
-        });
-    });
+      // We can only read public fields of other users without a shared key
+      if (vis === "public" && rawValue) {
+        profileData[field] = rawValue;
+      }
+      // For non-public fields, we'd need a shared key (implemented in Milestone 1.6)
+      // For now, these fields are simply not included in the response
+    }
+
+    // Always include account type so UI knows to show "Request Access" for private accounts
+    profileData.visibility = accountType;
+
+    return profileData as unknown as Partial<ProfileData>;
   }
 
   /**

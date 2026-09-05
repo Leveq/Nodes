@@ -167,13 +167,16 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
     for (const member of nodeMembers) {
       try {
         const profile = await profileManager.getPublicProfile(member.publicKey);
-        names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
+        // Only record resolved names; skip unresolved so they retry later.
+        if (profile?.displayName) {
+          names[member.publicKey] = profile.displayName;
+        }
         // Cache avatar CID for use by Avatar components
         if (profile?.avatar) {
           setCachedAvatarCid(member.publicKey, profile.avatar);
         }
       } catch {
-        names[member.publicKey] = member.publicKey.slice(0, 8);
+        // Leave unresolved; a later refresh retries.
       }
     }
     
@@ -196,13 +199,16 @@ export function MemberSidebar({ onUserClick }: { onUserClick?: (userId: string) 
       for (const member of membersNeedingNames) {
         try {
           const profile = await profileManager.getPublicProfile(member.publicKey);
-          names[member.publicKey] = profile?.displayName || member.publicKey.slice(0, 8);
+          // Only record resolved names; skip unresolved so they retry later.
+          if (profile?.displayName) {
+            names[member.publicKey] = profile.displayName;
+          }
           // Cache avatar CID for use by Avatar components
           if (profile?.avatar) {
             setCachedAvatarCid(member.publicKey, profile.avatar);
           }
         } catch {
-          names[member.publicKey] = member.publicKey.slice(0, 8);
+          // Leave unresolved; the effect retries when members/cache change.
         }
       }
       
