@@ -134,23 +134,24 @@ export function useDisplayName(publicKey: string | undefined): {
       .getPublicProfile(publicKey)
       .then((profile) => {
         if (cancelled) return;
-        const name =
-          profile?.displayName || `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
-        displayNameCache.set(publicKey, name);
-        saveDisplayNameCacheToDb();
-        setDisplayName(name);
-        
-        // Also cache avatar CID if present
-        if (profile?.avatar) {
-          avatarCidCache.set(publicKey, profile.avatar);
+        if (profile?.displayName) {
+          // Only persist a real resolved name.
+          displayNameCache.set(publicKey, profile.displayName);
+          saveDisplayNameCacheToDb();
+          setDisplayName(profile.displayName);
+          if (profile.avatar) {
+            avatarCidCache.set(publicKey, profile.avatar);
+          }
+        } else {
+          // Profile not replicated yet. Show the truncated key but do NOT cache
+          // it, so a later mount retries once the profile syncs.
+          setDisplayName(`${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`);
         }
       })
       .catch(() => {
         if (cancelled) return;
-        const fallback = `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`;
-        displayNameCache.set(publicKey, fallback);
-        saveDisplayNameCacheToDb();
-        setDisplayName(fallback);
+        // Transient failure — show hex without caching so it can recover.
+        setDisplayName(`${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`);
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
