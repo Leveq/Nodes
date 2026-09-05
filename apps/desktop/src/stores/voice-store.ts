@@ -11,14 +11,38 @@ interface VoiceSettings {
   pushToTalkKey: string | null;
   noiseSuppression: boolean;
   echoCancellation: boolean;
+  /**
+   * When true (default, "privacy mode"), voice routes through the LiveKit
+   * SFU regardless of participant count to hide participant IP addresses
+   * from each other. Fails closed if no SFU is configured or the SFU join
+   * fails, rather than silently exposing IPs by falling back to mesh.
+   * When false, small rooms (up to MESH_MAX_PARTICIPANTS users) use P2P
+   * mesh for lower latency, at the cost of exposing IPs to other
+   * participants.
+   */
+  preferSfu: boolean;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-function saveSettingsDebounced(settings: VoiceSettings) {
+function snapshotSettings(): VoiceSettings {
+  const s = useVoiceStore.getState();
+  return {
+    inputDeviceId: s.inputDeviceId,
+    outputDeviceId: s.outputDeviceId,
+    inputVolume: s.inputVolume,
+    pushToTalk: s.pushToTalk,
+    pushToTalkKey: s.pushToTalkKey,
+    noiseSuppression: s.noiseSuppression,
+    echoCancellation: s.echoCancellation,
+    preferSfu: s.preferSfu,
+  };
+}
+
+function saveSettingsDebounced() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    setCache(CacheKeys.voiceSettings(), settings).catch((err) =>
+    setCache(CacheKeys.voiceSettings(), snapshotSettings()).catch((err) =>
       console.warn("[VoiceStore] Failed to save settings:", err)
     );
   }, 500);
@@ -42,6 +66,7 @@ interface VoiceStore {
   pushToTalkKey: string | null;
   noiseSuppression: boolean;
   echoCancellation: boolean;
+  preferSfu: boolean;
   
   // Actions
   setState: (state: VoiceState) => void;
@@ -53,6 +78,7 @@ interface VoiceStore {
   setPushToTalk: (enabled: boolean, key?: string) => void;
   setNoiseSuppression: (enabled: boolean) => void;
   setEchoCancellation: (enabled: boolean) => void;
+  setPreferSfu: (prefer: boolean) => void;
   
   // Participant helpers
   updateParticipantSpeaking: (publicKey: string, speaking: boolean) => void;
@@ -86,6 +112,7 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
   pushToTalkKey: null,
   noiseSuppression: true,
   echoCancellation: true,
+  preferSfu: true,
   
   setState: (state) => set({ state }),
   
@@ -95,39 +122,38 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
   
   setInputDevice: (deviceId) => {
     set({ inputDeviceId: deviceId });
-    const s = useVoiceStore.getState();
-    saveSettingsDebounced({ inputDeviceId: deviceId, outputDeviceId: s.outputDeviceId, inputVolume: s.inputVolume, pushToTalk: s.pushToTalk, pushToTalkKey: s.pushToTalkKey, noiseSuppression: s.noiseSuppression, echoCancellation: s.echoCancellation });
+    saveSettingsDebounced();
   },
   
   setOutputDevice: (deviceId) => {
     set({ outputDeviceId: deviceId });
-    const s = useVoiceStore.getState();
-    saveSettingsDebounced({ inputDeviceId: s.inputDeviceId, outputDeviceId: deviceId, inputVolume: s.inputVolume, pushToTalk: s.pushToTalk, pushToTalkKey: s.pushToTalkKey, noiseSuppression: s.noiseSuppression, echoCancellation: s.echoCancellation });
+    saveSettingsDebounced();
   },
   
   setInputVolume: (volume) => {
     const clamped = Math.max(0, Math.min(100, volume));
     set({ inputVolume: clamped });
-    const s = useVoiceStore.getState();
-    saveSettingsDebounced({ inputDeviceId: s.inputDeviceId, outputDeviceId: s.outputDeviceId, inputVolume: clamped, pushToTalk: s.pushToTalk, pushToTalkKey: s.pushToTalkKey, noiseSuppression: s.noiseSuppression, echoCancellation: s.echoCancellation });
+    saveSettingsDebounced();
   },
   
   setPushToTalk: (enabled, key) => {
     set({ pushToTalk: enabled, pushToTalkKey: key ?? null });
-    const s = useVoiceStore.getState();
-    saveSettingsDebounced({ inputDeviceId: s.inputDeviceId, outputDeviceId: s.outputDeviceId, inputVolume: s.inputVolume, pushToTalk: enabled, pushToTalkKey: key ?? null, noiseSuppression: s.noiseSuppression, echoCancellation: s.echoCancellation });
+    saveSettingsDebounced();
   },
   
   setNoiseSuppression: (enabled) => {
     set({ noiseSuppression: enabled });
-    const s = useVoiceStore.getState();
-    saveSettingsDebounced({ inputDeviceId: s.inputDeviceId, outputDeviceId: s.outputDeviceId, inputVolume: s.inputVolume, pushToTalk: s.pushToTalk, pushToTalkKey: s.pushToTalkKey, noiseSuppression: enabled, echoCancellation: s.echoCancellation });
+    saveSettingsDebounced();
   },
   
   setEchoCancellation: (enabled) => {
     set({ echoCancellation: enabled });
-    const s = useVoiceStore.getState();
-    saveSettingsDebounced({ inputDeviceId: s.inputDeviceId, outputDeviceId: s.outputDeviceId, inputVolume: s.inputVolume, pushToTalk: s.pushToTalk, pushToTalkKey: s.pushToTalkKey, noiseSuppression: s.noiseSuppression, echoCancellation: enabled });
+    saveSettingsDebounced();
+  },
+  
+  setPreferSfu: (prefer) => {
+    set({ preferSfu: prefer });
+    saveSettingsDebounced();
   },
   
   updateParticipantSpeaking: (publicKey, speaking) => set((state) => ({
@@ -148,6 +174,8 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
           pushToTalkKey: saved.pushToTalkKey,
           noiseSuppression: saved.noiseSuppression,
           echoCancellation: saved.echoCancellation,
+          // Default to true for users upgrading from versions before #66
+          preferSfu: saved.preferSfu ?? true,
         });
       }
     } catch (err) {

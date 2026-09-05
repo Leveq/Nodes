@@ -134,7 +134,7 @@ A graph poisoning attack occurs when a malicious peer writes invalid or maliciou
 | **Device compromise / malware** | Not mitigated | If an attacker has access to your device, they can extract your private key and impersonate you. This is true of all systems that use local key storage, including Signal. |
 | **DM metadata exposure** | Partially mitigated | Message *content* is encrypted, but the GunJS graph structure reveals who communicates with whom and when. Timestamps and participant public keys are visible to anyone who can read the graph. |
 | **Channel message confidentiality** | Not encrypted | Channel messages are signed (authenticity is verified) but not encrypted. Anyone with access to the channel's Gun graph path can read them. This is by design — channels are community spaces, not private conversations. |
-| **IP address exposure** | Not mitigated | Nodes does not route traffic through anonymizing networks. Your IP address is visible to relay peers and, in WebRTC voice connections, to other participants. Use a VPN or Tor if IP privacy is required. |
+| **IP address exposure** | Partially mitigated | Your IP is always visible to relay peers (Nodes does not route through anonymizing networks). For voice channels, the client defaults to a privacy mode that refuses to connect if the SFU is unavailable rather than silently falling back to P2P mesh, so other participants cannot see your IP without your explicit opt-in. Users who prefer lower latency in small rooms can opt in to P2P mesh in Settings \u2192 Voice \u2192 Voice Privacy, which exposes their IP to other participants. Note that the SFU token endpoint is not yet implemented; until it lands, privacy mode surfaces a configuration error on join. Use a VPN or Tor if relay-level IP privacy is also required. |
 | **Traffic analysis** | Not mitigated | An observer monitoring network traffic can determine that you are using Nodes, estimate message frequency, and identify communication patterns, even without reading message content. |
 | **Key loss** | Not recoverable | If you lose your keypair and have no backup, your identity is permanently inaccessible. There is no password reset, no recovery email, no support team. This is the fundamental tradeoff of self-sovereign identity. |
 | **Relay-level denial of service** | Partially mitigated | The current deployment relies on a single relay cluster. If those relays go down, message persistence is interrupted. The protocol supports multiple relays, and running your own relay mitigates this entirely. |
@@ -274,19 +274,52 @@ Nodes relies on GunJS for its P2P data layer. This comes with specific security 
 
 ## Voice and Video Security
 
-### WebRTC (P2P Mesh, ≤6 participants)
+### Routing modes
 
-- Audio/video streams are encrypted with **DTLS-SRTP** (Datagram Transport Layer Security for Secure Real-time Transport Protocol).
+Voice is routed through one of two transports. Which one is used is
+controlled by the user's **Voice Privacy** preference in Settings, not by
+room size:
+
+- **Privacy mode (`preferSfu = true`, the default).** The client refuses to
+  connect via P2P mesh; all voice traffic must go through a LiveKit SFU.
+  If no SFU is configured for the Node or the SFU join fails, the join
+  errors out rather than silently exposing the user's IP.
+- **P2P-allowed mode (`preferSfu = false`, opt-in).** Small rooms (up to
+  `MESH_MAX_PARTICIPANTS`, currently 6) connect over WebRTC P2P mesh for
+  lower latency. Larger rooms escalate to the SFU when available, or fall
+  back to mesh with a quality warning if no SFU is configured.
+
+The routing model above describes the current *client* behavior. Actually
+minting SFU tokens requires a trusted server-side endpoint that is not
+yet part of this release; until that lands, privacy mode surfaces a
+configuration error on join rather than silently downgrading.
+
+### WebRTC P2P mesh
+
+- Audio/video streams are encrypted with **DTLS-SRTP** (Datagram Transport
+  Layer Security for Secure Real-time Transport Protocol).
 - Encryption keys are negotiated per session between peers.
-- Streams flow directly between participants — no server handles unencrypted media.
-- **IP addresses are visible** to other participants in the mesh. This is inherent to WebRTC P2P.
+- Streams flow directly between participants \u2014 no server handles
+  unencrypted media.
+- **IP addresses are visible** to other participants in the mesh. This is
+  inherent to WebRTC P2P and is why privacy mode refuses this transport.
 
-### LiveKit SFU (7+ participants)
+### LiveKit SFU
 
-- The LiveKit SFU (Selective Forwarding Unit) routes encrypted media between participants.
+- The LiveKit SFU (Selective Forwarding Unit) routes encrypted media
+  between participants.
 - Streams are encrypted in transit between clients and the SFU.
-- The SFU has access to media streams in order to forward them. This is a fundamental limitation of SFU architecture — it is not end-to-end encrypted.
-- **Mitigation:** Communities can self-host their own LiveKit instance, keeping voice infrastructure under their control.
+- The SFU has access to media streams in order to forward them. This is a
+  fundamental limitation of SFU architecture \u2014 it is not end-to-end
+  encrypted.
+- **IP addresses are hidden** from other participants; only the SFU sees
+  each participant's IP.
+- **Mitigation for SFU trust:** Communities can self-host their own
+  LiveKit instance, keeping voice infrastructure under their control.
+- **Token authorization:** Tokens must be minted by a trusted server-side
+  endpoint. Client-side token minting is not supported because it would
+  require distributing the SFU API secret to every Node member, which
+  would let any member impersonate any other in a voice room.
 
 ---
 
