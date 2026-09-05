@@ -195,7 +195,7 @@ export class MeshVoiceTransport {
         .get("voice")
         .get(channelId)
         .get("signaling")
-        .get(this.publicKey); // Messages TO us
+        .get(this.signalKey(this.publicKey)); // Messages TO us (shortened key)
       
       // For each fromKey, subscribe to their messages (only once per fromKey)
       const fromKeyRef = signalingBaseRef.map();
@@ -236,7 +236,9 @@ export class MeshVoiceTransport {
             
             if (signal.type && signal.data) {
               console.log(`[MeshVoice] Processing ${signal.type} from ${fromKey.slice(0, 8)}`);
-              await this.handleSignalingMessage(fromKey, signal);
+              // Use the full sender key from the payload for peer identity, not
+              // the shortened graph key.
+              await this.handleSignalingMessage(signal.from || fromKey, signal);
             }
           } catch (e) {
             console.error("[MeshVoice] Error handling signaling:", e);
@@ -519,6 +521,18 @@ export class MeshVoiceTransport {
   }
 
   /**
+   * Short, filesystem-safe key for a pubkey used in signaling graph paths.
+   * Full SEA pubkeys (~87 chars, containing ".") made two-key signaling paths
+   * exceed the filesystem's filename limit, which surfaced as ENOSPC on the
+   * relay's radisk and poisoned unrelated writes. The first 32 chars are before
+   * the "." and are collision-free for a voice room; peer identity still uses
+   * the full key carried in the signal payload's `from`.
+   */
+  private signalKey(pub: string): string {
+    return pub.slice(0, 32).replace(/\./g, "_");
+  }
+
+  /**
    * Send a signaling message to a peer via the Gun graph.
    */
   private sendSignalingMessage(
@@ -533,13 +547,14 @@ export class MeshVoiceTransport {
     console.log(`[MeshVoice] Sending ${signal.type} via Gun: ${path}`);
 
     // Write to: voice/{channelId}/signaling/{toKey}/{fromKey}/{messageId}
-    // Using unique messageId so each message is preserved (not overwritten)
+    // Keys are shortened for the graph path; the full sender key travels in the
+    // payload's `from`. Using unique messageId so each message is preserved.
     gun
       .get("voice")
       .get(this.channelId)
       .get("signaling")
-      .get(toKey)
-      .get(this.publicKey)
+      .get(this.signalKey(toKey))
+      .get(this.signalKey(this.publicKey))
       .get(messageId)
       .put(JSON.stringify({ ...signal, from: this.publicKey, timestamp: Date.now() }));
   }

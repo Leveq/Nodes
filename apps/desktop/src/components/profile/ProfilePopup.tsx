@@ -24,6 +24,7 @@ export function ProfilePopup({ publicKey, onClose, onEditProfile, position }: Pr
   const myPublicKey = useIdentityStore((s) => s.publicKey);
   const keypair = useIdentityStore((s) => s.keypair);
   const myProfile = useIdentityStore((s) => s.profile);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
   const resolveProfile = useIdentityStore((s) => s.resolveProfile);
   
   const isFriend = useSocialStore((s) => s.isFriend);
@@ -190,6 +191,7 @@ export function ProfilePopup({ publicKey, onClose, onEditProfile, position }: Pr
               publicKey={publicKey}
               displayName={displayName}
               size="lg"
+              avatarVersion={isOwnProfile ? avatarVersion : undefined}
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
