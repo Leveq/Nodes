@@ -1,5 +1,3 @@
-import Gun from "gun";
-import "gun/sea";
 import type {
   IMessageTransport,
   TransportMessage,
@@ -8,9 +6,7 @@ import type {
   HistoryOpts,
 } from "@nodes/transport";
 import { GunInstanceManager } from "./gun-instance";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const SEA = Gun.SEA as any;
+import { signMessage, verifyMessage } from "./message-signing";
 
 /**
  * GunMessageTransport implements IMessageTransport using GunJS.
@@ -59,15 +55,24 @@ export class GunMessageTransport implements IMessageTransport {
     const id = providedId || generateMessageId();
     const timestamp = Date.now();
 
-    // Sign the message content for verification
-    const dataToSign = JSON.stringify({
-      id,
-      content,
-      timestamp,
-      authorKey,
-      channelId,
-    });
-    const signature = await SEA.sign(dataToSign, pair);
+    // Sign the canonical envelope over the stored field shapes (attachments and
+    // replyTo are stringified before signing so read-side verification matches).
+    const replyToStr = replyTo ? JSON.stringify(replyTo) : null;
+    const attachmentsStr = attachments ?? null;
+    const signature = await signMessage(
+      {
+        id,
+        channelId,
+        authorKey,
+        timestamp,
+        type,
+        content,
+        attachments: attachmentsStr,
+        replyTo: replyToStr,
+        signedBy: authorKey,
+      },
+      pair
+    );
 
     const fullMessage: TransportMessage & { attachments?: string } = {
       id,
@@ -77,6 +82,8 @@ export class GunMessageTransport implements IMessageTransport {
       channelId,
       type,
       signature,
+      signedBy: authorKey,
+      verified: true,
     };
 
     // Add attachments if present
@@ -106,6 +113,7 @@ export class GunMessageTransport implements IMessageTransport {
             channelId: fullMessage.channelId,
             type: fullMessage.type,
             signature: fullMessage.signature,
+            signedBy: authorKey,
             ...(attachments ? { attachments } : {}),
             ...(replyTo ? { replyTo: JSON.stringify(replyTo) } : {}),
           },
@@ -150,7 +158,7 @@ export class GunMessageTransport implements IMessageTransport {
       .get("messages")
       .map()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on((data: any, _key: string) => {
+      .on(async (data: any, _key: string) => {
         if (!data || !data.id || data.id === "_") return;
 
         // Skip Gun metadata - but allow messages with attachments even if content is empty
@@ -176,6 +184,10 @@ export class GunMessageTransport implements IMessageTransport {
           console.log('[MessageTransport] Message updated:', data.id, '(content/edited/deleted changed)');
         }
 
+        // Verify the signature (soft-launch: unverifiable messages still render
+        // with verified=false so a migration window doesn't wipe history).
+        const verified = await verifyMessage(data);
+
         const message: TransportMessage & { attachments?: string } = {
           id: data.id,
           content: data.content || "",
@@ -184,6 +196,8 @@ export class GunMessageTransport implements IMessageTransport {
           channelId: data.channelId || channelId,
           type: data.type || "text",
           signature: data.signature,
+          signedBy: data.signedBy || data.authorKey,
+          verified,
           editedAt: data.editedAt,
           edited: data.edited,
           deleted: data.deleted,
@@ -259,10 +273,12 @@ export class GunMessageTransport implements IMessageTransport {
         .get("messages")
         .map()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .once((data: any) => {
+        .once(async (data: any) => {
           if (!data || !data.id || typeof data !== "object") return;
           // Allow messages with attachments even if content is empty
           if (!data.content && !data.attachments) return;
+
+          const verified = await verifyMessage(data);
 
           const msg: TransportMessage & { attachments?: string } = {
             id: data.id,
@@ -272,6 +288,8 @@ export class GunMessageTransport implements IMessageTransport {
             channelId: data.channelId || channelId,
             type: data.type || "text",
             signature: data.signature,
+            signedBy: data.signedBy || data.authorKey,
+            verified,
             editedAt: data.editedAt,
             edited: data.edited,
             deleted: data.deleted,
@@ -366,15 +384,28 @@ export class GunMessageTransport implements IMessageTransport {
 
           const deletedAt = Date.now();
 
-          // Re-sign the deleted message
-          const dataToSign = JSON.stringify({
-            id: messageId,
-            content: "[deleted]",
-            timestamp: existing.timestamp,
-            authorKey: existing.authorKey,
-            channelId,
-          });
-          const signature = await SEA.sign(dataToSign, pair);
+          // Re-sign the canonical envelope over the post-delete state. Author-only
+          // for now, so signedBy == authorKey; a future moderator delete will set
+          // signedBy to the moderator and add an authorization check.
+          const signature = await signMessage(
+            {
+              id: messageId,
+              channelId,
+              authorKey: existing.authorKey,
+              timestamp: existing.timestamp,
+              type: existing.type,
+              content: "[deleted]",
+              attachments: null,
+              replyTo: existing.replyTo ?? null,
+              edited: existing.edited,
+              editedAt: existing.editedAt ?? null,
+              deleted: true,
+              deletedAt,
+              deletedBy: publicKey,
+              signedBy: publicKey,
+            },
+            pair
+          );
 
           gun
             .get("channels")
@@ -387,6 +418,7 @@ export class GunMessageTransport implements IMessageTransport {
                 deleted: true,
                 deletedAt,
                 deletedBy: publicKey,
+                signedBy: publicKey,
                 signature,
                 // Clear sensitive data
                 attachments: null,
@@ -455,8 +487,24 @@ export class GunMessageTransport implements IMessageTransport {
             editedAt: editedAt,
           });
 
-          const signature = await SEA.sign(
-            JSON.stringify({ id: messageId, content: newContent, editedAt }),
+          // Re-sign the canonical envelope over the post-edit state.
+          const signature = await signMessage(
+            {
+              id: messageId,
+              channelId,
+              authorKey: existing.authorKey,
+              timestamp: existing.timestamp,
+              type: existing.type,
+              content: newContent,
+              attachments: existing.attachments ?? null,
+              replyTo: existing.replyTo ?? null,
+              edited: true,
+              editedAt,
+              deleted: existing.deleted,
+              deletedAt: existing.deletedAt ?? null,
+              deletedBy: existing.deletedBy ?? null,
+              signedBy: existing.authorKey,
+            },
             pair
           );
 
@@ -469,6 +517,7 @@ export class GunMessageTransport implements IMessageTransport {
               {
                 content: newContent,
                 signature,
+                signedBy: existing.authorKey,
                 edited: true,
                 editedAt,
                 editHistory: JSON.stringify(editHistory),
