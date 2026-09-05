@@ -61,17 +61,16 @@ export class DMManager {
             reject(new Error(`Failed to start conversation: ${ack.err}`));
             return;
           }
-          // Fire-and-forget the user graph and inbox writes (these are best-effort)
+          // Record the conversation in the sender's own graph so they see it
+          // locally. We deliberately do NOT write the recipient's dm-inbox here:
+          // that entry (and the resulting notification/thread) is created by
+          // sendMessage on the first real message, so the recipient is never
+          // notified of an empty conversation.
           user.get("dms").get(conversationId).put({
             conversationId,
             recipientKey,
             startedAt: now,
             lastReadAt: now,
-          });
-          gun.get("dm-inbox").get(recipientKey).get(conversationId).put({
-            conversationId,
-            senderKey: myKeypair.pub,
-            startedAt: now,
           });
           resolve(conversationId);
         }

@@ -185,8 +185,15 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
       // Subscribe to request inbox for real-time incoming
       const inboxSub = socialManager.subscribeInbox(myKey, async (requestId, fromKey) => {
-        // Validate by checking the actual request
-        const request = await socialManager.getRequest(requestId);
+        // The inbox pointer often arrives before the requests/{id} node has
+        // replicated, so getRequest returns null on the first try. Retry a few
+        // times before giving up, otherwise the FR only appears after a reload.
+        let request = await socialManager.getRequest(requestId);
+        for (let attempt = 0; !request && attempt < 3; attempt++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          if (get().activeMyKey !== myKey) return; // re-initialized meanwhile
+          request = await socialManager.getRequest(requestId);
+        }
         if (get().activeMyKey !== myKey) {
           return; // Stale subscription — re-initialized with a different key
         }
