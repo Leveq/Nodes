@@ -62,7 +62,7 @@ export class FileCrypto {
     }
 
     // Convert base64 back to bytes
-    return base64ToUint8Array(base64);
+    return base64ToUint8Array(base64 as string);
   }
 
   /**
@@ -98,7 +98,7 @@ export class FileCrypto {
     if (!filename) {
       throw new Error("Failed to decrypt filename");
     }
-    return filename;
+    return filename as string;
   }
 }
 

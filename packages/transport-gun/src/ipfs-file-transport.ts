@@ -157,7 +157,7 @@ export class IPFSFileTransport implements IFileTransport {
    */
   async download(cid: string): Promise<Blob> {
     const data = await IPFSService.download(cid);
-    return new Blob([data]);
+    return new Blob([data as BlobPart]);
   }
 
   /**

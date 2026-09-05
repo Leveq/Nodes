@@ -381,10 +381,8 @@ export class IPFSService {
     if (!heliaInstance) return;
 
     // Check for custom relay IP from environment
-    // @ts-expect-error - Vite env variable
-    const customRelayIp = typeof import.meta?.env?.VITE_RELAY_IP === 'string' 
-      // @ts-expect-error - Vite env variable
-      ? import.meta.env.VITE_RELAY_IP 
+    const customRelayIp = typeof import.meta?.env?.VITE_RELAY_IP === 'string'
+      ? import.meta.env.VITE_RELAY_IP
       : null;
 
     // Try common relay addresses (localhost + LAN IPs for cross-device testing)

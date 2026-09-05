@@ -6,6 +6,7 @@
     "dev": "pnpm --filter @nodes/desktop dev",
     "build": "pnpm --filter @nodes/desktop build",
     "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm -r test",
