@@ -1,4 +1,5 @@
 import { memo, useState, useMemo, useCallback } from "react";
+import { ShieldAlert } from "lucide-react";
 import type { TransportMessage, ReactionData } from "@nodes/transport";
 import type { FileAttachment } from "@nodes/core";
 import { mentionsUser } from "@nodes/core";
@@ -421,6 +422,15 @@ export const MessageItem = memo(function MessageItem({
             >
               {formatMessageTime(message.timestamp)}
             </span>
+            {message.verified === false && (
+              <span
+                className="inline-flex items-center text-accent-warning"
+                title="This message's signature could not be verified. Its author is unconfirmed."
+                aria-label="Unverified message: author unconfirmed"
+              >
+                <ShieldAlert className="w-3 h-3" aria-hidden="true" focusable="false" />
+              </span>
+            )}
           </div>
 
           {isDeleted ? (

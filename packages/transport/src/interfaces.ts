@@ -21,6 +21,8 @@ export interface TransportMessage {
   channelId: string;
   type: "text" | "system" | "file";
   signature?: string; // SEA signature for verification
+  signedBy?: string; // key that produced the signature (defaults to authorKey)
+  verified?: boolean; // set on read: true if signature verified, false if not
   editedAt?: number;
   attachments?: string; // JSON-stringified FileAttachment[] (Milestone 2.1)
   

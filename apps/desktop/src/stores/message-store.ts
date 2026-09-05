@@ -95,6 +95,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
             ...(msg.deletedBy !== undefined && { deletedBy: msg.deletedBy }),
             ...(msg.attachments && { attachments: msg.attachments }),
             ...(msg.signature && { signature: msg.signature }),
+            ...(msg.signedBy && { signedBy: msg.signedBy }),
+            ...(msg.verified !== undefined && { verified: msg.verified }),
           };
           messageMap.set(msg.id, merged);
         } else {
@@ -138,6 +140,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
           ...(message.deletedBy !== undefined && { deletedBy: message.deletedBy }),
           ...(message.attachments && { attachments: message.attachments }),
           ...(message.signature && { signature: message.signature }),
+          ...(message.signedBy && { signedBy: message.signedBy }),
+          ...(message.verified !== undefined && { verified: message.verified }),
         };
         
         const updated = [...existing];
