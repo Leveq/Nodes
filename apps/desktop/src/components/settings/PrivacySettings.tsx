@@ -7,7 +7,6 @@ type ProfileField = "bio" | "avatar" | "status";
 
 const visibilityOptions: { value: FieldVisibility; label: string }[] = [
   { value: "public", label: "Public" },
-  { value: "friends", label: "Friends Only" },
   { value: "nobody", label: "Nobody" },
 ];
 

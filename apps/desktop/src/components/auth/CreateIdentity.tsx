@@ -119,7 +119,7 @@ export function CreateIdentity({ onSwitchToLogin, onSwitchToImport }: Props) {
             <p className="text-nodes-text-muted text-xs mt-2">
               {accountType === "public"
                 ? "Anyone can view your profile. You control individual field visibility."
-                : "Profile encrypted by default. Others must request access to see your details."}
+                : "Profile fields are encrypted by default. Only you can see them until you make individual fields public."}
             </p>
           </div>
 

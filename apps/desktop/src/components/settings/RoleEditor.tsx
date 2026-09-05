@@ -81,7 +81,7 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
         await roleManager.updateRole(nodeId, role.id, {
           name: isBuiltIn ? undefined : name.trim(), // Can't rename built-in
           color,
-          permissions,
+          permissions: isBuiltIn ? undefined : permissions, // Can't change built-in permissions
         });
         
         // Optimistically update the role in the store using upsert
@@ -89,7 +89,7 @@ export function RoleEditor({ nodeId, role, onClose, onDeleted }: RoleEditorProps
           ...role,
           name: isBuiltIn ? role.name : name.trim(),
           color,
-          permissions,
+          permissions: isBuiltIn ? role.permissions : permissions,
         });
         
         addToast("success", `Role "${name}" updated`);

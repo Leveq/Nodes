@@ -126,9 +126,9 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
       const defaultVisibility: Record<keyof ProfileData, FieldVisibility> = {
         displayName: "public", // Always public so people can find you
         bio: accountVisibility === "public" ? "public" : "nobody",
-        avatar: accountVisibility === "public" ? "public" : "friends",
-        banner: accountVisibility === "public" ? "public" : "friends",
-        status: accountVisibility === "public" ? "public" : "friends",
+        avatar: accountVisibility === "public" ? "public" : "nobody",
+        banner: accountVisibility === "public" ? "public" : "nobody",
+        status: accountVisibility === "public" ? "public" : "nobody",
         visibility: "public", // Account type is always public
       };
 
