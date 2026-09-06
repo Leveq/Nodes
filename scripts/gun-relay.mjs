@@ -15,8 +15,12 @@ const server = http.createServer((req, res) => {
   res.end("Gun relay running");
 });
 
-// Attach Gun to the HTTP server
-Gun({ web: server, file: "data/gun-dev" });
+// Attach Gun to the HTTP server.
+// Memory-only (no radisk fs persistence): on Windows, radisk encodes each Gun
+// key path into a filename, and voice signaling keys pushed those past the path
+// length limit, surfacing as ENOSPC and poisoning unrelated writes. The desktop
+// app persists its own data locally, so the dev relay only needs to route/sync.
+Gun({ web: server, radisk: false, localStorage: false });
 
 server.listen(port, () => {
   console.log(`Gun relay running at http://localhost:${port}/gun`);
