@@ -325,13 +325,26 @@ export class MeshVoiceTransport {
 
       console.log("[MeshVoice] Joined channel:", channelId, "as", this.publicKey.slice(0, 8), "- subscribed to", subscribedChannelId.slice(0, 12));
 
+      // Stay in the connecting state until the first peer's audio actually
+      // connects (below), so the UI shows "Connecting…" during WebRTC
+      // negotiation instead of claiming connected before any sound flows.
       this.state = {
         ...this.state,
-        connecting: false,
+        connecting: true,
         tier: "mesh",
         channelId,
       };
       this.emitState();
+
+      // Fallback: clear the connecting state after a while even if no peer
+      // connects (solo channel, or negotiation stalled) so it can't hang.
+      const connectFallback = setTimeout(() => {
+        if (this.state.connecting && this.state.channelId === channelId) {
+          this.state = { ...this.state, connecting: false };
+          this.emitState();
+        }
+      }, 10000);
+      this.cleanupFns.push(() => clearTimeout(connectFallback));
 
     } catch (error) {
       this.state = { ...this.state, connecting: false, channelId: null };
@@ -391,6 +404,11 @@ export class MeshVoiceTransport {
         // Don't auto-reconnect here - let the participant list drive reconnection
       } else if (pc.connectionState === "connected") {
         console.log(`[MeshVoice] Successfully connected to ${peerKey.slice(0, 8)}`);
+        // First peer audio is flowing — clear the connecting indicator.
+        if (this.state.connecting) {
+          this.state = { ...this.state, connecting: false };
+          this.emitState();
+        }
       }
     };
 

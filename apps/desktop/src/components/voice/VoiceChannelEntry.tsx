@@ -1,5 +1,7 @@
 import { Volume2, VolumeX, MicOff } from "lucide-react";
+import { useMemo } from "react";
 import { useVoiceStore } from "../../stores/voice-store";
+import { useIdentityStore } from "../../stores/identity-store";
 import { useVoiceChannelParticipants } from "../../hooks/useVoiceChannelParticipants";
 import { useDisplayNames } from "../../hooks/useDisplayNames";
 import { Avatar } from "../ui/Avatar";
@@ -30,8 +32,16 @@ export function VoiceChannelEntry({
   
   const isConnected = voiceState.channelId === channelId;
   
-  // Use local participants when connected (more accurate), remote when not
-  const participants = isConnected ? localParticipants : remoteParticipants;
+  // When connected, merge local (accurate mute/speaking state) with the remote
+  // Gun participant list so a peer that joins after us still appears even if the
+  // local mesh participant subscription missed the update. Local wins per key.
+  const participants = useMemo(() => {
+    if (!isConnected) return remoteParticipants;
+    const byKey = new Map<string, VoiceParticipant>();
+    for (const p of remoteParticipants) byKey.set(p.publicKey, p);
+    for (const p of localParticipants) byKey.set(p.publicKey, p);
+    return Array.from(byKey.values());
+  }, [isConnected, localParticipants, remoteParticipants]);
   
   const participantKeys = participants.map(p => p.publicKey);
   const { displayNames } = useDisplayNames(participantKeys);
@@ -75,6 +85,9 @@ interface VoiceParticipantItemProps {
 
 function VoiceParticipantItem({ participant, displayName }: VoiceParticipantItemProps) {
   const { publicKey, selfMuted, deafened, speaking, serverMuted, roleColor } = participant;
+  const myPublicKey = useIdentityStore((s) => s.publicKey);
+  const avatarVersion = useIdentityStore((s) => s.avatarVersion);
+  const isSelf = publicKey === myPublicKey;
 
   return (
     <div
@@ -88,6 +101,7 @@ function VoiceParticipantItem({ participant, displayName }: VoiceParticipantItem
           publicKey={publicKey}
           displayName={displayName}
           size="xs"
+          avatarVersion={isSelf ? avatarVersion : undefined}
         />
       </div>
 
