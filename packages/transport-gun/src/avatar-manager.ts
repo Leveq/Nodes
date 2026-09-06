@@ -193,7 +193,12 @@ export class AvatarManager {
     if (currentUserPub) {
       console.log(`[Avatar] Pre-populating cache for ${currentUserPub}`);
       this.addToCache(`${currentUserPub}:full`, fullUrl, fullCid);
-      this.addToCache(`${currentUserPub}:small`, smallUrl, smallCid);
+      // Small avatars are fetched with the profile's full CID as the known CID
+      // (Avatar maps every non-xl size to "small" but passes profile.data.avatar,
+      // which is the full CID). Cache the small blob under fullCid so the render
+      // matches instead of invalidating this fresh blob and re-fetching from a
+      // gateway that hasn't pinned the new CID yet.
+      this.addToCache(`${currentUserPub}:small`, smallUrl, fullCid);
       console.log(`[Avatar] Cache size after upload: ${this.cache.size}`);
     } else {
       console.warn("[Avatar] No currentUserPub, cannot populate cache");

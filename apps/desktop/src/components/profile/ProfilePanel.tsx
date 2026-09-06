@@ -4,6 +4,7 @@ import { useToastStore } from "../../stores/toast-store";
 import { Input, Avatar } from "../ui";
 import { processAvatarFromBlob } from "../../utils/image-processing";
 import { avatarManager } from "@nodes/transport-gun";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import { AvatarCropModal } from "./AvatarCropModal";
 
 interface ProfilePanelProps {
@@ -112,6 +113,8 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
 
       // Update the avatar CID in the store for persistence
       setAvatarCid(fullCid);
+      // Refresh the shared CID cache so voice/other views re-fetch the new avatar.
+      if (publicKey) setCachedAvatarCid(publicKey, fullCid);
 
       // Increment avatar version to trigger re-fetch in all Avatar components
       incrementAvatarVersion();
