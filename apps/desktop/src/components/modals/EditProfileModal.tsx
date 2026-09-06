@@ -6,6 +6,7 @@ import { useTransport } from "../../providers/TransportProvider";
 import { getStatusColor } from "../../utils/status";
 import { processAvatarFromBlob } from "../../utils/image-processing";
 import { avatarManager } from "@nodes/transport-gun";
+import { setCachedAvatarCid } from "../../hooks/useDisplayName";
 import { Avatar } from "../ui";
 import { AvatarCropModal } from "../profile/AvatarCropModal";
 import type { UserStatus } from "@nodes/core";
@@ -114,6 +115,8 @@ export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
       
       // Update the avatar CID in the store for persistence
       setAvatarCid(fullCid);
+      // Refresh the shared CID cache so voice/other views re-fetch the new avatar.
+      if (publicKey) setCachedAvatarCid(publicKey, fullCid);
       
       // Increment avatar version to trigger re-fetch in all Avatar components
       incrementAvatarVersion();

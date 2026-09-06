@@ -44,7 +44,7 @@ export function VoiceChannelEntry({
   }, [isConnected, localParticipants, remoteParticipants]);
   
   const participantKeys = participants.map(p => p.publicKey);
-  const { displayNames } = useDisplayNames(participantKeys);
+  const { displayNames, avatarCids } = useDisplayNames(participantKeys);
 
   return (
     <div>
@@ -70,6 +70,7 @@ export function VoiceChannelEntry({
               key={participant.publicKey}
               participant={participant}
               displayName={displayNames[participant.publicKey] || participant.displayName}
+              avatarCid={avatarCids[participant.publicKey]}
             />
           ))}
         </div>
@@ -81,9 +82,10 @@ export function VoiceChannelEntry({
 interface VoiceParticipantItemProps {
   participant: VoiceParticipant;
   displayName: string;
+  avatarCid?: string;
 }
 
-function VoiceParticipantItem({ participant, displayName }: VoiceParticipantItemProps) {
+function VoiceParticipantItem({ participant, displayName, avatarCid }: VoiceParticipantItemProps) {
   const { publicKey, selfMuted, deafened, speaking, serverMuted, roleColor } = participant;
   const myPublicKey = useIdentityStore((s) => s.publicKey);
   const avatarVersion = useIdentityStore((s) => s.avatarVersion);
@@ -102,6 +104,7 @@ function VoiceParticipantItem({ participant, displayName }: VoiceParticipantItem
           displayName={displayName}
           size="xs"
           avatarVersion={isSelf ? avatarVersion : undefined}
+          avatarCid={avatarCid}
         />
       </div>
 
