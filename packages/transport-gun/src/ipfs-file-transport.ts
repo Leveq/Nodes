@@ -49,14 +49,26 @@ export class IPFSFileTransport implements IFileTransport {
     }
 
     const fetchFn = serverPinFetch || fetch;
-    
-    const formData = new FormData();
-    formData.append("file", new Blob([data.buffer as ArrayBuffer], { type: mimeType || "application/octet-stream" }));
+
+    // Build the multipart body manually — Tauri's native fetch doesn't serialize
+    // FormData correctly for Kubo (same approach as avatar-manager).
+    const boundary = "----NodesBoundary" + Date.now();
+    const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="file"\r\nContent-Type: ${mimeType || "application/octet-stream"}\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+    const headerBytes = new TextEncoder().encode(header);
+    const footerBytes = new TextEncoder().encode(footer);
+    const body = new Uint8Array(headerBytes.length + data.length + footerBytes.length);
+    body.set(headerBytes, 0);
+    body.set(data, headerBytes.length);
+    body.set(footerBytes, headerBytes.length + data.length);
 
     try {
-      const res = await fetchFn(`${ipfsApiUrl}/api/v0/add`, {
+      const res = await fetchFn(`${ipfsApiUrl}/api/v0/add?pin=true`, {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
       });
 
       if (!res.ok) {

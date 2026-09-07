@@ -53,6 +53,8 @@ export function MessageInput({
   const typingTimeoutRef = useRef<number | null>(null);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  // Maps friendly @DisplayName labels (shown in the input) to <@pubkey> wire tokens.
+  const mentionMapRef = useRef<Map<string, string>>(new Map());
 
   const { ipfsReady, ...transport } = useTransport();
   const transportRef = useRef(transport);
@@ -101,6 +103,7 @@ export function MessageInput({
         return [];
       });
       setContent("");
+      mentionMapRef.current.clear();
       setShowEmojiPicker(false);
       prevChannelRef.current = channelId;
     }
@@ -159,8 +162,20 @@ export function MessageInput({
     }
   };
 
+  // Convert friendly @DisplayName labels back to <@pubkey> wire tokens before sending.
+  const resolveMentions = (text: string): string => {
+    const map = mentionMapRef.current;
+    if (map.size === 0) return text;
+    let out = text;
+    for (const label of Array.from(map.keys()).sort((a, b) => b.length - a.length)) {
+      out = out.split(label).join(map.get(label)!);
+    }
+    return out;
+  };
+
   const handleSend = async () => {
     const trimmed = content.trim();
+    const resolvedContent = resolveMentions(trimmed);
     const hasAttachments = pendingAttachments.length > 0;
 
     if ((!trimmed && !hasAttachments) || !publicKey || !transport || isSending)
@@ -184,7 +199,7 @@ export function MessageInput({
       markSent();
       
       // Capture values before clearing
-      const messageContent = trimmed;
+      const messageContent = resolvedContent;
       const currentReplyTarget = replyTarget;
       
       // Generate ID for both optimistic message and actual send
@@ -211,6 +226,7 @@ export function MessageInput({
       
       // Clear input immediately for snappy UX
       setContent("");
+      mentionMapRef.current.clear();
       clearReplyTarget(channelId);
       
       // Reset textarea height and refocus
@@ -289,7 +305,7 @@ export function MessageInput({
 
       // Send message with attachments
       await transport.message.send(channelId, {
-        content: trimmed || "",
+        content: resolvedContent || "",
         authorKey: publicKey,
         type: "file",
         attachments: attachments.length > 0 ? JSON.stringify(attachments) : undefined,
@@ -302,6 +318,7 @@ export function MessageInput({
 
       // Clear input, attachments, and reply target
       setContent("");
+      mentionMapRef.current.clear();
       setPendingAttachments([]);
       clearReplyTarget(channelId);
 
@@ -449,8 +466,9 @@ export function MessageInput({
   }, []);
 
   // Handle mention autocomplete selection
-  const handleMentionSelect = useCallback((newContent: string) => {
+  const handleMentionSelect = useCallback((newContent: string, meta?: { label: string; token: string }) => {
     setContent(newContent);
+    if (meta) mentionMapRef.current.set(meta.label, meta.token);
     handleTyping();
   }, [handleTyping]);
 

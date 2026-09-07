@@ -24,6 +24,7 @@ export function useDisplayNames(publicKeys: string[]): {
   const activeNodeId = useNodeStore((s) => s.activeNodeId);
   const identityPublicKey = useIdentityStore((s) => s.publicKey);
   const identityDisplayName = useIdentityStore((s) => s.profile?.data.displayName);
+  const identityAvatar = useIdentityStore((s) => s.profile?.data.avatar);
 
   // Create a stable key for the publicKeys array
   const publicKeysKey = Array.from(new Set(publicKeys)).sort().join(",");
@@ -38,12 +39,15 @@ export function useDisplayNames(publicKeys: string[]): {
       } else {
         const cachedName = getCachedDisplayName(publicKey);
         if (cachedName) names[publicKey] = cachedName;
-        const cachedAvatar = getCachedAvatarCid(publicKey);
+        // For the current user prefer the live identity avatar so a self change
+        // isn't masked by a stale cached CID (which would poison the shared cache).
+        const cachedAvatar =
+          publicKey === identityPublicKey ? identityAvatar : getCachedAvatarCid(publicKey);
         if (cachedAvatar) avatars[publicKey] = cachedAvatar;
       }
     }
     return { names, avatars };
-  }, [publicKeysKey]);
+  }, [publicKeysKey, identityPublicKey, identityAvatar]);
 
   useEffect(() => {
     if (publicKeys.length === 0) {
@@ -61,6 +65,14 @@ export function useDisplayNames(publicKeys: string[]): {
       const avatars: Record<string, string> = { ...initialCached.avatars };
       const members = useNodeStore.getState().members;
       const missingKeys: string[] = [];
+
+      // Keep the current user's avatar CID fresh so a self change isn't masked by
+      // a stale cached CID (passing a stale CID to getAvatar invalidates the
+      // freshly-uploaded blob and re-fetches the old one).
+      if (identityPublicKey && identityAvatar && publicKeys.includes(identityPublicKey)) {
+        setCachedAvatarCid(identityPublicKey, identityAvatar);
+        avatars[identityPublicKey] = identityAvatar;
+      }
 
       // Set cached values immediately so UI isn't blank
       if (Object.keys(result).length > 0) {
@@ -133,7 +145,7 @@ export function useDisplayNames(publicKeys: string[]): {
     return () => {
       cancelled = true;
     };
-  }, [publicKeysKey, activeNodeId, identityPublicKey, identityDisplayName, initialCached]);
+  }, [publicKeysKey, activeNodeId, identityPublicKey, identityDisplayName, identityAvatar, initialCached]);
 
   return { displayNames, avatarCids, isLoading };
 }

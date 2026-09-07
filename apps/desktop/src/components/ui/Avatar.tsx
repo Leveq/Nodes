@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useAvatar } from "../../hooks/useAvatar";
+import { useIdentityStore } from "../../stores/identity-store";
 import type { UserStatus } from "@nodes/core";
 
 /**
@@ -57,6 +58,14 @@ export const Avatar = memo(function Avatar({
     avatarCid
   );
 
+  // For the current user, prefer the freshly-uploaded blob URL so a self change
+  // shows instantly everywhere, bypassing the gateway/cache thrash.
+  const selfPublicKey = useIdentityStore((s) => s.publicKey);
+  const selfAvatarUrl = useIdentityStore((s) => s.selfAvatarUrl);
+  const isSelf = !!publicKey && publicKey === selfPublicKey;
+  const displayUrl = isSelf && selfAvatarUrl ? selfAvatarUrl : avatarUrl;
+  const showLoading = isLoading && !(isSelf && selfAvatarUrl);
+
   const pixelSize = SIZES[size];
   const letter = displayName.charAt(0).toUpperCase() || "?";
 
@@ -69,7 +78,7 @@ export const Avatar = memo(function Avatar({
       style={{ width: pixelSize, height: pixelSize }}
     >
       {/* Loading skeleton */}
-      {isLoading && (
+      {showLoading && (
         <div
           className="absolute inset-0 rounded-full animate-pulse bg-surface-border"
           style={{ width: pixelSize, height: pixelSize }}
@@ -77,16 +86,16 @@ export const Avatar = memo(function Avatar({
       )}
 
       {/* Avatar image */}
-      {avatarUrl && !isLoading && (
+      {displayUrl && !showLoading && (
         <img
-          src={avatarUrl}
+          src={displayUrl}
           alt={displayName || "User avatar"}
           className="w-full h-full rounded-full object-cover"
         />
       )}
 
       {/* Fallback: colored circle with initial */}
-      {!avatarUrl && !isLoading && (
+      {!displayUrl && !showLoading && (
         <div
           className="w-full h-full rounded-full flex items-center justify-center font-medium"
           style={{
