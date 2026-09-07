@@ -141,6 +141,7 @@ export class LiveKitVoiceTransport {
         this.state = { ...this.state, speaking: localSpeaking };
         this.emitState();
       }
+      this.emitParticipants();
     });
 
     // Connection state changes
@@ -251,6 +252,21 @@ export class LiveKitVoiceTransport {
     }
 
     const participants: VoiceParticipant[] = [];
+
+    // Add the local participant so the user sees themselves in the channel.
+    const local = this.room.localParticipant;
+    if (local) {
+      const localMuted = Array.from(local.audioTrackPublications.values())
+        .every(pub => pub.isMuted);
+      participants.push({
+        publicKey: local.identity || this.publicKey,
+        displayName: local.name || (local.identity || this.publicKey).slice(0, 8),
+        selfMuted: this.state.muted || localMuted,
+        deafened: this.state.deafened,
+        speaking: local.isSpeaking,
+        serverMuted: false,
+      });
+    }
 
     // Add remote participants
     for (const participant of this.room.remoteParticipants.values()) {

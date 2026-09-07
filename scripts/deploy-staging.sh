@@ -10,7 +10,7 @@ VITE_IPFS_GATEWAY_URL=https://nodesipfs.leveq.dev \
 VITE_IPFS_API_URL=https://nodesipfs.leveq.dev \
 VITE_GUN_RELAY_URL=wss://nodesrelay.leveq.dev/gun \
 VITE_LIVEKIT_URL=wss://nodesvoice.leveq.dev \
-VITE_LIVEKIT_API_KEY=nodes-stg-key \
+VITE_VOICE_TOKEN_URL=https://nodesvoice.leveq.dev/token \
 pnpm exec vite build
 
 echo "📦 Uploading to staging server..."

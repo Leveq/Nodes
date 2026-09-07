@@ -64,7 +64,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_GUN_RELAY_URL: ${{ secrets.VITE_GUN_RELAY_URL }}
           VITE_LIVEKIT_URL: ${{ secrets.VITE_LIVEKIT_URL }}
-          VITE_LIVEKIT_API_KEY: ${{ secrets.VITE_LIVEKIT_API_KEY }}
+          VITE_VOICE_TOKEN_URL: ${{ secrets.VITE_VOICE_TOKEN_URL }}
           VITE_IPFS_GATEWAY_URL: ${{ secrets.VITE_IPFS_GATEWAY_URL }}
           VITE_IPFS_API_URL: ${{ secrets.VITE_IPFS_API_URL }}
           VITE_GIPHY_API_KEY: ${{ secrets.VITE_GIPHY_API_KEY }}
@@ -103,7 +103,7 @@ jobs:
         env:
           VITE_GUN_RELAY_URL: ${{ secrets.VITE_GUN_RELAY_URL }}
           VITE_LIVEKIT_URL: ${{ secrets.VITE_LIVEKIT_URL }}
-          VITE_LIVEKIT_API_KEY: ${{ secrets.VITE_LIVEKIT_API_KEY }}
+          VITE_VOICE_TOKEN_URL: ${{ secrets.VITE_VOICE_TOKEN_URL }}
           VITE_IPFS_GATEWAY_URL: ${{ secrets.VITE_IPFS_GATEWAY_URL }}
           VITE_IPFS_API_URL: ${{ secrets.VITE_IPFS_API_URL }}
           VITE_GIPHY_API_KEY: ${{ secrets.VITE_GIPHY_API_KEY }}
