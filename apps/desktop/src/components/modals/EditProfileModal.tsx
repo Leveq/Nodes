@@ -34,6 +34,7 @@ export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
   const avatarVersion = useIdentityStore((s) => s.avatarVersion);
   const incrementAvatarVersion = useIdentityStore((s) => s.incrementAvatarVersion);
   const setAvatarCid = useIdentityStore((s) => s.setAvatarCid);
+  const setSelfAvatarUrl = useIdentityStore((s) => s.setSelfAvatarUrl);
   const addToast = useToastStore((s) => s.addToast);
   const transport = useTransport();
 
@@ -111,8 +112,10 @@ export function EditProfileModal({ onClose, onSave }: EditProfileModalProps) {
     setIsUploadingAvatar(true);
     try {
       const { full, small } = await processAvatarFromBlob(croppedBlob);
-      const { full: fullCid } = await avatarManager.uploadAvatar(full, small);
+      const { full: fullCid, fullUrl } = await avatarManager.uploadAvatar(full, small);
       
+      // Show the just-uploaded image instantly across all surfaces (bypasses gateway).
+      setSelfAvatarUrl(fullUrl);
       // Update the avatar CID in the store for persistence
       setAvatarCid(fullCid);
       // Refresh the shared CID cache so voice/other views re-fetch the new avatar.

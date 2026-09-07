@@ -20,6 +20,19 @@ const inflightLoads = new Map<string, Promise<string>>();
 const failedLoads = new Map<string, number>();
 const FAILURE_CACHE_TTL = 60_000;
 
+// On desktop, fetch gateway content via Tauri's native HTTP client — the browser
+// fetch is blocked by the gateway's CORS headers (duplicate Access-Control-Allow-Origin).
+let tauriFetchPromise: Promise<typeof fetch> | null = null;
+async function getGatewayFetch(): Promise<typeof fetch> {
+  if (!isTauri) return fetch;
+  if (!tauriFetchPromise) {
+    tauriFetchPromise = import("@tauri-apps/plugin-http").then(
+      (m) => m.fetch as unknown as typeof fetch
+    );
+  }
+  return tauriFetchPromise;
+}
+
 interface MessageAttachmentProps {
   attachment: FileAttachment;
   authorKey: string; // Public key of the message author (for peer connection)
@@ -150,6 +163,7 @@ function ImageAttachment({
     // Create the load promise and track it
     const loadPromise = (async (): Promise<string> => {
       let data: Uint8Array | null = null;
+      const fetchFn = await getGatewayFetch();
 
       // 1. Try staging gateway FIRST (fast, reliable, has pinned content)
       if (ipfsGatewayUrl) {
@@ -157,7 +171,7 @@ function ImageAttachment({
           const url = `${ipfsGatewayUrl}/ipfs/${cid}`;
           console.log('[MessageAttachment] Trying staging gateway:', url);
           
-          const response = await fetch(url, {
+          const response = await fetchFn(url, {
             signal: AbortSignal.timeout(5000), // 5s timeout
           });
 
@@ -224,7 +238,7 @@ function ImageAttachment({
       for (const url of publicGateways) {
         try {
           console.log('[MessageAttachment] Trying public gateway:', url);
-          const response = await fetch(url, {
+          const response = await fetchFn(url, {
             signal: AbortSignal.timeout(8000),
           });
 
@@ -298,20 +312,47 @@ function ImageAttachment({
   const handleClick = async () => {
     if (!onImageClick) return;
 
-    // If we only have a thumbnail, load the full image
-    if (attachment.thumbnailCid && imageUrl) {
-      try {
-        const data = await IPFSService.download(attachment.cid, 30000);
-        const blob = new Blob([data.buffer as ArrayBuffer]);
-        const fullUrl = URL.createObjectURL(blob);
-        onImageClick(attachment, fullUrl);
-      } catch {
-        // Use thumbnail as fallback
-        onImageClick(attachment, imageUrl);
-      }
-    } else if (imageUrl) {
+    const fullCid = attachment.cid;
+
+    // No separate thumbnail: the inline image already IS the full image.
+    if (!attachment.thumbnailCid && imageUrl) {
       onImageClick(attachment, imageUrl);
+      return;
     }
+
+    // Reuse an already-loaded full image (memory cache) for instant open.
+    const cachedFull = loadedImageCache.get(fullCid);
+    if (cachedFull) {
+      onImageClick(attachment, cachedFull);
+      return;
+    }
+
+    // Fetch the full-resolution image from the gateway (Tauri fetch bypasses CORS),
+    // falling back to the IndexedDB cache. Avoids the slow/unreliable P2P path.
+    try {
+      let bytes: Uint8Array | null = (await getCachedDownload(fullCid)) ?? null;
+      if (!bytes && ipfsGatewayUrl) {
+        const fetchFn = await getGatewayFetch();
+        const response = await fetchFn(`${ipfsGatewayUrl}/ipfs/${fullCid}`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        if (response.ok) {
+          bytes = new Uint8Array(await response.arrayBuffer());
+          setCachedDownload(fullCid, bytes).catch(() => {});
+        }
+      }
+      if (bytes) {
+        const fullUrl = URL.createObjectURL(new Blob([bytes as BlobPart]));
+        loadedImageCache.set(fullCid, fullUrl);
+        onImageClick(attachment, fullUrl);
+        return;
+      }
+    } catch (err) {
+      console.log('[MessageAttachment] Full image load failed, using thumbnail:', err instanceof Error ? err.message : err);
+    }
+
+    // Last resort: open the thumbnail we already have.
+    if (imageUrl) onImageClick(attachment, imageUrl);
   };
 
   // Calculate display dimensions

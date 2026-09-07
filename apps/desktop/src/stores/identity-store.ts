@@ -33,6 +33,7 @@ interface IdentityState {
   profile: ProfileWithVisibility | null;
   profileVersion: number; // Increments on profile update to signal cache invalidation
   avatarVersion: number; // Increments on avatar upload to signal re-fetch
+  selfAvatarUrl: string | null; // Fresh object URL for the current user's just-uploaded avatar
   error: string | null;
 
   // Actions
@@ -62,6 +63,7 @@ interface IdentityState {
   deleteIdentity: () => Promise<void>;
   incrementAvatarVersion: () => void;
   setAvatarCid: (cid: string) => void;
+  setSelfAvatarUrl: (url: string | null) => void;
 }
 
 const keyManager = new KeyManager();
@@ -107,6 +109,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
   profile: null,
   profileVersion: 0,
   avatarVersion: 0,
+  selfAvatarUrl: null,
   error: null,
 
   createIdentity: async (displayName, passphrase, accountVisibility) => {
@@ -413,5 +416,13 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
         data: { ...profile.data, avatar: cid },
       },
     });
+  },
+
+  setSelfAvatarUrl: (url: string | null) => {
+    const prev = get().selfAvatarUrl;
+    if (prev && prev !== url) {
+      try { URL.revokeObjectURL(prev); } catch { /* already revoked */ }
+    }
+    set({ selfAvatarUrl: url });
   },
 }));

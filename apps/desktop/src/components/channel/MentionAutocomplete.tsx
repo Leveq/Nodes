@@ -16,7 +16,7 @@ interface MentionOption {
 
 interface MentionAutocompleteProps {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
-  onMentionSelect: (mention: string) => void;
+  onMentionSelect: (mention: string, meta?: { label: string; token: string }) => void;
   isEnabled?: boolean;
 }
 
@@ -204,26 +204,30 @@ export function MentionAutocomplete({
             const textarea = inputRef.current;
             if (!textarea || triggerStart === -1) return;
 
-            // Build the mention token
+            // Build the wire token and a friendly label (shown in the input)
             let mentionToken: string;
+            let mentionLabel: string;
             if (option.type === "user" && option.publicKey) {
               mentionToken = createUserMention(option.publicKey);
+              mentionLabel = "@" + option.displayName;
             } else if (option.type === "everyone") {
               mentionToken = "<@everyone>";
+              mentionLabel = "@everyone";
             } else if (option.type === "here") {
               mentionToken = "<@here>";
+              mentionLabel = "@here";
             } else {
               return;
             }
 
-            // Replace @query with mention token
+            // Insert the friendly label (converted back to the token on send)
             const { value, selectionStart } = textarea;
             const before = value.substring(0, triggerStart);
             const after = value.substring(selectionStart);
-            const newValue = before + mentionToken + " " + after;
+            const newValue = before + mentionLabel + " " + after;
 
-            // Notify parent to update content
-            onMentionSelect(newValue);
+            // Notify parent to update content + register the label→token mapping
+            onMentionSelect(newValue, { label: mentionLabel, token: mentionToken });
 
             // Close popup
             setIsOpen(false);
@@ -233,7 +237,7 @@ export function MentionAutocomplete({
             // Refocus and set cursor position after mention
             setTimeout(() => {
               if (textarea) {
-                const newCursorPos = triggerStart + mentionToken.length + 1;
+                const newCursorPos = triggerStart + mentionLabel.length + 1;
                 textarea.focus();
                 textarea.setSelectionRange(newCursorPos, newCursorPos);
               }
@@ -261,27 +265,30 @@ export function MentionAutocomplete({
       const textarea = inputRef.current;
       if (!textarea || triggerStart === -1) return;
 
-      // Build the mention token
+      // Build the wire token and a friendly label (shown in the input)
       let mentionToken: string;
+      let mentionLabel: string;
       if (option.type === "user" && option.publicKey) {
         mentionToken = createUserMention(option.publicKey);
-        console.log("[MentionAutocomplete] Created user mention token:", mentionToken.slice(0, 50));
+        mentionLabel = "@" + option.displayName;
       } else if (option.type === "everyone") {
         mentionToken = "<@everyone>";
+        mentionLabel = "@everyone";
       } else if (option.type === "here") {
         mentionToken = "<@here>";
+        mentionLabel = "@here";
       } else {
         return;
       }
 
-      // Replace @query with mention token
+      // Insert the friendly label (converted back to the token on send)
       const { value, selectionStart } = textarea;
       const before = value.substring(0, triggerStart);
       const after = value.substring(selectionStart);
-      const newValue = before + mentionToken + " " + after;
+      const newValue = before + mentionLabel + " " + after;
 
-      // Notify parent to update content
-      onMentionSelect(newValue);
+      // Notify parent to update content + register the label→token mapping
+      onMentionSelect(newValue, { label: mentionLabel, token: mentionToken });
 
       // Close popup
       setIsOpen(false);
@@ -291,7 +298,7 @@ export function MentionAutocomplete({
       // Refocus and set cursor position after mention
       setTimeout(() => {
         if (textarea) {
-          const newCursorPos = triggerStart + mentionToken.length + 1;
+          const newCursorPos = triggerStart + mentionLabel.length + 1;
           textarea.focus();
           textarea.setSelectionRange(newCursorPos, newCursorPos);
         }
