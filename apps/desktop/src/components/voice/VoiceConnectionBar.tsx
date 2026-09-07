@@ -35,7 +35,7 @@ export function VoiceConnectionBar({
   // Connection status text
   const getStatusText = () => {
     if (connecting) return "Connecting...";
-    const userCount = participants.length + 1; // +1 for self
+    const userCount = participants.length; // participants already includes self
     const tierLabel = tier === "mesh" ? "P2P" : "Server";
     return `${tierLabel} • ${userCount} user${userCount !== 1 ? "s" : ""}`;
   };

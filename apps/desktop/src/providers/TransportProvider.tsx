@@ -85,7 +85,13 @@ export function TransportProvider({ children }: { children: ReactNode }) {
   // Initialize voice manager when we have a public key
   const voiceManager = useMemo(() => {
     if (!publicKey) return null;
-    return new VoiceManager(publicKey);
+    const vm = new VoiceManager(publicKey);
+    // Wire the community SFU endpoints from env (token minting + default server).
+    vm.setSfuEndpoints(
+      import.meta.env.VITE_VOICE_TOKEN_URL,
+      import.meta.env.VITE_LIVEKIT_URL
+    );
+    return vm;
   }, [publicKey]);
 
   // Track connection state reactively

@@ -4,6 +4,7 @@ import type { IVoiceTransport, Unsubscribe } from "@nodes/transport";
 import type { VoiceState, VoiceParticipant, NodeVoiceConfig } from "@nodes/core";
 import { VOICE_CONSTANTS } from "@nodes/core";
 import { GunInstanceManager } from "../gun-instance";
+import SEA from "gun/sea";
 
 /**
  * VoiceManager decides which voice tier to use and delegates accordingly.
@@ -35,6 +36,11 @@ export class VoiceManager implements IVoiceTransport {
    * Set via {@link setPreferSfu}.
    */
   private preferSfu: boolean = true;
+
+  /** Token endpoint (VITE_VOICE_TOKEN_URL) that mints short-lived LiveKit tokens. */
+  private tokenUrl: string | null = null;
+  /** Default community LiveKit server URL (VITE_LIVEKIT_URL). */
+  private defaultLivekitUrl: string | null = null;
 
   constructor(publicKey: string) {
     this.publicKey = publicKey;
@@ -68,9 +74,21 @@ export class VoiceManager implements IVoiceTransport {
     this.preferSfu = prefer;
   }
 
+  /**
+   * Configure the community SFU endpoints from app env.
+   * - `tokenUrl` mints short-lived, identity-scoped LiveKit tokens.
+   * - `livekitUrl` is the default SFU server used when a Node has no custom URL.
+   */
+  setSfuEndpoints(tokenUrl?: string | null, livekitUrl?: string | null): void {
+    this.tokenUrl = tokenUrl || null;
+    this.defaultLivekitUrl = livekitUrl || null;
+  }
+
   async join(channelId: string, _nodeId: string): Promise<void> {
     const hasSfuConfig = Boolean(
-      this.nodeVoiceConfig?.livekitUrl || this.nodeVoiceConfig?.useDefaultServer
+      this.nodeVoiceConfig?.livekitUrl ||
+        this.nodeVoiceConfig?.useDefaultServer ||
+        (this.tokenUrl && this.defaultLivekitUrl)
     );
 
     // Two distinct routing modes:
@@ -98,12 +116,14 @@ export class VoiceManager implements IVoiceTransport {
       }
 
       const serverUrl =
-        this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
+        this.nodeVoiceConfig?.livekitUrl ??
+        this.defaultLivekitUrl ??
+        "wss://default-voice.nodes.chat";
       this.activeTier = "livekit";
       this.currentChannelId = channelId;
       try {
-        const token = await this.generateLiveKitToken(channelId, _nodeId);
-        await this.livekitTransport.join(channelId, serverUrl, token);
+        const { token, url } = await this.generateLiveKitToken(channelId, _nodeId);
+        await this.livekitTransport.join(channelId, url ?? serverUrl, token);
         return;
       } catch (err) {
         // Best-effort cleanup in case room.connect() succeeded but a later
@@ -131,12 +151,14 @@ export class VoiceManager implements IVoiceTransport {
 
     if (wantSfu && hasSfuConfig) {
       const serverUrl =
-        this.nodeVoiceConfig?.livekitUrl ?? "wss://default-voice.nodes.chat";
+        this.nodeVoiceConfig?.livekitUrl ??
+        this.defaultLivekitUrl ??
+        "wss://default-voice.nodes.chat";
       this.activeTier = "livekit";
       this.currentChannelId = channelId;
       try {
-        const token = await this.generateLiveKitToken(channelId, _nodeId);
-        await this.livekitTransport.join(channelId, serverUrl, token);
+        const { token, url } = await this.generateLiveKitToken(channelId, _nodeId);
+        await this.livekitTransport.join(channelId, url ?? serverUrl, token);
         return;
       } catch (err) {
         console.warn(
@@ -320,31 +342,42 @@ export class VoiceManager implements IVoiceTransport {
   }
 
   private async generateLiveKitToken(
-    _channelId: string,
-    _nodeId: string
-  ): Promise<string> {
-    // Token generation is intentionally NOT implemented client-side.
-    //
-    // A previous iteration of this method minted HS256 JWTs directly in the
-    // client using the Node's LiveKit API secret. That approach is unsafe:
-    // distributing the API secret to every Node member means any member can
-    // mint tokens for arbitrary identities, rooms, and grants \u2014 the SFU
-    // has no way to distinguish a legitimate participant from a malicious
-    // one. Encrypting the secret at rest does not help, because the client
-    // needs the plaintext to sign.
-    //
-    // The correct design is a trusted token endpoint (either the community's
-    // default server or a Node-provided endpoint) that:
-    //   1. authenticates the caller (e.g., via a signed Gun-graph challenge),
-    //   2. validates that the caller is allowed to join the requested room,
-    //   3. returns a short-lived, identity- and room-scoped token.
-    //
-    // Until that endpoint exists, SFU joins fail closed \u2014 which for users
-    // with preferSfu=true (the default) is surfaced by join() as a hard
-    // error rather than a silent mesh fallback that would expose their IP.
-    // Tracked in the follow-up issue.
-    throw new Error(
-      "SFU token endpoint not implemented. Nodes does not mint LiveKit tokens client-side because that would require distributing the API secret to every member."
-    );
+    channelId: string,
+    nodeId: string
+  ): Promise<{ token: string; url: string | null }> {
+    if (!this.tokenUrl) {
+      throw new Error(
+        "Voice token endpoint is not configured. Set VITE_VOICE_TOKEN_URL to your Nodes token service."
+      );
+    }
+
+    // Prove control of our public key by signing a fresh claim with the SEA
+    // pair. The token service verifies the signature and mints an identity- and
+    // room-scoped token, so the LiveKit API secret never reaches the client.
+    const user = GunInstanceManager.user() as unknown as {
+      _: { sea?: { pub: string; priv: string; epub: string; epriv: string } };
+    };
+    const pair = user?._?.sea;
+    if (!pair?.priv) {
+      throw new Error("Cannot request a voice token: not authenticated.");
+    }
+
+    const claim = JSON.stringify({ room: channelId, nodeId, ts: Date.now() });
+    const sig = await SEA.sign(claim, pair);
+
+    const res = await fetch(this.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pub: pair.pub, sig }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Voice token request failed (${res.status}). ${detail}`.trim());
+    }
+    const data = (await res.json()) as { token?: string; url?: string };
+    if (!data?.token) {
+      throw new Error("Voice token endpoint returned no token.");
+    }
+    return { token: data.token, url: data.url ?? null };
   }
 }

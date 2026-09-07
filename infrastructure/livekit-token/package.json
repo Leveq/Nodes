@@ -1,0 +1,15 @@
+{
+  "name": "nodes-livekit-token",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Trusted LiveKit token endpoint for Nodes. Mints short-lived, room- and identity-scoped SFU tokens after verifying a SEA signature that proves the caller controls the claimed public key.",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "gun": "^0.2020.1241",
+    "livekit-server-sdk": "^2.9.0"
+  }
+}

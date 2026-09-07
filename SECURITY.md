@@ -333,10 +333,12 @@ room size:
   lower latency. Larger rooms escalate to the SFU when available, or fall
   back to mesh with a quality warning if no SFU is configured.
 
-The routing model above describes the current *client* behavior. Actually
-minting SFU tokens requires a trusted server-side endpoint that is not
-yet part of this release; until that lands, privacy mode surfaces a
-configuration error on join rather than silently downgrading.
+SFU tokens are minted by a trusted server-side endpoint (see
+`infrastructure/livekit-token/`). The client proves control of its public
+key with a SEA signature; the endpoint verifies it and returns a
+short-lived token scoped to that identity and room, so the LiveKit API
+secret never reaches clients. If the endpoint is unreachable, privacy mode
+surfaces an error on join rather than silently downgrading to mesh.
 
 ### WebRTC P2P mesh
 
@@ -360,10 +362,14 @@ configuration error on join rather than silently downgrading.
   each participant's IP.
 - **Mitigation for SFU trust:** Communities can self-host their own
   LiveKit instance, keeping voice infrastructure under their control.
-- **Token authorization:** Tokens must be minted by a trusted server-side
-  endpoint. Client-side token minting is not supported because it would
-  require distributing the SFU API secret to every Node member, which
-  would let any member impersonate any other in a voice room.
+- **Token authorization:** Tokens are minted by a trusted server-side
+  endpoint (`infrastructure/livekit-token/`). The caller signs a fresh
+  `{room, ts}` claim with its SEA key; the endpoint verifies the signature,
+  rejects stale requests, and issues a short-lived token whose identity is
+  the verified public key. The SFU API secret stays server-side, so no
+  member can mint a token for another identity. Node membership is not yet
+  enforced server-side (future hardening); today the guarantee is
+  identity-ownership plus room scoping.
 
 ---
 
