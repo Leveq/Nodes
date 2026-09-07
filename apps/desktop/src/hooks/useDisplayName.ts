@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ProfileManager } from "@nodes/transport-gun";
 import { useNodeStore } from "../stores/node-store";
 import { useIdentityStore } from "../stores/identity-store";
+import { useAvatarStore } from "../stores/avatar-store";
 import { getCache, setCache, CacheKeys, deleteCache } from "../services/app-cache";
 
 // Module-level cache to avoid repeated lookups
@@ -196,6 +197,8 @@ export function getCachedAvatarCid(publicKey: string): string | undefined {
  */
 export function setCachedAvatarCid(publicKey: string, cid: string): void {
   avatarCidCache.set(publicKey, cid);
+  // Mirror into the reactive store so every Avatar (text/voice/sidebar) updates.
+  useAvatarStore.getState().setCid(publicKey, cid);
 }
 
 /**

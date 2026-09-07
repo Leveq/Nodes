@@ -42,6 +42,10 @@ export function useNodeSubscriptions() {
   const channelToNodeRef = useRef<Map<string, { nodeId: string; nodeName: string }>>(new Map());
   // Monotonically-increasing run id to guard stale callbacks
   const runIdRef = useRef<number>(0);
+  // App-session start time. Messages older than this are history (Gun replays
+  // the graph on subscribe) and must never notify/mark-unread — even if they
+  // arrive after the 2s initial-load window, which happens on slow connections.
+  const sessionStartRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (!isAuthenticated || !publicKey || !transport || nodes.length === 0) {
@@ -130,8 +134,12 @@ export function useNodeSubscriptions() {
           // even if message was already in store from ChannelView
           const isInitialLoadDone = initialLoadDoneRef.current.has(channelId);
           const isFromOther = message.authorKey !== publicKey;
-          
-          if (isInitialLoadDone && isFromOther) {
+          // Suppress replayed history: only treat as live if newer than session
+          // start (small grace for peer clock skew). Fixes old messages showing
+          // up as new notifications on rebuild when replay outlasts the timer.
+          const isNew = message.timestamp >= sessionStartRef.current - 60_000;
+
+          if (isInitialLoadDone && isFromOther && isNew) {
             const { activeNodeId, activeChannelId } = useNodeStore.getState();
             const viewMode = useNavigationStore.getState().viewMode;
             const isViewingThisChannel =
