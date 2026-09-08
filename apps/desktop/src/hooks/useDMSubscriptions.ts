@@ -52,6 +52,10 @@ export function useDMSubscriptions() {
   const runIdRef = useRef<number>(0);
   // Track initial-load timeout ids so they can be cleared
   const initialLoadTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // App-session start. Messages older than this are history (Gun replays the
+  // graph on subscribe) and must never notify — even if they arrive after the
+  // per-conversation initial-load window (common on a cold restart).
+  const sessionStartRef = useRef<number>(Date.now());
 
   // Process a single message (extracted for batching)
   const processMessage = useCallback((conversationId: string, recipientKey: string, message: TransportMessage, myPublicKey: string) => {
@@ -117,8 +121,11 @@ export function useDMSubscriptions() {
         }
       }
     } else {
-      // After initial load: increment unread for real-time messages
-      if (isFromOther && isNotViewing) {
+      // After initial load: only genuinely new messages are real-time. Late Gun
+      // history replay (esp. on a cold restart) has an old timestamp and must not
+      // notify or bump unread — the initial-load pass already counted it.
+      const isNew = message.timestamp >= sessionStartRef.current - 60_000;
+      if (isFromOther && isNotViewing && isNew) {
         currentState.incrementUnread(conversationId);
         
         // Trigger DM notification (desktop + sound)
