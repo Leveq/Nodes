@@ -31,7 +31,8 @@ interface NotificationState {
 
   // Actions
   initialize: () => Promise<void>;
-  addNotification: (notification: Omit<AppNotification, "id">) => Promise<void>;
+  // Returns true if a new notification was added, false if it was a duplicate.
+  addNotification: (notification: Omit<AppNotification, "id">) => Promise<boolean>;
   markAsRead: (notificationId: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   clearNotification: (notificationId: string) => Promise<void>;
@@ -192,6 +193,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
       const unreadCount = notifications.filter((n) => !n.read).length;
 
+      // Seed the dedup set from persisted notifications so replayed history
+      // (on app restart / rebuild) doesn't re-fire desktop popups and sounds.
+      for (const n of notifications) {
+        if (n.messageId) notifiedMessageIds.add(n.messageId);
+      }
+
       set({
         notifications,
         settings,
@@ -209,12 +216,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // Zustand's get() and set() are synchronous, so this check is atomic
     const existingInState = get().notifications.some(n => n.messageId === notification.messageId);
     if (existingInState) {
-      return;
+      return false;
     }
     
     // Also check module-level Set (faster check for rapid-fire calls in same module instance)
     if (notifiedMessageIds.has(notification.messageId)) {
-      return;
+      return false;
     }
     
     // Create notification FIRST (before any async) to prevent race conditions
@@ -248,7 +255,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // Save to IndexedDB (async, but state is already updated)
     await saveNotification(fullNotification);
 
-    return;
+    return true;
   },
 
   markAsRead: async (notificationId) => {
