@@ -370,6 +370,17 @@ surfaces an error on join rather than silently downgrading to mesh.
   member can mint a token for another identity. Node membership is not yet
   enforced server-side (future hardening); today the guarantee is
   identity-ownership plus room scoping.
+- **Voice presence (who is in a channel):** For SFU rooms this is queried
+  live from the SFU via a signed `POST /presence` request (same endpoint
+  service), **not** written to the world-readable Gun graph. This avoids
+  publishing a durable, passively-scrapable record of who is in which voice
+  channel over time. The request is SEA-signed, so occupancy is not
+  anonymously enumerable; however, any valid Nodes identity can still query
+  a room whose ID it knows (true member-only visibility needs the same
+  server-side Node authz noted above). P2P mesh rooms still use the Gun
+  presence path, which is world-readable — an inherent property of the
+  opt-in, IP-exposing mesh mode.
+
 
 ---
 

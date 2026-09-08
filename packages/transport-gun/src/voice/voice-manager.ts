@@ -39,6 +39,8 @@ export class VoiceManager implements IVoiceTransport {
 
   /** Token endpoint (VITE_VOICE_TOKEN_URL) that mints short-lived LiveKit tokens. */
   private tokenUrl: string | null = null;
+  /** Presence endpoint (sibling of tokenUrl) that lists live room occupants. */
+  private presenceUrl: string | null = null;
   /** Default community LiveKit server URL (VITE_LIVEKIT_URL). */
   private defaultLivekitUrl: string | null = null;
 
@@ -82,6 +84,20 @@ export class VoiceManager implements IVoiceTransport {
   setSfuEndpoints(tokenUrl?: string | null, livekitUrl?: string | null): void {
     this.tokenUrl = tokenUrl || null;
     this.defaultLivekitUrl = livekitUrl || null;
+    // The presence endpoint is a sibling of the token endpoint on the same
+    // service (…/token → …/presence). Derived so it needs no extra env var.
+    this.presenceUrl = this.tokenUrl
+      ? this.tokenUrl.replace(/\/token(?=$|\?)/, "/presence")
+      : null;
+  }
+
+  /**
+   * Whether SFU presence can be queried (token/presence service configured).
+   * The UI uses this to decide between polling the SFU for room occupancy
+   * (private) and the legacy Gun presence path (mesh only).
+   */
+  hasSfuPresence(): boolean {
+    return Boolean(this.presenceUrl && this.defaultLivekitUrl);
   }
 
   async join(channelId: string, _nodeId: string): Promise<void> {
@@ -341,6 +357,52 @@ export class VoiceManager implements IVoiceTransport {
     });
   }
 
+  /**
+   * Fetch the live participants of a voice room from the SFU presence endpoint.
+   *
+   * This is the privacy-preserving replacement for reading voice presence off
+   * the world-readable Gun graph: occupancy is queried live from the SFU (no
+   * history, no public graph record) and the request is SEA-signed so it is not
+   * anonymously scrapable. Returns `null` if SFU presence is not configured, so
+   * the caller can fall back to the legacy Gun path (mesh rooms).
+   */
+  async getRoomPresence(channelId: string): Promise<VoiceParticipant[] | null> {
+    if (!this.presenceUrl) return null;
+    const pair = this.getSeaPair();
+    if (!pair?.priv) return null;
+
+    const claim = JSON.stringify({ room: channelId, ts: Date.now() });
+    const sig = await SEA.sign(claim, pair);
+
+    const res = await fetch(this.presenceUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pub: pair.pub, sig }),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      participants?: Array<{ pub: string; muted?: boolean }>;
+    };
+    return (data.participants ?? []).map((p) => ({
+      publicKey: p.pub,
+      displayName: p.pub.slice(0, 8),
+      selfMuted: Boolean(p.muted),
+      deafened: false,
+      speaking: false,
+      serverMuted: false,
+    }));
+  }
+
+  /** Read the current user's SEA keypair from the authenticated Gun user. */
+  private getSeaPair():
+    | { pub: string; priv: string; epub: string; epriv: string }
+    | undefined {
+    const user = GunInstanceManager.user() as unknown as {
+      _: { sea?: { pub: string; priv: string; epub: string; epriv: string } };
+    };
+    return user?._?.sea;
+  }
+
   private async generateLiveKitToken(
     channelId: string,
     nodeId: string
@@ -354,10 +416,7 @@ export class VoiceManager implements IVoiceTransport {
     // Prove control of our public key by signing a fresh claim with the SEA
     // pair. The token service verifies the signature and mints an identity- and
     // room-scoped token, so the LiveKit API secret never reaches the client.
-    const user = GunInstanceManager.user() as unknown as {
-      _: { sea?: { pub: string; priv: string; epub: string; epriv: string } };
-    };
-    const pair = user?._?.sea;
+    const pair = this.getSeaPair();
     if (!pair?.priv) {
       throw new Error("Cannot request a voice token: not authenticated.");
     }

@@ -255,6 +255,16 @@ export interface IVoiceTransport {
 
   /** Subscribe to speaking state changes */
   onSpeakingChange(handler: (publicKey: string, speaking: boolean) => void): Unsubscribe;
+
+  /** Whether live SFU room presence can be queried (token/presence service configured). */
+  hasSfuPresence(): boolean;
+
+  /**
+   * Fetch live participants of a voice room from the SFU presence endpoint.
+   * Returns null when SFU presence is not configured (caller falls back to the
+   * legacy Gun presence path used by mesh rooms).
+   */
+  getRoomPresence(channelId: string): Promise<VoiceParticipant[] | null>;
 }
 
 /**
