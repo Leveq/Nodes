@@ -16,8 +16,32 @@ const SETTINGS_STORE = "settings";
 const DB_VERSION = 1;
 
 // Synchronous dedup tracking - prevents race conditions with async state updates
-// This Set persists across renders and must be the single source of truth for dedup
-const notifiedMessageIds = new Set<string>();
+// This Set persists across renders and must be the single source of truth for dedup.
+// Seeded synchronously from localStorage at module load so dedup already works
+// before the async IndexedDB initialize() runs — otherwise a cold restart
+// (pnpm dev) re-notifies replayed history before the seed lands.
+const NOTIFIED_IDS_KEY = "nodes:notified-msg-ids";
+const MAX_NOTIFIED_IDS = 500;
+
+function loadNotifiedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(NOTIFIED_IDS_KEY);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    /* ignore corrupt/unavailable storage */
+  }
+  return new Set();
+}
+
+const notifiedMessageIds = loadNotifiedIds();
+
+function persistNotifiedIds(): void {
+  try {
+    localStorage.setItem(NOTIFIED_IDS_KEY, JSON.stringify(Array.from(notifiedMessageIds)));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
 
 interface NotificationState {
   // State
@@ -198,6 +222,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       for (const n of notifications) {
         if (n.messageId) notifiedMessageIds.add(n.messageId);
       }
+      persistNotifiedIds();
 
       set({
         notifications,
@@ -242,10 +267,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     notifiedMessageIds.add(notification.messageId);
     
     // Limit Set size to prevent memory growth
-    if (notifiedMessageIds.size > 500) {
-      const toDelete = Array.from(notifiedMessageIds).slice(0, 250);
+    if (notifiedMessageIds.size > MAX_NOTIFIED_IDS) {
+      const toDelete = Array.from(notifiedMessageIds).slice(0, MAX_NOTIFIED_IDS / 2);
       toDelete.forEach(msgId => notifiedMessageIds.delete(msgId));
     }
+    // Persist so dedup survives a full restart (pnpm dev), not just an in-app reload.
+    persistNotifiedIds();
     
     // Increment mention count for the channel (handled here to ensure it only happens once after dedup)
     if (notification.channelId) {
