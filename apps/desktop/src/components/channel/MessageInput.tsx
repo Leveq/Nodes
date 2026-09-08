@@ -215,6 +215,7 @@ export function MessageInput({
         channelId,
         type: "text",
         signature: "", // Will be filled by actual message
+        deliveryStatus: "sending",
         ...(currentReplyTarget ? {
           replyTo: {
             messageId: currentReplyTarget.messageId,
@@ -251,11 +252,20 @@ export function MessageInput({
           authorKey: currentReplyTarget.authorKey,
           contentPreview: currentReplyTarget.contentPreview,
         } : undefined,
-      } as any, messageId).catch(() => {
-        addToast("error", "Failed to send message. Please try again.");
-        // On failure, remove the optimistic message
-        // Note: For now we don't remove it - message might still have been sent
-      });
+      } as any, messageId)
+        .then(() => {
+          // Gun's local storage acks even when offline; only mark delivered if
+          // the OS reports online, otherwise leave it pending until reconnect.
+          if (navigator.onLine) {
+            useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+          }
+        })
+        .catch(() => {
+          // Leave the message in place (it may still deliver on reconnect) but
+          // mark it failed so the user can retry.
+          useMessageStore.getState().setMessageStatus(channelId, messageId, "failed");
+          addToast("error", "Failed to send message. Please try again.");
+        });
 
       return;
     }
@@ -304,17 +314,35 @@ export function MessageInput({
       }
 
       // Send message with attachments
-      await transport.message.send(channelId, {
+      const attachmentsJson =
+        attachments.length > 0 ? JSON.stringify(attachments) : undefined;
+
+      // If every upload failed and there is no text, don't post an empty message.
+      if (!attachmentsJson && !(resolvedContent || "").trim()) {
+        return;
+      }
+
+      // Optimistic message — attachments are already pinned, so they render by CID.
+      const messageId = generateMessageId();
+      const currentReplyTarget = replyTarget;
+      useMessageStore.getState().addMessage(channelId, {
+        id: messageId,
         content: resolvedContent || "",
+        timestamp: Date.now(),
         authorKey: publicKey,
+        channelId,
         type: "file",
-        attachments: attachments.length > 0 ? JSON.stringify(attachments) : undefined,
-        replyTo: replyTarget ? {
-          messageId: replyTarget.messageId,
-          authorKey: replyTarget.authorKey,
-          contentPreview: replyTarget.contentPreview,
-        } : undefined,
-      } as any);
+        signature: "",
+        deliveryStatus: "sending",
+        ...(attachmentsJson ? { attachments: attachmentsJson } : {}),
+        ...(currentReplyTarget ? {
+          replyTo: {
+            messageId: currentReplyTarget.messageId,
+            authorKey: currentReplyTarget.authorKey,
+            contentPreview: currentReplyTarget.contentPreview,
+          },
+        } : {}),
+      });
 
       // Clear input, attachments, and reply target
       setContent("");
@@ -332,6 +360,28 @@ export function MessageInput({
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
+
+      // Send with the same id; update the optimistic message's delivery state.
+      transport.message.send(channelId, {
+        content: resolvedContent || "",
+        authorKey: publicKey,
+        type: "file",
+        attachments: attachmentsJson,
+        replyTo: currentReplyTarget ? {
+          messageId: currentReplyTarget.messageId,
+          authorKey: currentReplyTarget.authorKey,
+          contentPreview: currentReplyTarget.contentPreview,
+        } : undefined,
+      } as any, messageId)
+        .then(() => {
+          if (navigator.onLine) {
+            useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+          }
+        })
+        .catch(() => {
+          useMessageStore.getState().setMessageStatus(channelId, messageId, "failed");
+          addToast("error", "Failed to send message. Please try again.");
+        });
     } catch {
       addToast("error", "Failed to send message. Please try again.");
     } finally {
