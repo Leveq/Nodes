@@ -144,6 +144,7 @@ export const MessageItem = memo(function MessageItem({
           content: message.content,
           authorKey: message.authorKey,
           type: message.type,
+          attachments: message.attachments,
           replyTo: message.replyTo,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
@@ -154,7 +155,7 @@ export const MessageItem = memo(function MessageItem({
       setMessageStatus(message.channelId, message.id, "failed");
       addToast("error", "Failed to send message. Please try again.");
     }
-  }, [transport, message.channelId, message.id, message.content, message.authorKey, message.type, message.replyTo, setMessageStatus, addToast]);
+  }, [transport, message.channelId, message.id, message.content, message.authorKey, message.type, message.attachments, message.replyTo, setMessageStatus, addToast]);
 
   // Inline delivery indicator for the user's own optimistic messages.
   const renderDeliveryStatus = () => {
@@ -356,11 +357,11 @@ export const MessageItem = memo(function MessageItem({
                         (edited)
                       </span>
                     )}
-                    {renderDeliveryStatus()}
                   </>
                 )}
                 
                 {renderAttachments()}
+                {renderDeliveryStatus()}
                 
                 {/* Link Preview */}
                 {!previewDismissed && previewUrl && (
@@ -534,7 +535,6 @@ export const MessageItem = memo(function MessageItem({
                           (edited)
                         </span>
                       )}
-                      {renderDeliveryStatus()}
                     </div>
                   )}
                 </>
@@ -542,6 +542,7 @@ export const MessageItem = memo(function MessageItem({
 
               {/* Attachments */}
               {renderAttachments()}
+              {renderDeliveryStatus()}
 
               {/* Link Preview */}
               {!previewDismissed && previewUrl && (
