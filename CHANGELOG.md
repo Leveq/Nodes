@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-08
+
 ### Added
 
-**Milestone 3.5a — Media & Attachments**
+**Voice — IP-private by default**
+- Voice channels route through a self-hostable LiveKit SFU by default so participant IPs stay hidden from each other
+- Short-lived, identity-signed access tokens are minted by a server-side endpoint — the LiveKit API secret never reaches the client
+- Voice presence: see who is in a voice channel without joining; occupancy is queried live from the SFU, not written to the public graph
+
+**Messaging**
+- Message delivery status: pending/sending indicator (persists while offline), delivered confirmation, and one-click retry on failure; offline messages queue and send on reconnect
+- Friendly @mention labels — the display name is shown while typing instead of the raw public key
+
+**Media & Attachments**
 - Giphy GIF picker with trending and search functionality
 - "Powered by GIPHY" attribution badge in picker
 - GIF button in message input (film icon)
@@ -20,9 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GIF and emoji buttons added to DM input
 
 ### Fixed
+- Avatars now update across all surfaces (chat, voice, member list, status bar) for self and others
+- Image upload and display fixed (manual multipart IPFS pinning + gateway CORS returns a single `Access-Control-Allow-Origin`)
+- Old notifications and DMs no longer replay as new on app restart/rebuild
+- Connection status accurately reflects offline/online (no longer falsely "online" when disconnected)
 - Images breaking when switching tabs (removed premature blob URL revocation)
 - Pending attachments persisting across channel switches (now cleared on switch)
 - Broken image fallback in attachment preview (added error handling)
+- Typing indicator and "." channel/node name edge cases
+
+### Security
+- Voice is IP-private by default via the SFU; the LiveKit API secret stays server-side (tokens are identity-owned and room-scoped)
+- Voice presence is served live from the SFU instead of the world-readable graph, so there is no durable record of who was in a call
+- Removed the leaked `VITE_LIVEKIT_API_KEY` from client builds
 
 ## [0.8.0-alpha] - 2026-02-18
 
