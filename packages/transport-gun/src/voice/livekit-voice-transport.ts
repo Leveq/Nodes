@@ -118,7 +118,21 @@ export class LiveKitVoiceTransport {
     // Track subscribed (remote audio available)
     this.room.on(RoomEvent.TrackSubscribed, (track, _publication, _participant) => {
       if (track.kind === Track.Kind.Audio) {
-        // LiveKit handles audio playback automatically
+        // The raw Room API does NOT auto-play audio; attach the track to a
+        // hidden element so it actually plays (unless the user is deafened).
+        if (!this.state.deafened) {
+          const el = track.attach();
+          el.style.display = "none";
+          document.body.appendChild(el);
+        }
+        this.emitParticipants();
+      }
+    });
+
+    // Track unsubscribed (remote left / stopped publishing): detach elements.
+    this.room.on(RoomEvent.TrackUnsubscribed, (track) => {
+      if (track.kind === Track.Kind.Audio) {
+        for (const el of track.detach()) el.remove();
         this.emitParticipants();
       }
     });
@@ -223,9 +237,11 @@ export class LiveKitVoiceTransport {
         for (const publication of participant.audioTrackPublications.values()) {
           if (publication.track) {
             if (deafened) {
-              publication.track.detach();
+              for (const el of publication.track.detach()) el.remove();
             } else {
-              publication.track.attach();
+              const el = publication.track.attach();
+              el.style.display = "none";
+              document.body.appendChild(el);
             }
           }
         }
