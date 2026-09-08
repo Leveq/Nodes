@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient, TrackType } from "livekit-server-sdk";
 import SEA from "gun/sea.js";
 
 /**
@@ -22,6 +22,11 @@ const {
   LIVEKIT_API_KEY,
   LIVEKIT_API_SECRET,
   LIVEKIT_URL,
+  // HTTP base URL of the LiveKit server for the server-side RoomServiceClient
+  // (presence). Distinct from LIVEKIT_URL (the public wss:// clients connect to)
+  // because the token service reaches LiveKit over the internal network, e.g.
+  // http://host.docker.internal:7880. If unset, /presence is disabled.
+  LIVEKIT_HOST,
   PORT = "8790",
   TOKEN_TTL = "2h",
   MAX_SKEW_MS = "60000",
@@ -37,6 +42,12 @@ if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !LIVEKIT_URL) {
 
 const maxSkewMs = Number(MAX_SKEW_MS) || 60_000;
 const MAX_BODY_BYTES = 16 * 1024;
+
+// Server-side client for querying live room occupancy (presence). Only created
+// when LIVEKIT_HOST is configured; otherwise /presence returns 501.
+const roomService = LIVEKIT_HOST
+  ? new RoomServiceClient(LIVEKIT_HOST, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+  : null;
 
 function send(res, status, body) {
   res.writeHead(status, {
@@ -66,44 +77,82 @@ function readBody(req) {
   });
 }
 
+/**
+ * Verify a signed request body `{ pub, sig }`. Returns `{ ok, claim }` on
+ * success or `{ ok: false, status, error }` on failure. The client signs a JSON
+ * claim `{ room, ts, ... }` with its SEA private key; we verify the signature
+ * proves ownership of `pub` and that the request is fresh (anti-replay).
+ */
+async function verifySignedRequest(raw) {
+  const { pub, sig } = JSON.parse(raw || "{}");
+  if (typeof pub !== "string" || !pub || typeof sig !== "string" || !sig) {
+    return { ok: false, status: 400, error: "pub and sig are required" };
+  }
+  const verified = await SEA.verify(sig, pub);
+  if (!verified) return { ok: false, status: 401, error: "invalid signature" };
+
+  let claim;
+  try {
+    claim = typeof verified === "string" ? JSON.parse(verified) : verified;
+  } catch {
+    return { ok: false, status: 400, error: "malformed claim" };
+  }
+  const { room, ts } = claim || {};
+  if (typeof room !== "string" || !room || typeof ts !== "number") {
+    return { ok: false, status: 400, error: "claim must include room and ts" };
+  }
+  if (Math.abs(Date.now() - ts) > maxSkewMs) {
+    return { ok: false, status: 401, error: "stale request" };
+  }
+  return { ok: true, pub, claim };
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 204, {});
   if (req.method === "GET" && req.url === "/health") {
     return send(res, 200, { ok: true });
   }
-  if (req.method !== "POST" || !req.url.startsWith("/token")) {
+  if (req.method !== "POST") {
+    return send(res, 404, { error: "not found" });
+  }
+
+  const isToken = req.url.startsWith("/token");
+  const isPresence = req.url.startsWith("/presence");
+  if (!isToken && !isPresence) {
     return send(res, 404, { error: "not found" });
   }
 
   try {
     const raw = await readBody(req);
-    const { pub, sig } = JSON.parse(raw || "{}");
-    if (typeof pub !== "string" || !pub || typeof sig !== "string" || !sig) {
-      return send(res, 400, { error: "pub and sig are required" });
+    const verified = await verifySignedRequest(raw);
+    if (!verified.ok) return send(res, verified.status, { error: verified.error });
+    const { pub, claim } = verified;
+    const { room } = claim;
+
+    if (isPresence) {
+      if (!roomService) {
+        return send(res, 501, { error: "presence not configured" });
+      }
+      let participants = [];
+      try {
+        const infos = await roomService.listParticipants(room);
+        participants = infos.map((p) => {
+          const audioTracks = (p.tracks || []).filter(
+            (t) => t.type === TrackType.AUDIO
+          );
+          // Muted only if they publish audio and every audio track is muted.
+          const muted =
+            audioTracks.length > 0 && audioTracks.every((t) => t.muted);
+          return { pub: p.identity, muted };
+        });
+      } catch {
+        // LiveKit throws if the room doesn't exist yet (nobody has joined).
+        participants = [];
+      }
+      return send(res, 200, { participants });
     }
 
-    // Verify the SEA signature proves ownership of `pub`. SEA.verify returns the
-    // original signed payload (the JSON string we signed on the client) or a
-    // falsy value if the signature does not match the public key.
-    const verified = await SEA.verify(sig, pub);
-    if (!verified) return send(res, 401, { error: "invalid signature" });
-
-    let claim;
-    try {
-      claim = typeof verified === "string" ? JSON.parse(verified) : verified;
-    } catch {
-      return send(res, 400, { error: "malformed claim" });
-    }
-
-    const { room, ts } = claim || {};
-    if (typeof room !== "string" || !room || typeof ts !== "number") {
-      return send(res, 400, { error: "claim must include room and ts" });
-    }
-    // Reject stale/replayed requests.
-    if (Math.abs(Date.now() - ts) > maxSkewMs) {
-      return send(res, 401, { error: "stale request" });
-    }
-
+    // Mint an identity- and room-scoped LiveKit access token.
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: pub,
       ttl: TOKEN_TTL,
@@ -115,14 +164,17 @@ const server = createServer(async (req, res) => {
       canSubscribe: true,
     });
     const token = await at.toJwt();
-
     return send(res, 200, { token, url: LIVEKIT_URL });
   } catch (err) {
     console.error("[token] error:", err instanceof Error ? err.message : err);
-    return send(res, 500, { error: "token generation failed" });
+    return send(res, 500, { error: "request failed" });
   }
 });
 
 server.listen(Number(PORT), () => {
-  console.log(`[token] listening on :${PORT} (LiveKit=${LIVEKIT_URL})`);
+  console.log(
+    `[token] listening on :${PORT} (LiveKit=${LIVEKIT_URL}, presence=${
+      roomService ? "on" : "off"
+    })`
+  );
 });
