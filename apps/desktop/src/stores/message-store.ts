@@ -47,7 +47,9 @@ function registerDeliveryStatus(id: string, status: TransportMessage["deliverySt
       deliveryStatusMap[id] = status;
       persistDeliveryStatuses();
     }
-  } else if (deliveryStatusMap[id]) {
+  } else if (status === "sent" && deliveryStatusMap[id]) {
+    // Only an explicit "sent" clears the pending state. `undefined` (e.g. a
+    // subscription echo of the same message) must NOT clear it.
     delete deliveryStatusMap[id];
     persistDeliveryStatuses();
   }
