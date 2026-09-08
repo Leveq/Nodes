@@ -215,6 +215,7 @@ export function MessageInput({
         channelId,
         type: "text",
         signature: "", // Will be filled by actual message
+        deliveryStatus: "sending",
         ...(currentReplyTarget ? {
           replyTo: {
             messageId: currentReplyTarget.messageId,
@@ -251,11 +252,16 @@ export function MessageInput({
           authorKey: currentReplyTarget.authorKey,
           contentPreview: currentReplyTarget.contentPreview,
         } : undefined,
-      } as any, messageId).catch(() => {
-        addToast("error", "Failed to send message. Please try again.");
-        // On failure, remove the optimistic message
-        // Note: For now we don't remove it - message might still have been sent
-      });
+      } as any, messageId)
+        .then(() => {
+          useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+        })
+        .catch(() => {
+          // Leave the message in place (it may still deliver on reconnect) but
+          // mark it failed so the user can retry.
+          useMessageStore.getState().setMessageStatus(channelId, messageId, "failed");
+          addToast("error", "Failed to send message. Please try again.");
+        });
 
       return;
     }

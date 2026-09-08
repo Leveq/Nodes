@@ -1,5 +1,5 @@
 import { memo, useState, useMemo, useCallback } from "react";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, Clock, AlertCircle } from "lucide-react";
 import type { TransportMessage, ReactionData } from "@nodes/transport";
 import type { FileAttachment } from "@nodes/core";
 import { mentionsUser } from "@nodes/core";
@@ -23,6 +23,7 @@ import { useEditStore } from "../../stores/edit-store";
 import { useReplyStore } from "../../stores/reply-store";
 import { useTransport } from "../../providers/TransportProvider";
 import { useToastStore } from "../../stores/toast-store";
+import { useMessageStore } from "../../stores/message-store";
 import { isGiphyUrl } from "../../services/giphy-service";
 
 // Type for emoji → reactions array mapping
@@ -129,6 +130,59 @@ export const MessageItem = memo(function MessageItem({
       console.error("Failed to edit message:", err);
       throw err;
     }
+  };
+
+  // Retry a message whose send failed (re-uses the same id so it dedupes).
+  const setMessageStatus = useMessageStore((s) => s.setMessageStatus);
+  const handleRetrySend = useCallback(async () => {
+    if (!transport) return;
+    setMessageStatus(message.channelId, message.id, "sending");
+    try {
+      await transport.message.send(
+        message.channelId,
+        {
+          content: message.content,
+          authorKey: message.authorKey,
+          type: message.type,
+          replyTo: message.replyTo,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        message.id
+      );
+      setMessageStatus(message.channelId, message.id, "sent");
+    } catch {
+      setMessageStatus(message.channelId, message.id, "failed");
+      addToast("error", "Failed to send message. Please try again.");
+    }
+  }, [transport, message.channelId, message.id, message.content, message.authorKey, message.type, message.replyTo, setMessageStatus, addToast]);
+
+  // Inline delivery indicator for the user's own optimistic messages.
+  const renderDeliveryStatus = () => {
+    if (!isOwnMessage || message.deleted) return null;
+    if (message.deliveryStatus === "sending") {
+      return (
+        <span
+          className="text-[10px] text-nodes-text-muted ml-1 inline-flex items-center gap-0.5 align-middle"
+          title="Sending…"
+        >
+          <Clock className="w-3 h-3" />
+        </span>
+      );
+    }
+    if (message.deliveryStatus === "failed") {
+      return (
+        <button
+          type="button"
+          onClick={handleRetrySend}
+          className="text-[10px] text-accent-error ml-1 inline-flex items-center gap-0.5 align-middle hover:underline"
+          title="Message failed to send. Click to retry."
+        >
+          <AlertCircle className="w-3 h-3" />
+          Retry
+        </button>
+      );
+    }
+    return null;
   };
 
   // Handle context menu actions
@@ -302,6 +356,7 @@ export const MessageItem = memo(function MessageItem({
                         (edited)
                       </span>
                     )}
+                    {renderDeliveryStatus()}
                   </>
                 )}
                 
@@ -479,6 +534,7 @@ export const MessageItem = memo(function MessageItem({
                           (edited)
                         </span>
                       )}
+                      {renderDeliveryStatus()}
                     </div>
                   )}
                 </>

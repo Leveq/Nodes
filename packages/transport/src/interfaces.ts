@@ -24,6 +24,10 @@ export interface TransportMessage {
   signedBy?: string; // key that produced the signature (defaults to authorKey)
   verified?: boolean; // set on read: true if signature verified, false if not
   editedAt?: number;
+  // Local optimistic delivery state (never written to the graph):
+  // "sending" = queued/awaiting relay ack (also the offline-pending state),
+  // "sent" = acked by a relay, "failed" = the write was rejected.
+  deliveryStatus?: "sending" | "sent" | "failed";
   attachments?: string; // JSON-stringified FileAttachment[] (Milestone 2.1)
   
   // Reply reference (Milestone 2.2)
