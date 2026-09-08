@@ -269,11 +269,12 @@ export async function processMessageForNotification(
     read: false,
   };
 
-  await notificationStore.addNotification(appNotification);
+  const isNewNotification = await notificationStore.addNotification(appNotification);
   console.log("[NotificationManager] Added notification to store:", appNotification);
 
-  // Show desktop notification if not viewing current channel
-  if (!isViewingChannel) {
+  // Show desktop notification if not viewing current channel and this is a
+  // genuinely new notification (dedup returns false for replayed history).
+  if (!isViewingChannel && isNewNotification) {
     const title = `${context.senderName} in #${context.channelName}`;
     const body = stripMentionTokens(message.content).slice(0, 200);
 
@@ -321,7 +322,12 @@ export async function processDMForNotification(
     read: false,
   };
 
-  await notificationStore.addNotification(appNotification);
+  const isNewNotification = await notificationStore.addNotification(appNotification);
+
+  // Skip the popup/sound for replayed history (dedup returns false).
+  if (!isNewNotification) {
+    return;
+  }
 
   // Show desktop notification
   const title = `DM from ${senderName}`;
@@ -360,14 +366,19 @@ export async function processFriendRequestNotification(
     type: "friend_request",
     senderKey: fromKey,
     senderName: fromName,
-    messageId: `fr-${fromKey}-${Date.now()}`, // Unique ID for the request
+    messageId: `fr-${fromKey}`, // Stable per sender so replays dedup (no re-notify on rebuild)
     messagePreview: message || "wants to be your friend",
     timestamp: Date.now(),
     read: false,
   };
 
-  await notificationStore.addNotification(appNotification);
+  const isNewNotification = await notificationStore.addNotification(appNotification);
   console.log("[NotificationManager] Added friend request notification:", appNotification);
+
+  // Skip the popup/sound for replayed history (dedup returns false).
+  if (!isNewNotification) {
+    return;
+  }
 
   // Show desktop notification
   const title = "Friend Request";
