@@ -24,6 +24,8 @@ interface MessageState {
   setMessages: (channelId: string, messages: TransportMessage[]) => void;
   addMessage: (channelId: string, message: TransportMessage) => void;
   setMessageStatus: (channelId: string, messageId: string, status: TransportMessage["deliveryStatus"]) => void;
+  // Confirm delivery for all still-pending own messages (called once connected).
+  markSendingAsSent: () => void;
   setSubscription: (unsub: Unsubscribe | null) => void;
   setTypingSubscription: (unsub: Unsubscribe | null) => void;
   setTypingUsers: (channelId: string, users: string[]) => void;
@@ -98,8 +100,6 @@ export const useMessageStore = create<MessageState>((set, get) => ({
             ...(msg.signature && { signature: msg.signature }),
             ...(msg.signedBy && { signedBy: msg.signedBy }),
             ...(msg.verified !== undefined && { verified: msg.verified }),
-            // A real (signed) copy arriving from the graph confirms delivery.
-            ...(msg.signature && existingMsg.deliveryStatus === "sending" && { deliveryStatus: "sent" as const }),
           };
           messageMap.set(msg.id, merged);
         } else {
@@ -145,8 +145,6 @@ export const useMessageStore = create<MessageState>((set, get) => ({
           ...(message.signature && { signature: message.signature }),
           ...(message.signedBy && { signedBy: message.signedBy }),
           ...(message.verified !== undefined && { verified: message.verified }),
-          // A real (signed) copy arriving from the graph confirms delivery.
-          ...(message.signature && existingMsg.deliveryStatus === "sending" && { deliveryStatus: "sent" as const }),
         };
         
         const updated = [...existing];
@@ -179,6 +177,26 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       const updated = [...existing];
       updated[idx] = { ...updated[idx], deliveryStatus: status };
       return { messages: { ...state.messages, [channelId]: updated } };
+    });
+  },
+
+  markSendingAsSent: () => {
+    set((state) => {
+      let changed = false;
+      const next: Record<string, TransportMessage[]> = {};
+      for (const [channelId, msgs] of Object.entries(state.messages)) {
+        let channelChanged = false;
+        const updated = msgs.map((m) => {
+          if (m.deliveryStatus === "sending") {
+            channelChanged = true;
+            return { ...m, deliveryStatus: "sent" as const };
+          }
+          return m;
+        });
+        next[channelId] = channelChanged ? updated : msgs;
+        if (channelChanged) changed = true;
+      }
+      return changed ? { messages: next } : {};
     });
   },
 

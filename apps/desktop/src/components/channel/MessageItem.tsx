@@ -150,7 +150,9 @@ export const MessageItem = memo(function MessageItem({
         } as any,
         message.id
       );
-      setMessageStatus(message.channelId, message.id, "sent");
+      if (navigator.onLine) {
+        setMessageStatus(message.channelId, message.id, "sent");
+      }
     } catch {
       setMessageStatus(message.channelId, message.id, "failed");
       addToast("error", "Failed to send message. Please try again.");

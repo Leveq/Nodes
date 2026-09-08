@@ -27,6 +27,7 @@ import {
 import { useIdentityStore } from "../stores/identity-store";
 import { useNodeStore } from "../stores/node-store";
 import { useVoiceStore } from "../stores/voice-store";
+import { useMessageStore } from "../stores/message-store";
 
 /**
  * Transport context shape.
@@ -154,7 +155,6 @@ export function TransportProvider({ children }: { children: ReactNode }) {
     const unsubscribe = transports.connection.onStateChange((state) => {
       setConnectionState(state);
     });
-
     // Expose transports on window for dev testing
     if (import.meta.env.DEV) {
       (window as unknown as Record<string, unknown>).transports = transports;
@@ -171,6 +171,20 @@ export function TransportProvider({ children }: { children: ReactNode }) {
       transports.connection.stop();
     };
   }, [transports.connection]);
+
+  // When connectivity is (re)established, confirm delivery for any messages
+  // still marked "sending" — Gun syncs the queued writes on reconnect. Listen to
+  // the OS `online` event too, since the relay monitor can lag ~15s.
+  useEffect(() => {
+    const confirmSoon = () => {
+      setTimeout(() => {
+        useMessageStore.getState().markSendingAsSent();
+      }, 1500);
+    };
+    if (connectionState.connected) confirmSoon();
+    window.addEventListener("online", confirmSoon);
+    return () => window.removeEventListener("online", confirmSoon);
+  }, [connectionState.connected]);
 
   // Subscribe to voice state changes
   useEffect(() => {

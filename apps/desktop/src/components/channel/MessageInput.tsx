@@ -254,7 +254,11 @@ export function MessageInput({
         } : undefined,
       } as any, messageId)
         .then(() => {
-          useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+          // Gun's local storage acks even when offline; only mark delivered if
+          // the OS reports online, otherwise leave it pending until reconnect.
+          if (navigator.onLine) {
+            useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+          }
         })
         .catch(() => {
           // Leave the message in place (it may still deliver on reconnect) but
@@ -370,7 +374,9 @@ export function MessageInput({
         } : undefined,
       } as any, messageId)
         .then(() => {
-          useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+          if (navigator.onLine) {
+            useMessageStore.getState().setMessageStatus(channelId, messageId, "sent");
+          }
         })
         .catch(() => {
           useMessageStore.getState().setMessageStatus(channelId, messageId, "failed");
