@@ -36,6 +36,8 @@ export class GunConnectionMonitor implements IConnectionMonitor {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pingId: string = "";
   private started = false;
+  private onlineHandler: (() => void) | null = null;
+  private offlineHandler: (() => void) | null = null;
 
   /**
    * Start monitoring connection state.
@@ -49,6 +51,17 @@ export class GunConnectionMonitor implements IConnectionMonitor {
 
     // Do initial ping
     this.checkConnection();
+
+    // React instantly to OS connectivity changes — the ping alone can't detect
+    // offline because Gun's local storage acks the write even with no network.
+    if (typeof window !== "undefined") {
+      this.offlineHandler = () => {
+        this.updateState({ connected: false, status: "disconnected", peerCount: 0 });
+      };
+      this.onlineHandler = () => this.checkConnection();
+      window.addEventListener("offline", this.offlineHandler);
+      window.addEventListener("online", this.onlineHandler);
+    }
 
     // Start periodic ping
     this.pingTimer = setInterval(() => {
@@ -64,6 +77,12 @@ export class GunConnectionMonitor implements IConnectionMonitor {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
     }
+    if (typeof window !== "undefined") {
+      if (this.offlineHandler) window.removeEventListener("offline", this.offlineHandler);
+      if (this.onlineHandler) window.removeEventListener("online", this.onlineHandler);
+    }
+    this.offlineHandler = null;
+    this.onlineHandler = null;
     this.started = false;
   }
 
@@ -145,6 +164,15 @@ export class GunConnectionMonitor implements IConnectionMonitor {
    * Check connection by doing a ping round-trip.
    */
   private checkConnection(): void {
+    // If the OS reports offline, we're disconnected — don't bother pinging (the
+    // write would be acked by local storage and falsely report "connected").
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      if (this.state.connected || this.state.status !== "disconnected") {
+        this.updateState({ connected: false, status: "disconnected", peerCount: 0 });
+      }
+      return;
+    }
+
     // Gracefully handle Gun not being initialized yet
     let gun;
     try {

@@ -2,6 +2,57 @@ import { create } from "zustand";
 import type { TransportMessage, Unsubscribe } from "@nodes/transport";
 import { getCache, setCache, CacheKeys, MAX_CACHED_MESSAGES } from "../services/app-cache";
 
+// Persisted delivery status by message id so the pending/failed indicator
+// survives reloads and node/channel switches (messages are reloaded from cache
+// and Gun history, which carry no delivery status).
+type PersistedDeliveryStatus = "sending" | "failed";
+const DELIVERY_STATUS_KEY = "nodes:msg-delivery-status";
+
+function loadDeliveryStatuses(): Record<string, PersistedDeliveryStatus> {
+  try {
+    const raw = localStorage.getItem(DELIVERY_STATUS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+const deliveryStatusMap: Record<string, PersistedDeliveryStatus> = loadDeliveryStatuses();
+
+function persistDeliveryStatuses(): void {
+  try {
+    localStorage.setItem(DELIVERY_STATUS_KEY, JSON.stringify(deliveryStatusMap));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
+// Re-attach the persisted delivery status to a message coming from cache/history.
+function withDeliveryStatus(msg: TransportMessage): TransportMessage {
+  const persisted = deliveryStatusMap[msg.id];
+  if (persisted) {
+    return msg.deliveryStatus === persisted ? msg : { ...msg, deliveryStatus: persisted };
+  }
+  // No longer tracked as pending/failed (delivered) — clear any stale status.
+  if (msg.deliveryStatus === "sending" || msg.deliveryStatus === "failed") {
+    return { ...msg, deliveryStatus: undefined };
+  }
+  return msg;
+}
+
+// Persist a message's pending/failed status by id.
+function registerDeliveryStatus(id: string, status: TransportMessage["deliveryStatus"]): void {
+  if (status === "sending" || status === "failed") {
+    if (deliveryStatusMap[id] !== status) {
+      deliveryStatusMap[id] = status;
+      persistDeliveryStatuses();
+    }
+  } else if (deliveryStatusMap[id]) {
+    delete deliveryStatusMap[id];
+    persistDeliveryStatuses();
+  }
+}
+
 interface MessageState {
   // Messages keyed by channelId
   messages: Record<string, TransportMessage[]>;
@@ -82,7 +133,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       }
       
       // Add/update with new messages (prefer newer data)
-      for (const msg of messages) {
+      for (const raw of messages) {
+        const msg = withDeliveryStatus(raw);
         const existingMsg = messageMap.get(msg.id);
         if (existingMsg) {
           // Keep the message with better data - prefer non-empty content
@@ -101,7 +153,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
             ...(msg.signedBy && { signedBy: msg.signedBy }),
             ...(msg.verified !== undefined && { verified: msg.verified }),
           };
-          messageMap.set(msg.id, merged);
+          messageMap.set(msg.id, withDeliveryStatus(merged));
         } else {
           messageMap.set(msg.id, msg);
         }
@@ -119,6 +171,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   },
 
   addMessage: (channelId, message) => {
+    // Persist an optimistic pending/failed status so it survives reloads.
+    registerDeliveryStatus(message.id, message.deliveryStatus);
     set((state) => {
       const existing = state.messages[channelId] || [];
 
@@ -148,7 +202,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
         };
         
         const updated = [...existing];
-        updated[existingIndex] = merged;
+        updated[existingIndex] = withDeliveryStatus(merged);
         return {
           messages: {
             ...state.messages,
@@ -160,7 +214,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       return {
         messages: {
           ...state.messages,
-          [channelId]: [...existing, message].sort(
+          [channelId]: [...existing, withDeliveryStatus(message)].sort(
             (a, b) => a.timestamp - b.timestamp
           ),
         },
@@ -169,6 +223,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   },
 
   setMessageStatus: (channelId, messageId, status) => {
+    registerDeliveryStatus(messageId, status);
     set((state) => {
       const existing = state.messages[channelId];
       if (!existing) return {};
@@ -181,6 +236,15 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   },
 
   markSendingAsSent: () => {
+    // Clear persisted 'sending' entries (leave 'failed' so retry stays visible).
+    let mapChanged = false;
+    for (const [id, s] of Object.entries(deliveryStatusMap)) {
+      if (s === "sending") {
+        delete deliveryStatusMap[id];
+        mapChanged = true;
+      }
+    }
+    if (mapChanged) persistDeliveryStatuses();
     set((state) => {
       let changed = false;
       const next: Record<string, TransportMessage[]> = {};
@@ -287,8 +351,9 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   loadFromCache: async (channelId) => {
     const cached = await getCache<TransportMessage[]>(CacheKeys.messages(channelId));
     if (cached && cached.length > 0) {
+      const restored = cached.map(withDeliveryStatus);
       set((state) => ({
-        messages: { ...state.messages, [channelId]: cached },
+        messages: { ...state.messages, [channelId]: restored },
       }));
       return true;
     }
@@ -299,8 +364,11 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     const messages = get().messages[channelId];
     if (!messages || messages.length === 0) return;
     
-    // Only cache the last N messages to keep cache size manageable
-    const toCache = messages.slice(-MAX_CACHED_MESSAGES);
+    // Only cache the last N messages to keep cache size manageable. Strip the
+    // ephemeral deliveryStatus — it is restored from its own persisted map.
+    const toCache = messages.slice(-MAX_CACHED_MESSAGES).map((m) =>
+      m.deliveryStatus ? { ...m, deliveryStatus: undefined } : m
+    );
     await setCache(CacheKeys.messages(channelId), toCache);
   },
 
