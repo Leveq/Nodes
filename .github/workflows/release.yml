@@ -81,6 +81,8 @@ jobs:
 
   deploy-web:
     runs-on: ubuntu-latest
+    # A failed web deploy must not fail the release (desktop build/updater is independent).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -116,5 +118,5 @@ jobs:
           username: ${{ secrets.PROD_SERVER_USER }}
           key: ${{ secrets.PROD_SERVER_SSH_KEY }}
           source: "apps/desktop/dist/*"
-          target: "/opt/nodes-prod/web/"
+          target: "/opt/nodes-prod/web/dist/"
           strip_components: 3
