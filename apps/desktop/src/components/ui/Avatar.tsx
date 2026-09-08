@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useAvatar } from "../../hooks/useAvatar";
 import { useIdentityStore } from "../../stores/identity-store";
+import { useAvatarStore } from "../../stores/avatar-store";
 import type { UserStatus } from "@nodes/core";
 
 /**
@@ -51,18 +52,23 @@ export const Avatar = memo(function Avatar({
   avatarVersion = 0,
   avatarCid,
 }: AvatarProps) {
-  const { avatarUrl, isLoading } = useAvatar(
-    publicKey,
-    size === "xl" ? "full" : "small",
-    avatarVersion,
-    avatarCid
-  );
-
   // For the current user, prefer the freshly-uploaded blob URL so a self change
   // shows instantly everywhere, bypassing the gateway/cache thrash.
   const selfPublicKey = useIdentityStore((s) => s.publicKey);
   const selfAvatarUrl = useIdentityStore((s) => s.selfAvatarUrl);
+  // Live CID from the reactive store wins so observers see OTHER users' avatar
+  // changes in text/voice (not just the member bar); fall back to the passed CID.
+  const storeCid = useAvatarStore((s) => (publicKey ? s.cids[publicKey] : undefined));
   const isSelf = !!publicKey && publicKey === selfPublicKey;
+  const effectiveCid = storeCid ?? avatarCid;
+
+  const { avatarUrl, isLoading } = useAvatar(
+    publicKey,
+    size === "xl" ? "full" : "small",
+    avatarVersion,
+    effectiveCid
+  );
+
   const displayUrl = isSelf && selfAvatarUrl ? selfAvatarUrl : avatarUrl;
   const showLoading = isLoading && !(isSelf && selfAvatarUrl);
 
