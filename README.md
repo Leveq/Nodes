@@ -12,7 +12,7 @@ Discord now requires government ID verification. Their 2025 data breach exposed 
 
 Nodes takes a different approach: **there's nothing to breach because there's nothing to store.** Identity is cryptography, not a database row. Communication is peer-to-peer, not routed through corporate infrastructure. Privacy isn't a policy — it's architecture.
 
-## What Works Today (v1.2.0)
+## What Works Today (v1.2.1)
 
 - **Self-sovereign identity** — Keypair-based identity with encrypted local keystore (PBKDF2 + random salt) and backup/restore
 - **Community Nodes** — Create or join communities with invite links, text channels, and member management
@@ -49,13 +49,13 @@ Nodes takes a different approach: **there's nothing to breach because there's no
 
 | Platform | Download |
 |----------|----------|
-| Windows (MSI) | [Nodes_1.2.0_x64_en-US.msi](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes_1.2.0_x64_en-US.msi) |
-| Windows (NSIS) | [Nodes_1.2.0_x64-setup.exe](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes_1.2.0_x64-setup.exe) |
-| Linux (AppImage) | [Nodes_1.2.0_amd64.AppImage](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes_1.2.0_amd64.AppImage) |
-| Linux (deb) | [Nodes_1.2.0_amd64.deb](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes_1.2.0_amd64.deb) |
-| Linux (rpm) | [Nodes-1.2.0-1.x86_64.rpm](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes-1.2.0-1.x86_64.rpm) |
-| macOS (Apple Silicon) | [Nodes_1.2.0_aarch64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes_1.2.0_aarch64.dmg) |
-| macOS (Intel) | [Nodes_1.2.0_x64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.2.0/Nodes_1.2.0_x64.dmg) |
+| Windows (MSI) | [Nodes_1.2.1_x64_en-US.msi](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes_1.2.1_x64_en-US.msi) |
+| Windows (NSIS) | [Nodes_1.2.1_x64-setup.exe](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes_1.2.1_x64-setup.exe) |
+| Linux (AppImage) | [Nodes_1.2.1_amd64.AppImage](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes_1.2.1_amd64.AppImage) |
+| Linux (deb) | [Nodes_1.2.1_amd64.deb](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes_1.2.1_amd64.deb) |
+| Linux (rpm) | [Nodes-1.2.1-1.x86_64.rpm](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes-1.2.1-1.x86_64.rpm) |
+| macOS (Apple Silicon) | [Nodes_1.2.1_aarch64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes_1.2.1_aarch64.dmg) |
+| macOS (Intel) | [Nodes_1.2.1_x64.dmg](https://github.com/Leveq/Nodes/releases/download/v1.2.1/Nodes_1.2.1_x64.dmg) |
 
 <!--Or use the web client at [app.nodes.services](https://app.nodes.services).-->
 
