@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-08
+
+### Fixed
+- Public Nodes no longer revert to unlisted over time. The directory validator treated transient Gun replication lag (a node's name momentarily not yet synced) as a deletion and wrote `isPublic: false`, so any client browsing the directory could unlist a live Node. Only an explicit deletion now delists a Node (F-037).
+
 ## [1.2.0] - 2026-09-08
 
 ### Added

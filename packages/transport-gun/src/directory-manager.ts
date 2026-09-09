@@ -174,7 +174,11 @@ export class DirectoryManager {
       } else {
         // Validate the underlying node still exists
         gun.get("nodes").get(nodeId).once((nodeData: any) => {
-          if (nodeData?.deletedAt || !nodeData?.name) {
+          // Only auto-delist on an EXPLICIT deletion marker. A missing `name`
+          // is almost always transient Gun replication lag, not a deletion —
+          // treating it as one let any browsing client wrongly unlist a live
+          // node, so owners' Nodes kept reverting to unlisted over time (F-037).
+          if (nodeData?.deletedAt) {
             // Node was deleted but listing wasn't cleaned up
             deletedNodes.add(nodeId);
             listingsMap.delete(nodeId);
